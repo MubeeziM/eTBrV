@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="description" content="Offline patient records app powered by SQLite (sql.js) and IndexedDB." />
+
+  <title>Patient Records</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- App stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!--
+    sql.js: SQLite compiled to WebAssembly.
+    We load it from CDN on first visit; the service worker caches it for offline use.
+  -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+
+  <!-- ========== APP HEADER ========== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+        <rect x="9" y="3" width="6" height="4" rx="1"/>
+        <path d="M9 12h6M9 16h4"/>
+      </svg>
+      <h1>Patient Records</h1>
+    </div>
+    <!-- Shows online/offline status -->
+    <span id="connection-status" class="status-badge online">Online</span>
+  </header>
+
+  <main class="container">
+
+    <!-- ========== PATIENT FORM ========== -->
+    <section class="card form-card">
+      <h2 class="section-title">New Patient</h2>
+
+      <form id="patient-form" novalidate>
+
+        <!-- Full Name -->
+        <div class="field-group">
+          <label for="name">Full Patient Name <span class="required">*</span></label>
+          <input
+            type="text"
+            id="name"
+            name="name"
+            placeholder="e.g. John Doe"
+            autocomplete="name"
+            maxlength="150"
+          />
+          <span class="field-error" id="name-error"></span>
+        </div>
+
+        <!-- Age -->
+        <div class="field-row">
+          <div class="field-group">
+            <label for="age">Age <span class="required">*</span></label>
+            <input
+              type="number"
+              id="age"
+              name="age"
+              placeholder="0"
+              min="0"
+              max="150"
+            />
+            <span class="field-error" id="age-error"></span>
+          </div>
+
+          <!-- Sex -->
+          <div class="field-group">
+            <label for="sex">Sex <span class="required">*</span></label>
+            <select id="sex" name="sex">
+              <option value="">-- Select --</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+            <span class="field-error" id="sex-error"></span>
+          </div>
+        </div>
+
+        <!-- Phone Number -->
+        <div class="field-group">
+          <label for="phone">Phone Number <span class="required">*</span></label>
+          <input
+            type="text"
+            id="phone"
+            name="phone"
+            placeholder="e.g. +1 555 000 0000"
+            autocomplete="tel"
+            maxlength="30"
+          />
+          <span class="field-error" id="phone-error"></span>
+        </div>
+
+        <!-- Address -->
+        <div class="field-group">
+          <label for="address">Full Address <span class="required">*</span></label>
+          <textarea
+            id="address"
+            name="address"
+            rows="3"
+            placeholder="Street, City, Country"
+            maxlength="300"
+          ></textarea>
+          <span class="field-error" id="address-error"></span>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" id="submit-btn" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v14a2 2 0 01-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save Patient
+        </button>
+
+      </form>
+    </section>
+
+    <!-- ========== TOAST NOTIFICATION ========== -->
+    <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+    <!-- ========== PATIENT LIST ========== -->
+    <section class="card list-card">
+      <div class="list-header">
+        <h2 class="section-title">Saved Patients</h2>
+        <span id="patient-count" class="count-badge">0 records</span>
+      </div>
+
+      <!-- Search bar -->
+      <div class="search-wrap">
+        <input
+          type="search"
+          id="search-input"
+          placeholder="Search by name or phone…"
+          aria-label="Search patients"
+        />
+      </div>
+
+      <!-- Table container (scrolls horizontally on small screens) -->
+      <div class="table-wrap">
+        <table id="patients-table" aria-label="Patient records">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Age</th>
+              <th>Sex</th>
+              <th>Phone</th>
+              <th>Address</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="patients-tbody">
+            <!-- Rows injected by app.js -->
+          </tbody>
+        </table>
+        <p id="empty-state" class="empty-state">No patients saved yet.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========== SCRIPTS ========== -->
+  <!-- db.js must load before app.js because app.js calls DB functions -->
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
