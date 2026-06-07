@@ -197,3 +197,26 @@ async function deletePatient(id) {
   await _persistDB();
   console.log(`[DB] Deleted patient id=${id}`);
 }
+
+/**
+ * Exports the current SQLite database as a downloadable .sqlite file.
+ * The browser will prompt the user to save "patients.sqlite".
+ */
+function exportDB() {
+  if (!_db) return;
+  const data = _db.export();                          // Uint8Array — raw SQLite bytes
+  const blob = new Blob([data], { type: 'application/octet-stream' });
+  const url  = URL.createObjectURL(blob);
+
+  const a       = document.createElement('a');
+  a.href        = url;
+  a.download    = 'patients.sqlite';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // Release the object URL after a short delay
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  console.log('[DB] Database exported as patients.sqlite');
+}

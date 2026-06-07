@@ -226,6 +226,16 @@ textarea { resize: vertical; }
 
 .btn-danger:hover { background: #fee2e2; }
 
+.btn-secondary {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: .45rem .9rem;
+  font-size: .85rem;
+}
+
+.btn-secondary:hover { background: var(--surface); }
+
 /* ---------- Toast Notification ---------- */
 .toast {
   position: fixed;
@@ -264,6 +274,12 @@ textarea { resize: vertical; }
 }
 
 .list-header .section-title { margin-bottom: 0; }
+
+.list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
 
 .count-badge {
   background: var(--primary-light);

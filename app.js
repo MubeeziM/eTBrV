@@ -15,6 +15,7 @@
 // ─── DOM references ──────────────────────────────────────────────────────
 const form             = document.getElementById('patient-form');
 const submitBtn        = document.getElementById('submit-btn');
+const exportBtn        = document.getElementById('export-btn');
 const patientsTbody    = document.getElementById('patients-tbody');
 const emptyState       = document.getElementById('empty-state');
 const patientCount     = document.getElementById('patient-count');
@@ -277,6 +278,18 @@ patientsTbody.addEventListener('click', async (event) => {
 
 searchInput.addEventListener('input', () => {
   renderPatients(searchInput.value);
+});
+
+// ─── Event: export database ──────────────────────────────────────────────
+
+exportBtn.addEventListener('click', () => {
+  try {
+    exportDB();   // from db.js — triggers download of patients.sqlite
+    showToast('Database exported as patients.sqlite', 'success');
+  } catch (err) {
+    console.error('[App] Export failed:', err);
+    showToast('Export failed. Please try again.', 'error');
+  }
 });
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────

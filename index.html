@@ -133,7 +133,17 @@
     <section class="card list-card">
       <div class="list-header">
         <h2 class="section-title">Saved Patients</h2>
-        <span id="patient-count" class="count-badge">0 records</span>
+        <div class="list-header-actions">
+          <span id="patient-count" class="count-badge">0 records</span>
+          <button id="export-btn" class="btn btn-secondary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export .sqlite
+          </button>
+        </div>
       </div>
 
       <!-- Search bar -->
