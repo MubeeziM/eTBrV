@@ -203,7 +203,7 @@ async function deletePatient(id) {
  * The browser will prompt the user to save "patients.sqlite".
  */
 function exportDB() {
-  if (!_db) return;
+  if (!_db) throw new Error('Database is not initialised yet. Please wait and try again.');
   const data = _db.export();                          // Uint8Array — raw SQLite bytes
   const blob = new Blob([data], { type: 'application/octet-stream' });
   const url  = URL.createObjectURL(blob);
