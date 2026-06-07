@@ -32,8 +32,18 @@
       </svg>
       <h1>Patient Records</h1>
     </div>
-    <!-- Shows online/offline status -->
-    <span id="connection-status" class="status-badge online">Online</span>
+    <div class="header-actions">
+      <!-- Install App button: hidden until the browser fires beforeinstallprompt -->
+      <button id="install-btn" class="btn-install" aria-label="Install app" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+          <path d="M12 2v13M8 11l4 4 4-4"/>
+          <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+        </svg>
+        Install App
+      </button>
+      <!-- Shows online/offline status -->
+      <span id="connection-status" class="status-badge online">Online</span>
+    </div>
   </header>
 
   <main class="container">

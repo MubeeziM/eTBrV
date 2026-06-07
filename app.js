@@ -22,6 +22,7 @@ const patientCount     = document.getElementById('patient-count');
 const searchInput      = document.getElementById('search-input');
 const connectionStatus = document.getElementById('connection-status');
 const toast            = document.getElementById('toast');
+const installBtn       = document.getElementById('install-btn');
 
 // ─── Service Worker Registration ────────────────────────────────────────
 
@@ -35,6 +36,48 @@ if ('serviceWorker' in navigator) {
     }
   });
 }
+
+// ─── PWA Install Prompt ──────────────────────────────────────────────────
+
+/** Holds the deferred BeforeInstallPromptEvent until the user clicks the button. */
+let _deferredInstallPrompt = null;
+
+/**
+ * The browser fires `beforeinstallprompt` when the PWA meets installability
+ * criteria (HTTPS, valid manifest, active service worker).
+ * We prevent the default mini-infobar and surface our own button instead.
+ */
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  _deferredInstallPrompt = event;
+  installBtn.hidden = false;
+  console.log('[PWA] Install prompt captured — "Install App" button shown');
+});
+
+installBtn.addEventListener('click', async () => {
+  if (!_deferredInstallPrompt) {
+    console.warn('[PWA] No deferred install prompt available');
+    return;
+  }
+
+  // Show the native install dialog
+  _deferredInstallPrompt.prompt();
+
+  const { outcome } = await _deferredInstallPrompt.userChoice;
+  console.log('[PWA] Install prompt outcome:', outcome);  // 'accepted' | 'dismissed'
+
+  // The prompt object can only be used once — discard it
+  _deferredInstallPrompt = null;
+  installBtn.hidden = true;
+});
+
+/** Fires after the user completes installation from our prompt or the browser UI. */
+window.addEventListener('appinstalled', () => {
+  console.log('[PWA] App installed successfully');
+  _deferredInstallPrompt = null;
+  installBtn.hidden = true;
+  showToast('App installed successfully!', 'success');
+});
 
 // ─── Online / Offline indicator ──────────────────────────────────────────
 

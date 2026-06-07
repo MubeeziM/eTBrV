@@ -86,6 +86,38 @@ body {
 .status-badge.online  { background: rgba(255,255,255,.25); }
 .status-badge.offline { background: #f97316; color: #fff; }
 
+/* Header right-side actions group (install button + status badge) */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+/* Install App button — outlined white, lives in the blue header */
+.btn-install {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .35rem .85rem;
+  background: transparent;
+  color: #fff;
+  border: 1.5px solid rgba(255,255,255,.7);
+  border-radius: 8px;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.btn-install:hover {
+  background: rgba(255,255,255,.15);
+  border-color: #fff;
+}
+
+.btn-install:active { transform: scale(.97); }
+
 /* ---------- Layout ---------- */
 .container {
   max-width: 820px;
