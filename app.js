@@ -55,6 +55,12 @@ window.addEventListener('beforeinstallprompt', (event) => {
 });
 
 installBtn.addEventListener('click', async () => {
+  // Fallback mode: browser doesn't support beforeinstallprompt — show instructions
+  if (installBtn.dataset.fallback === 'true') {
+    showToast(installBtn.dataset.instructions, '');
+    return;
+  }
+
   if (!_deferredInstallPrompt) {
     console.warn('[PWA] No deferred install prompt available');
     return;
@@ -76,7 +82,43 @@ window.addEventListener('appinstalled', () => {
   console.log('[PWA] App installed successfully');
   _deferredInstallPrompt = null;
   installBtn.hidden = true;
+  installBtn.removeAttribute('data-fallback');
   showToast('App installed successfully!', 'success');
+});
+
+/**
+ * Fallback for browsers that never fire `beforeinstallprompt` (Firefox, Safari).
+ * After the page loads, if we still have no deferred prompt and the app is not
+ * already running in standalone mode, surface the button with manual instructions.
+ */
+window.addEventListener('load', () => {
+  // Already installed — nothing to show
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    console.log('[PWA] Running in standalone mode — install button suppressed');
+    return;
+  }
+
+  // beforeinstallprompt fires before/during load in supporting browsers.
+  // A short defer ensures we don't race against it.
+  setTimeout(() => {
+    if (_deferredInstallPrompt !== null) return; // Chrome/Edge already handled it
+
+    const ua = navigator.userAgent;
+    let instructions;
+
+    if (ua.includes('Firefox')) {
+      instructions = 'Firefox: open the browser menu (☰) and choose "Install" or look for the install icon in the address bar.';
+    } else if (/iPhone|iPad|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome/.test(ua))) {
+      instructions = 'Safari: tap the Share button (□↑) then "Add to Home Screen".';
+    } else {
+      instructions = 'Use your browser\'s menu to install this app.';
+    }
+
+    console.log('[PWA] Browser does not support beforeinstallprompt — showing manual install hint');
+    installBtn.dataset.fallback = 'true';
+    installBtn.dataset.instructions = instructions;
+    installBtn.hidden = false;
+  }, 300);
 });
 
 // ─── Online / Offline indicator ──────────────────────────────────────────
