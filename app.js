@@ -49,6 +49,13 @@ let _deferredInstallPrompt = null;
  */
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
+
+  // Don't show if user already installed (e.g. they cleared localStorage but not the app)
+  if (localStorage.getItem('pwaInstalled') === '1') {
+    console.log('[PWA] Install prompt captured but app already installed — ignoring');
+    return;
+  }
+
   _deferredInstallPrompt = event;
   installBtn.hidden = false;
   console.log('[PWA] Install prompt captured — "Install App" button shown');
@@ -83,6 +90,7 @@ window.addEventListener('appinstalled', () => {
   _deferredInstallPrompt = null;
   installBtn.hidden = true;
   installBtn.removeAttribute('data-fallback');
+  localStorage.setItem('pwaInstalled', '1');
   showToast('App installed successfully!', 'success');
 });
 
@@ -92,9 +100,15 @@ window.addEventListener('appinstalled', () => {
  * already running in standalone mode, surface the button with manual instructions.
  */
 window.addEventListener('load', () => {
-  // Already installed — nothing to show
+  // Already running as an installed app
   if (window.matchMedia('(display-mode: standalone)').matches) {
     console.log('[PWA] Running in standalone mode — install button suppressed');
+    return;
+  }
+
+  // User already installed the app previously (persisted across visits)
+  if (localStorage.getItem('pwaInstalled') === '1') {
+    console.log('[PWA] Previously installed — install button suppressed');
     return;
   }
 
