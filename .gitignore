@@ -8,3 +8,32 @@ Thumbs.db
 
 # Local dev server logs
 *.log
+
+# ── .NET backend (PatientSyncApi) ────────────────────────────────────────
+# Build artefacts
+PatientSyncApi/bin/
+PatientSyncApi/obj/
+PatientSyncApi/publish/
+
+# SECURITY: appsettings.json contains the real database connection string
+# and API key. Never commit this file with real credentials.
+# Keep a copy with placeholder values only, or supply secrets via
+# environment variables / dotnet user-secrets instead.
+PatientSyncApi/appsettings.json
+
+# deploy-secrets.ps1 holds hosting credentials — never commit it
+deploy-secrets.ps1
+
+# web.config is filled with real credentials before FTP upload.
+# It must never be committed.
+PatientSyncApi/web.config
+
+# Any environment-specific overrides that may contain secrets
+PatientSyncApi/appsettings.Production.json
+PatientSyncApi/appsettings.Local.json
+
+# Visual Studio / Rider
+PatientSyncApi/.vs/
+PatientSyncApi/*.user
+PatientSyncApi/*.suo
+PatientSyncApi/.idea/

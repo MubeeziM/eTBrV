@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v__BUILD__';
+const APP_VERSION = 'v090620261150';
 
 // ─── DOM references ──────────────────────────────────────────────────────
 const form             = document.getElementById('patient-form');

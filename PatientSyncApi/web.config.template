@@ -1,0 +1,91 @@
+<!--
+  web.config — IIS configuration for PatientSyncApi on SmarterASP.NET
+  =====================================================================
+
+  HOW TO USE THIS FILE
+  ─────────────────────
+  1. Run the publish command in PowerShell:
+       cd C:\Users\info\source\repos\patient_pwa\PatientSyncApi
+       dotnet publish -c Release -o ./publish
+
+  2. Copy THIS file into the publish output folder:
+       copy web.config .\publish\web.config   ← replaces the auto-generated one
+
+  3. Open .\publish\web.config and replace every placeholder value
+     (marked with REPLACE_...) with your real values.
+
+  4. Upload the entire contents of the publish\ folder to your
+     SmarterASP.NET site root via FTP.
+
+  SECURITY
+  ─────────
+  This file will contain your real password once you fill it in.
+  • NEVER commit the filled-in version to git.
+  • web.config is already listed in .gitignore so git will ignore it.
+  • Keep a backup copy in a password manager or secure note — NOT in the repo.
+-->
+<configuration>
+  <system.webServer>
+
+    <handlers>
+      <!-- Routes all requests through the ASP.NET Core module (IIS integration). -->
+      <add name="aspNetCore"
+           path="*"
+           verb="*"
+           modules="AspNetCoreModuleV2"
+           resourceType="Unspecified" />
+    </handlers>
+
+    <aspNetCore processPath="dotnet"
+                arguments=".\PatientSyncApi.dll"
+                stdoutLogEnabled="false"
+                stdoutLogFile=".\logs\stdout"
+                hostingModel="inprocess">
+
+      <environmentVariables>
+
+        <!--
+          ASPNETCORE_ENVIRONMENT
+          Set to "Production" on the live server.
+          This makes ASP.NET Core load appsettings.json only
+          (not appsettings.Development.json).
+        -->
+        <environmentVariable name="ASPNETCORE_ENVIRONMENT" value="Production" />
+
+        <!--
+          DATABASE CONNECTION STRING
+          ───────────────────────────
+          ASP.NET Core maps environment variables with double-underscore (__) to
+          nested config sections, so this sets:
+            Configuration["ConnectionStrings:DefaultConnection"]
+
+          Fill in your real SmarterASP.NET SQL Server details below.
+          These values OVERRIDE whatever is written in appsettings.json,
+          so the file on the server never needs to contain the real password.
+        -->
+        <environmentVariable name="ConnectionStrings__DefaultConnection"
+                             value="Server=SQL8012.site4now.net,1433;Database=db_ac602a_v6nkwi3rvw;User Id=db_ac602a_v6nkwi3rvw_admin;Password=REPLACE_WITH_REAL_PASSWORD;TrustServerCertificate=True;" />
+
+        <!--
+          API KEY
+          ────────
+          Must match the value you put in app.js (SYNC_API_KEY).
+          Use the same strong random string you generated earlier.
+        -->
+        <environmentVariable name="ApiKey" value="REPLACE_WITH_YOUR_STRONG_API_KEY" />
+
+        <!--
+          CORS — ALLOWED ORIGINS
+          ───────────────────────
+          Your GitHub Pages URL. No trailing slash.
+          ASP.NET Core maps AllowedOrigins__0 to AllowedOrigins[0] in config.
+        -->
+        <environmentVariable name="AllowedOrigins__0" value="https://art.etbr.org" />
+        <environmentVariable name="AllowedOrigins__1" value="https://api.etbr.org" />
+
+      </environmentVariables>
+
+    </aspNetCore>
+
+  </system.webServer>
+</configuration>

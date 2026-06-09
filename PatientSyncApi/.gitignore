@@ -1,0 +1,30 @@
+## .gitignore for the PatientSyncApi .NET project
+
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+
+# dotnet user-secrets (stored outside the repo by default, but belt-and-suspenders)
+secrets.json
+
+# Rider / JetBrains
+.idea/
+
+# Publish output
+publish/
+
+# Sensitive: appsettings.json holds the real DB connection string and API key.
+# NEVER commit this file with real credentials.
+appsettings.json
+appsettings.Local.json
+appsettings.Production.json
+
+# web.config is filled with real credentials before uploading to the server.
+# Keep the placeholder version (web.config) in git only — never the filled copy.
+# Actually, exclude it entirely; use web.config as a local-only file.
+web.config
