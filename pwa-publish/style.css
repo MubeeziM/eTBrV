@@ -308,6 +308,23 @@ textarea { resize: vertical; }
   animation: spin 1s linear infinite;
 }
 
+/* ---------- Edit-mode banner ---------- */
+.edit-mode-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  background: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  padding: .75rem 1rem;
+  margin-bottom: 1rem;
+  color: #92400e;
+  font-size: .9rem;
+  line-height: 1.4;
+}
+.edit-mode-banner svg { flex-shrink: 0; margin-top: .1rem; }
+.edit-mode-banner strong { font-weight: 600; }
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -599,6 +616,15 @@ details[open] > .form-section-title::before { content: '▼ '; }
 /* Form actions row */
 .form-actions {
   margin-top: .5rem;
+  display: flex;
+  gap: .5rem;
+  align-items: stretch;
+}
+/* Let the primary button grow to fill remaining space */
+.form-actions .btn-primary {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
 }
 
 /* Input for date and month types */

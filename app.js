@@ -51,6 +51,9 @@ const stopReasonRow       = document.getElementById('stop-reason-row');
 let _currentVisitPatientTID = null;
 let _currentVisitARTStart   = null;
 
+/** GUID of the patient currently being edited (null = new-patient mode). */
+let _editingTID = null;
+
 // ─── Service Worker Registration ────────────────────────────────────────
 
 // Clear the reload-guard flag that was set during the previous SW-triggered
@@ -317,6 +320,233 @@ function validateForm() {
   return valid;
 }
 
+// ─── Edit mode helpers ───────────────────────────────────────────────────
+
+const SAVE_BTN_HTML = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v14a2 2 0 01-2 2z"/>
+    <polyline points="17 21 17 13 7 13 7 21"/>
+    <polyline points="7 3 7 8 15 8"/>
+  </svg>
+  Save Patient`;
+
+const UPDATE_BTN_HTML = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+  Update Patient`;
+
+function exitEditMode() {
+  _editingTID = null;
+  document.getElementById('edit-mode-banner').hidden = true;
+  document.getElementById('cancel-edit-btn').hidden  = true;
+  document.getElementById('form-title').textContent  = 'New Patient — ART Register';
+  submitBtn.innerHTML = SAVE_BTN_HTML;
+}
+
+/**
+ * Pre-populates the patient form with an existing patient's data and
+ * switches the form into edit mode.
+ * @param {string} tid  PtDetailsTID (GUID) of the patient to edit.
+ */
+function loadPatientIntoForm(tid) {
+  const pt = getPtDetails(tid);
+  if (!pt) { showToast('Patient record not found.', 'error'); return; }
+
+  _editingTID = tid;
+
+  // ── UI: switch to edit mode ────────────────────────────────────────────
+  document.getElementById('form-title').textContent       = 'Edit Patient — ART Register';
+  document.getElementById('edit-patient-name').textContent = pt.FullName;
+  document.getElementById('edit-mode-banner').hidden      = false;
+  document.getElementById('cancel-edit-btn').hidden       = false;
+  submitBtn.innerHTML = UPDATE_BTN_HTML;
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  /** Set a date or month input value and trigger visual update (clear btn, colour). */
+  function setDate(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = val ?? '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('input',  { bubbles: true }));
+  }
+  /** Set a select value and trigger select-colour sync. */
+  function setSel(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = String(val ?? '0');
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // ── Section A: Patient Registration ───────────────────────────────────
+  document.getElementById('artNo').value    = pt.ARTNo ?? '';
+  const hivRadio = document.querySelector(`input[name="hivRetest"][value="${pt.HIVRetest ?? 0}"]`);
+  if (hivRadio) hivRadio.checked = true;
+  document.getElementById('fullName').value = pt.FullName ?? '';
+  setDate('artStartDate', pt.ARTStartDate);
+  setDate('dateEnrolledInCare', pt.DateEnrolledInCare);
+
+  // Setting DOB fires the change handler which auto-calculates & locks age.
+  setDate('dateOfBirth', pt.DateOfBirth);
+
+  if (!pt.DateOfBirth) {
+    // No DOB — set age manually and restore field states
+    if (ageInput) {
+      ageInput.readOnly = false;
+      ageInput.classList.remove('field-readonly');
+      ageInput.value = pt.Age ?? '';
+    }
+    const years = pt.Age ?? 0;
+    if (ageMonthsInput) {
+      if (years > 0) {
+        ageMonthsInput.value   = '';
+        ageMonthsInput.disabled = true;
+        ageMonthsInput.classList.add('field-readonly');
+      } else {
+        ageMonthsInput.disabled = false;
+        ageMonthsInput.readOnly = false;
+        ageMonthsInput.classList.remove('field-readonly');
+      }
+    }
+  }
+
+  setSel('sexId', pt.SexID);
+  document.getElementById('phone1').value            = pt.Phone1 ?? '';
+  document.getElementById('phone2').value            = pt.Phone2 ?? '';
+  document.getElementById('residenceAddress').value  = pt.ResidenceAddress ?? '';
+
+  setSel('occupationId', pt.OccupationID);
+  document.getElementById('occupationOther-wrap').hidden = String(pt.OccupationID) !== '9';
+  document.getElementById('occupationOther').value       = pt.OccupationOther ?? '';
+
+  setSel('keyPopuId', pt.KeyPopuID);
+  document.getElementById('keyPopuOther-wrap').hidden = String(pt.KeyPopuID) !== '4';
+  document.getElementById('keyPopuOther').value       = pt.KeyPopuOther ?? '';
+
+  const xferVal   = String(pt.IsTransferIn ?? 0);
+  const xferRadio = document.querySelector(`input[name="isTransferIn"][value="${xferVal}"]`);
+  if (xferRadio) xferRadio.checked = true;
+  document.getElementById('transferFacility-wrap').hidden    = pt.IsTransferIn !== 1;
+  document.getElementById('transferFromFacility').value      = pt.TransferFromFacility ?? '';
+
+  const ptAge = pt.Age ?? 0;
+  document.getElementById('guardian-wrap').hidden    = !(ptAge >= 0 && ptAge < 18);
+  document.getElementById('guardianName').value      = pt.GuardianName ?? '';
+  document.getElementById('guardianPhone1').value    = pt.GuardianPhone1 ?? '';
+
+  // ── Section B: Clinical Baseline ──────────────────────────────────────
+  if (weightInput) { weightInput.value = pt.WeightKg ?? ''; weightInput.dispatchEvent(new Event('input', { bubbles: true })); }
+  if (heightInput) { heightInput.value = pt.HeightCm ?? ''; heightInput.dispatchEvent(new Event('input', { bubbles: true })); }
+  document.getElementById('muacCm').value     = pt.MUACCm   ?? '';
+  setSel('whoStageId', pt.WHOStageID);
+  document.getElementById('cd4Value').value   = pt.CD4Value ?? '';
+  document.getElementById('cd4IsPercent').checked = pt.CD4IsPercent === 1;
+  // CPT/TB dates are stored as YYYY-MM-01; month inputs need YYYY-MM
+  setDate('cptStartDate',  pt.CPTStartDate  ? pt.CPTStartDate.substring(0, 7)  : null);
+  setSel('cptDrugId', pt.CPTDrugID);
+  setDate('tbRxStartDate', pt.TBRxStartDate ? pt.TBRxStartDate.substring(0, 7) : null);
+  document.getElementById('unitTBNo').value   = pt.UnitTBNo ?? '';
+  setSel('tbStatusId', pt.TBStatusID);
+
+  // ── Section C: PMTCT ───────────────────────────────────────────────────
+  pmtctSection.hidden = String(pt.SexID) !== '2';
+  setSel('breastfeedingId', pt.BreastfeedingID);
+  const pregContainer = document.getElementById('pregnancy-rows');
+  pregContainer.innerHTML = '';
+  getPMTCT(tid).forEach((preg, i) => {
+    const row = document.createElement('div');
+    row.className = 'dynamic-row';
+    row.innerHTML = `
+      <div><label>Pregnancy ${i + 1} — ANC No</label>
+        <input type="text" class="preg-anc" maxlength="50" /></div>
+      <div><label>Delivery Date</label>
+        <input type="date" class="preg-del" /></div>
+      <div><label class="checkbox-label">
+        <input type="checkbox" class="preg-mother"> Mother received ART</label></div>
+      <div><label class="checkbox-label">
+        <input type="checkbox" class="preg-infant"> Infant received ARVs</label></div>
+      <div><button type="button" class="btn btn-danger btn-sm remove-row-btn">Remove</button></div>`;
+    row.querySelector('.remove-row-btn').addEventListener('click', () => row.remove());
+    pregContainer.appendChild(row);
+    const delInput = row.querySelector('.preg-del');
+    setupDateField(delInput);
+    row.querySelector('.preg-anc').value       = preg.ANCNo ?? '';
+    delInput.value                             = preg.DeliveryDate ?? '';
+    delInput.dispatchEvent(new Event('change', { bubbles: true }));
+    delInput.dispatchEvent(new Event('input',  { bubbles: true }));
+    row.querySelector('.preg-mother').checked  = preg.MotherReceivedART  === 1;
+    row.querySelector('.preg-infant').checked  = preg.InfantReceivedARVs === 1;
+  });
+
+  // ── Section D: Regimen ────────────────────────────────────────────────
+  const regHistory = getRegimenHistory(tid);
+  function findReg(line, seq) {
+    return regHistory.find(r => r.RegimenLine === line && r.SequenceNo === seq) || null;
+  }
+  const regimenSlots = [
+    { line: 1, seq: 0, drugId: 'reg1Original',  reasonId: null,               otherEl: null,            dateEl: null,            wrapId: null },
+    { line: 1, seq: 1, drugId: 'reg1Sub1Drug',   reasonId: 'reg1Sub1Reason',   otherEl: 'reg1Sub1Other', dateEl: 'reg1Sub1Date',  wrapId: 'reg1Sub1OtherWrap' },
+    { line: 1, seq: 2, drugId: 'reg1Sub2Drug',   reasonId: 'reg1Sub2Reason',   otherEl: 'reg1Sub2Other', dateEl: 'reg1Sub2Date',  wrapId: 'reg1Sub2OtherWrap' },
+    { line: 2, seq: 0, drugId: 'reg2Switch',     reasonId: 'reg2SwitchReason', otherEl: null,            dateEl: 'reg2SwitchDate', wrapId: null },
+    { line: 2, seq: 1, drugId: 'reg2Sub1Drug',   reasonId: 'reg2Sub1Reason',   otherEl: 'reg2Sub1Other', dateEl: 'reg2Sub1Date',  wrapId: 'reg2Sub1OtherWrap' },
+    { line: 2, seq: 2, drugId: 'reg2Sub2Drug',   reasonId: 'reg2Sub2Reason',   otherEl: 'reg2Sub2Other', dateEl: 'reg2Sub2Date',  wrapId: 'reg2Sub2OtherWrap' },
+  ];
+  for (const slot of regimenSlots) {
+    const rec = findReg(slot.line, slot.seq);
+    setSel(slot.drugId, rec?.RegimenID ?? 0);
+    if (slot.reasonId) setSel(slot.reasonId, rec?.ChangeReasonID ?? 0);
+    if (slot.otherEl) {
+      const el = document.getElementById(slot.otherEl);
+      if (el) el.value = rec?.OtherReasonText ?? '';
+    }
+    if (slot.wrapId) {
+      const wrap = document.getElementById(slot.wrapId);
+      if (wrap) wrap.hidden = String(rec?.ChangeReasonID ?? 0) !== '7';
+    }
+    if (slot.dateEl) setDate(slot.dateEl, rec?.EventDate ?? null);
+  }
+
+  // ── Section E: INH Prophylaxis ─────────────────────────────────────────
+  const inhContainer = document.getElementById('inh-rows');
+  inhContainer.innerHTML = '';
+  getINH(tid).forEach((inh, i) => {
+    const row = document.createElement('div');
+    row.className = 'dynamic-row';
+    row.innerHTML = `
+      <div><label>Date ${i + 1}</label>
+        <input type="date" /></div>
+      <div><button type="button" class="btn btn-danger btn-sm remove-row-btn">Remove</button></div>`;
+    row.querySelector('.remove-row-btn').addEventListener('click', () => row.remove());
+    inhContainer.appendChild(row);
+    const dateInput = row.querySelector('input[type="date"]');
+    setupDateField(dateInput);
+    dateInput.value = inh.INHDate ?? '';
+    dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+    dateInput.dispatchEvent(new Event('input',  { bubbles: true }));
+  });
+
+  // ── Open section A and scroll form into view ───────────────────────────
+  const sectionA = document.querySelector('.form-section');
+  if (sectionA && !sectionA.hasAttribute('open')) sectionA.setAttribute('open', '');
+  document.querySelector('.form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ─── Event: escape edit mode on Cancel ──────────────────────────────────
+
+function _resetFormUI() {
+  if (ageInput)       { ageInput.readOnly = false; ageInput.classList.remove('field-readonly'); }
+  if (ageMonthsInput) { ageMonthsInput.disabled = false; ageMonthsInput.readOnly = false; ageMonthsInput.classList.remove('field-readonly'); }
+  document.getElementById('inh-rows').innerHTML      = '';
+  document.getElementById('pregnancy-rows').innerHTML = '';
+  pmtctSection.hidden = true;
+  document.getElementById('occupationOther-wrap').hidden   = true;
+  document.getElementById('keyPopuOther-wrap').hidden      = true;
+  document.getElementById('transferFacility-wrap').hidden  = true;
+  document.getElementById('guardian-wrap').hidden          = true;
+}
+
 // ─── Patient table renderer ──────────────────────────────────────────────
 
 function renderPatients(searchTerm = '') {
@@ -344,6 +574,15 @@ function renderPatients(searchTerm = '') {
         </button>
       </td>
       <td>
+        <button class="btn btn-secondary btn-sm edit-btn"
+          data-tid="${escHtml(p.PtDetailsTID)}"
+          aria-label="Edit ${escHtml(p.FullName)}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Edit
+        </button>
         <button class="btn btn-danger delete-btn"
           data-tid="${escHtml(p.PtDetailsTID)}"
           aria-label="Delete ${escHtml(p.FullName)}">
@@ -436,7 +675,15 @@ form.addEventListener('submit', async (event) => {
       GuardianPhone1:       document.getElementById('guardianPhone1').value.trim() || null,
     };
 
-    const ptTID = await insertPtDetails(data);
+    const wasEditing = !!_editingTID;
+    let ptTID;
+    if (_editingTID) {
+      await updatePtDetails(_editingTID, data);
+      await deletePtSubRecords(_editingTID);
+      ptTID = _editingTID;
+    } else {
+      ptTID = await insertPtDetails(data);
+    }
 
     // ── INH dates ────────────────────────────────────────────────────────
     const inhRows = document.querySelectorAll('#inh-rows .dynamic-row');
@@ -485,6 +732,7 @@ form.addEventListener('submit', async (event) => {
       }
     }
 
+    exitEditMode();
     form.reset();
     // Unlock age fields that may have been locked by a DOB entry
     if (ageInput)       { ageInput.readOnly = false; ageInput.classList.remove('field-readonly'); }
@@ -500,26 +748,31 @@ form.addEventListener('submit', async (event) => {
     document.getElementById('guardian-wrap').hidden = true;
     searchInput.value = '';
     renderPatients();
-    showToast('Patient saved successfully!', 'success');
+    showToast(wasEditing ? 'Patient updated successfully!' : 'Patient saved successfully!', 'success');
+    // Auto-sync in background — silent so the "saved" toast stays visible on success;
+    // an error toast will still appear if the server cannot be reached.
+    if (navigator.onLine) triggerSync(true);
 
   } catch (err) {
     console.error('[App] Error saving patient:', err);
     showToast(`Error saving patient: ${err.message}`, 'error');
   } finally {
     submitBtn.disabled  = false;
-    submitBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v14a2 2 0 01-2 2z"/>
-        <polyline points="17 21 17 13 7 13 7 21"/>
-        <polyline points="7 3 7 8 15 8"/>
-      </svg>
-      Save Patient`;
+    // If save failed while in edit mode, keep "Update Patient"; otherwise "Save Patient"
+    submitBtn.innerHTML = _editingTID ? UPDATE_BTN_HTML : SAVE_BTN_HTML;
   }
 });
 
 // ─── Event: delete patient (event delegation on tbody) ───────────────────
 
 patientsTbody.addEventListener('click', async (event) => {
+  // ── Edit button ────────────────────────────────────────────────────────
+  const editBtn = event.target.closest('.edit-btn');
+  if (editBtn) {
+    loadPatientIntoForm(editBtn.dataset.tid);
+    return;
+  }
+
   // ── Visits button ───────────────────────────────────────────────────────
   const visitsBtn = event.target.closest('.visits-btn');
   if (visitsBtn) {
@@ -874,6 +1127,13 @@ function setupFormWiring() {
     setupDateField(row.querySelector('input[type="date"]'));
   });
 
+  // Cancel edit
+  document.getElementById('cancel-edit-btn')?.addEventListener('click', () => {
+    exitEditMode();
+    form.reset();
+    _resetFormUI();
+  });
+
   // Visits panel — close button
   document.getElementById('close-visits-btn')?.addEventListener('click', () => {
     visitsPanelEl.hidden = true;
@@ -1118,13 +1378,7 @@ async function bootstrap() {
     showToast('Database initialisation failed. Reload the page.', 'error');
   } finally {
     submitBtn.disabled = false;
-    submitBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v14a2 2 0 01-2 2z"/>
-        <polyline points="17 21 17 13 7 13 7 21"/>
-        <polyline points="7 3 7 8 15 8"/>
-      </svg>
-      Save Patient`;
+    submitBtn.innerHTML = SAVE_BTN_HTML;
   }
 }
 
@@ -1193,43 +1447,80 @@ window.addEventListener('online',  updateSyncButtonState);
 window.addEventListener('offline', updateSyncButtonState);
 updateSyncButtonState();   // set initial state on page load
 
-// ─── Sync: click handler ──────────────────────────────────────────────────
+// ─── Sync: core function ──────────────────────────────────────────────────
 
-syncBtn?.addEventListener('click', async () => {
-  // Guard: do not attempt sync while offline
+/**
+ * Sends all local patient records to the server API.
+ *
+ * @param {boolean} silent
+ *   true  — called automatically after save/update; never shows a success
+ *           toast (so it doesn't override the "Patient saved" message) but
+ *           DOES show an error toast so the user knows if data didn't reach
+ *           the server.
+ *   false — called by the Sync button; shows full loading state and both
+ *           success and error toasts.
+ */
+async function triggerSync(silent = false) {
   if (!navigator.onLine) {
-    showToast('You are offline. Sync is not available.', 'error');
+    if (!silent) showToast('You are offline. Sync is not available.', 'error');
     return;
   }
 
-  // Read all records from the local SQLite database (db.js helper)
-  const patients = getAllPtDetails();
-
+  const patients = getAllPtDetailsForSync();
   if (patients.length === 0) {
-    showToast('No local records to sync.', '');
+    if (!silent) showToast('No local records to sync.', '');
     return;
   }
 
-  // Show loading state
-  syncBtn.disabled = true;
-  syncBtn.classList.add('syncing');
-  syncBtn.textContent = 'Syncing…';
+  if (!silent) {
+    syncBtn.disabled = true;
+    syncBtn.classList.add('syncing');
+    syncBtn.textContent = 'Syncing…';
+  }
 
   try {
-    // Map local records to the shape expected by the API.
-    // We intentionally omit the local SQLite `id` field — the server
-    // generates its own SQL Server IDENTITY key.
-    const payload = patients.map(({ PtDetailsTID, ARTNo, FullName, Age, SexID,
-                                      ARTStartDate, Phone1, HasChanged }) => ({
-      PtDetailsTID, ARTNo, FullName, Age, SexID, ARTStartDate, Phone1, HasChanged
+    // Build a complete payload — every field that the API/MERGE statement expects.
+    const payload = patients.map(p => ({
+      PtDetailsTID:         p.PtDetailsTID,
+      HasChanged:           p.HasChanged,
+      HIVRetest:            p.HIVRetest,
+      ARTNo:                p.ARTNo,
+      ARTStartDate:         p.ARTStartDate         || null,
+      DateEnrolledInCare:   p.DateEnrolledInCare   || null,
+      FullName:             p.FullName,
+      ResidenceAddress:     p.ResidenceAddress     || null,
+      Phone1:               p.Phone1               || null,
+      Phone2:               p.Phone2               || null,
+      OccupationID:         p.OccupationID,
+      OccupationOther:      p.OccupationOther      || null,
+      KeyPopuID:            p.KeyPopuID,
+      KeyPopuOther:         p.KeyPopuOther         || null,
+      Age:                  p.Age,
+      DateOfBirth:          p.DateOfBirth          || null,
+      SexID:                p.SexID,
+      WeightKg:             p.WeightKg             ?? null,
+      HeightCm:             p.HeightCm             ?? null,
+      MUACCm:               p.MUACCm               ?? null,
+      BMI:                  p.BMI                  ?? null,
+      WHOStageID:           p.WHOStageID,
+      CD4Value:             p.CD4Value             ?? null,
+      CD4IsPercent:         p.CD4IsPercent,
+      CPTStartDate:         p.CPTStartDate         || null,
+      CPTDrugID:            p.CPTDrugID,
+      TBRxStartDate:        p.TBRxStartDate        || null,
+      UnitTBNo:             p.UnitTBNo             || null,
+      TBStatusID:           p.TBStatusID,
+      BreastfeedingID:      p.BreastfeedingID,
+      IsTransferIn:         p.IsTransferIn,
+      TransferFromFacility: p.TransferFromFacility || null,
+      GuardianName:         p.GuardianName         || null,
+      GuardianPhone1:       p.GuardianPhone1       || null,
     }));
 
     const response = await fetch(SYNC_API_URL, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
-        // SECURITY: The API key is sent over HTTPS so it is encrypted in transit.
-        // See the note at the top of this section about frontend key limitations.
         'X-Api-Key':    SYNC_API_KEY
       },
       body: JSON.stringify(payload)
@@ -1237,37 +1528,52 @@ syncBtn?.addEventListener('click', async () => {
 
     if (response.ok) {
       const data = await response.json();
-      showToast(data.message ?? 'Sync successful!', 'success');
-      console.log('[Sync] Success:', data);
+      // Silent mode: log only — don't override the "Patient saved" toast.
+      if (!silent) showToast(data.message ?? 'Sync successful!', 'success');
+      else         console.log('[Sync] Auto-sync succeeded:', data.message);
     } else {
-      // Parse the error body if possible, otherwise fall back to HTTP status text.
       let errorMsg = `Sync failed (${response.status})`;
       try {
         const errData = await response.json();
         errorMsg = errData.error ?? errorMsg;
-      } catch {
-        // Response body was not valid JSON — use the status message
-      }
-      showToast(`${errorMsg}. Please try again.`, 'error');
+      } catch { /* non-JSON error body */ }
+      // Always show sync errors — the user needs to know data didn't reach the server.
+      showToast(
+        silent ? 'Auto-sync failed — tap "Sync Data" to retry.' : `${errorMsg}. Please try again.`,
+        'error'
+      );
       console.warn('[Sync] Server error:', response.status, errorMsg);
     }
 
   } catch (err) {
-    // Network failure (offline, DNS error, server unreachable, etc.)
     console.error('[Sync] Network error:', err);
-    showToast('Could not reach the server. Check your connection and retry.', 'error');
+    showToast(
+      silent ? 'Auto-sync failed — check your connection.' : 'Could not reach the server. Check your connection and retry.',
+      'error'
+    );
   } finally {
-    // Restore button regardless of outcome
-    syncBtn.disabled = false;
-    syncBtn.classList.remove('syncing');
-    syncBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
-        <path d="M23 4v6h-6"/>
-        <path d="M1 20v-6h6"/>
-        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-      </svg>
-      Sync Data
-    `;
-    updateSyncButtonState();   // re-apply offline/online disabled state
+    if (!silent) {
+      syncBtn.disabled = false;
+      syncBtn.classList.remove('syncing');
+      syncBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+          <path d="M23 4v6h-6"/>
+          <path d="M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        Sync Data
+      `;
+      updateSyncButtonState();
+    }
   }
+}
+
+// ─── Sync: click handler ──────────────────────────────────────────────────
+
+syncBtn?.addEventListener('click', async () => {
+  if (!navigator.onLine) {
+    showToast('You are offline. Sync is not available.', 'error');
+    return;
+  }
+  await triggerSync(false);
 });

@@ -400,6 +400,60 @@ function getPtDetails(ptDetailsTID) {
   return Object.fromEntries(columns.map((c, i) => [c, values[0][i]]));
 }
 
+/**
+ * Returns ALL columns for every patient — used by the sync payload so no
+ * clinical field is accidentally omitted.  Do not use for UI rendering
+ * (use getAllPtDetails instead, which joins the sex label and is leaner).
+ */
+function getAllPtDetailsForSync() {
+  const r = _db.exec('SELECT * FROM PtDetailsT ORDER BY CreatedOn');
+  if (!r.length) return [];
+  const { columns, values } = r[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+async function updatePtDetails(ptDetailsTID, data) {
+  const now = _now();
+  const bmi = calcBMI(data.WeightKg, data.HeightCm);
+  _db.run(`
+    UPDATE PtDetailsT SET
+      HasChanged = 1, LastModOn = ?,
+      HIVRetest = ?, ARTNo = ?, ARTStartDate = ?, DateEnrolledInCare = ?,
+      FullName = ?, ResidenceAddress = ?, Phone1 = ?, Phone2 = ?,
+      OccupationID = ?, OccupationOther = ?, KeyPopuID = ?, KeyPopuOther = ?,
+      Age = ?, DateOfBirth = ?, SexID = ?,
+      WeightKg = ?, HeightCm = ?, MUACCm = ?, BMI = ?,
+      WHOStageID = ?, CD4Value = ?, CD4IsPercent = ?,
+      CPTStartDate = ?, CPTDrugID = ?, TBRxStartDate = ?, UnitTBNo = ?, TBStatusID = ?,
+      BreastfeedingID = ?, IsTransferIn = ?, TransferFromFacility = ?,
+      GuardianName = ?, GuardianPhone1 = ?
+    WHERE PtDetailsTID = ?`,
+    [
+      now,
+      data.HIVRetest||0, data.ARTNo||'', data.ARTStartDate||null, data.DateEnrolledInCare||null,
+      data.FullName||'', data.ResidenceAddress||null, data.Phone1||null, data.Phone2||null,
+      data.OccupationID||0, data.OccupationOther||null, data.KeyPopuID||0, data.KeyPopuOther||null,
+      data.Age||0, data.DateOfBirth||null, data.SexID||0,
+      data.WeightKg||null, data.HeightCm||null, data.MUACCm||null, bmi,
+      data.WHOStageID||0, data.CD4Value||null, data.CD4IsPercent||0,
+      data.CPTStartDate||null, data.CPTDrugID||0, data.TBRxStartDate||null, data.UnitTBNo||null, data.TBStatusID||0,
+      data.BreastfeedingID||0, data.IsTransferIn||0, data.TransferFromFacility||null,
+      data.GuardianName||null, data.GuardianPhone1||null,
+      ptDetailsTID
+    ]
+  );
+  await _persistDB();
+  console.log(`[DB] updatePtDetails: ${ptDetailsTID}`);
+}
+
+async function deletePtSubRecords(ptDetailsTID) {
+  for (const tbl of ['INHProphylaxisT', 'PMTCTPregnancyT', 'RegimenHistoryT']) {
+    _db.run(`DELETE FROM ${tbl} WHERE PtDetailsTID = ?`, [ptDetailsTID]);
+  }
+  await _persistDB();
+  console.log(`[DB] deletePtSubRecords: ${ptDetailsTID}`);
+}
+
 async function deletePtDetails(ptDetailsTID) {
   for (const tbl of ['INHProphylaxisT','PMTCTPregnancyT','RegimenHistoryT','PtFollowUpT']) {
     _db.run(`DELETE FROM ${tbl} WHERE PtDetailsTID = ?`, [ptDetailsTID]);
