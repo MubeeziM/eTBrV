@@ -92,18 +92,24 @@ CREATE TABLE CountyT (
   County    VARCHAR(60) NOT NULL
 );
 
+CREATE TABLE StateT (
+  StateID  INTEGER NOT NULL CONSTRAINT PK_StateT PRIMARY KEY,
+  State    VARCHAR(60) NOT NULL
+);
+
 CREATE TABLE HealthFacilityT (
-  HFacilityID  INTEGER NOT NULL CONSTRAINT PK_HealthFacilityT PRIMARY KEY,
-  HFacility    VARCHAR(100) NOT NULL,
-  CountyID     INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_HealthFacilityT_County REFERENCES CountyT(CountyID)
+  HealthFacilityID  INTEGER NOT NULL CONSTRAINT PK_HealthFacilityT PRIMARY KEY,
+  HealthFacility    VARCHAR(100) NOT NULL,
+  CountyID          INTEGER NOT NULL DEFAULT 0
+    CONSTRAINT FK_HealthFacilityT_County REFERENCES CountyT(CountyID),
+  StateID           INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE DataSourceT (
-  DataSourceID  INTEGER NOT NULL CONSTRAINT PK_DataSourceT PRIMARY KEY,
-  DataSource    VARCHAR(100) NOT NULL,
-  HFacilityID   INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_DataSourceT_HFacility REFERENCES HealthFacilityT(HFacilityID)
+  DataSourceID      INTEGER NOT NULL CONSTRAINT PK_DataSourceT PRIMARY KEY,
+  DataSource        VARCHAR(100) NOT NULL,
+  HealthFacilityID  INTEGER NOT NULL DEFAULT 0
+    CONSTRAINT FK_DataSourceT_HFacility REFERENCES HealthFacilityT(HealthFacilityID)
 );
 
 CREATE TABLE UsersT (
@@ -186,9 +192,27 @@ INSERT INTO StopReasonT VALUES
   (9,'Planned treatment interruption'),(10,'Other');
 
 INSERT INTO CountyT VALUES (0,'Not configured');
-INSERT INTO HealthFacilityT VALUES (0,'Not configured',0);
+INSERT INTO StateT VALUES (0,'Not configured');
+INSERT INTO HealthFacilityT VALUES (0,'Not configured',0,0);
 INSERT INTO DataSourceT VALUES (0,'Not configured',0);
 GO
+
+-- =============================================================================
+-- VIEW: vwGeogAreaQ — geographic hierarchy flat view used by PWA geo-tree
+-- =============================================================================
+GO
+CREATE VIEW vwGeogAreaQ AS
+    SELECT hf.HealthFacilityID,
+           hf.HealthFacility,
+           hf.CountyID,
+           COALESCE(c.County, '') AS County,
+           hf.StateID,
+           COALESCE(s.State,  '') AS State
+    FROM   HealthFacilityT hf
+    LEFT JOIN CountyT c ON hf.CountyID = c.CountyID
+    LEFT JOIN StateT  s ON hf.StateID  = s.StateID
+    WHERE  hf.HealthFacilityID NOT IN (0, 15, 17, 435)
+      AND  COALESCE(s.State, '') NOT LIKE '%Training%';
 
 -- =============================================================================
 -- MAIN TABLE: PtDetailsT
@@ -197,9 +221,9 @@ GO
 CREATE TABLE PtDetailsT (
   PtDetailsTID          UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID()
                           CONSTRAINT PK_PtDetailsT PRIMARY KEY,
-  LocalSeqNo            INTEGER IDENTITY(1,1) NOT NULL,
+  PatientID             INTEGER IDENTITY(1,1) NOT NULL,
   NearestHFID           INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_HF REFERENCES HealthFacilityT(HFacilityID),
+    CONSTRAINT FK_PtDetailsT_HF REFERENCES HealthFacilityT(HealthFacilityID),
   DataSourceID          INTEGER NOT NULL DEFAULT 0
     CONSTRAINT FK_PtDetailsT_DS REFERENCES DataSourceT(DataSourceID),
   CountyID              INTEGER NOT NULL DEFAULT 0
@@ -239,6 +263,8 @@ CREATE TABLE PtDetailsT (
     CONSTRAINT FK_PtDetailsT_CPT REFERENCES CPTDrugT(CPTDrugID),
   TBRxStartDate         DATE NULL,
   UnitTBNo              VARCHAR(50) NULL,
+  TBStatusID            INTEGER NOT NULL DEFAULT 0
+    CONSTRAINT FK_PtDetailsT_TBStatus REFERENCES TBStatusT(TBStatusID),
   BreastfeedingID       INTEGER NOT NULL DEFAULT 0
     CONSTRAINT FK_PtDetailsT_BF REFERENCES BreastfeedingT(BreastfeedingID),
   IsTransferIn          INTEGER NOT NULL DEFAULT 0,

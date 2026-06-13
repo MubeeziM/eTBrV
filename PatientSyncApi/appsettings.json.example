@@ -1,0 +1,95 @@
+{
+  /*
+   * ──────────────────────────────────────────────────────────────────────
+   *  PRODUCTION SECURITY CHECKLIST
+   * ──────────────────────────────────────────────────────────────────────
+   *
+   *  1. NEVER commit real credentials to source control.
+   *     Use `dotnet user-secrets` during local development:
+   *       dotnet user-secrets set "ConnectionStrings:DefaultConnection" "..."
+   *       dotnet user-secrets set "ApiKey" "..."
+   *
+   *  2. In production (Azure App Service / AWS / Docker):
+   *     - Set ConnectionStrings__DefaultConnection and ApiKey as
+   *       environment variables or in your host's secret store
+   *       (Azure Key Vault, AWS Secrets Manager, etc.).
+   *     - Environment variables OVERRIDE values in this file at runtime,
+   *       so the file can stay with placeholder text safely.
+   *
+   *  3. The connection string is read ONLY by the backend process.
+   *     It is never included in any HTTP response.
+   *
+   *  4. ApiKey limitation: a key embedded in frontend JavaScript can be
+   *     read by anyone with DevTools. It is a defence-in-depth measure,
+   *     not a substitute for proper authentication (JWT / OAuth 2.0).
+   * ──────────────────────────────────────────────────────────────────────
+   *
+   *  HOW TO USE THIS FILE
+   *  ────────────────────
+   *  Copy this file to appsettings.json and fill in the real values.
+   *  appsettings.json is excluded from git (.gitignore) — this example
+   *  file is what gets committed instead.
+   * ──────────────────────────────────────────────────────────────────────
+   */
+
+  "ConnectionStrings": {
+    /*
+     * Replace the placeholders below with your real SQL Server details.
+     * For Azure SQL, the format is:
+     *   Server=tcp:<server>.database.windows.net,1433;
+     *   Initial Catalog=<db>;
+     *   Persist Security Info=False;
+     *   User ID=<user>;
+     *   Password=<password>;
+     *   MultipleActiveResultSets=False;
+     *   Encrypt=True;
+     *   TrustServerCertificate=False;
+     *   Connection Timeout=30;
+     */
+    "DefaultConnection": "Server=YOUR_SQL_SERVER,1433;Database=YOUR_DATABASE;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;"
+  },
+
+  /*
+   * API key validated by ApiKeyMiddleware for every /api/* request.
+   * Generate a strong random value, e.g.:
+   *   [System.Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+   * in PowerShell, or any 32+ character random string.
+   */
+  "ApiKey": "REPLACE-WITH-A-STRONG-RANDOM-API-KEY",
+
+  /*
+   * CORS: list every origin that is allowed to call this API.
+   * Do NOT add a trailing slash.
+   */
+  "AllowedOrigins": [
+    "https://your-pwa-domain.example.com",
+    "https://your-api-domain.example.com"
+  ],
+
+  /*
+   * JWT signing and validation settings.
+   *
+   * Jwt:Key  — MUST be at least 32 characters (256 bits) for HMAC-SHA256.
+   *            Generate a strong random value, e.g. in PowerShell:
+   *              -join ((65..90)+(97..122)+(48..57) | Get-Random -Count 40 | ForEach-Object { [char]$_ })
+   *            NEVER commit a real key to source control.
+   *
+   * Jwt:ExpiryHours — how long a token stays valid after login.
+   *                   8 hours covers a full clinical working shift.
+   */
+  "Jwt": {
+    "Key":         "CHANGE-THIS-TO-A-RANDOM-SECRET-AT-LEAST-32-CHARACTERS-LONG",
+    "Issuer":      "PatientSyncApi",
+    "Audience":    "PatientPwa",
+    "ExpiryHours": 8
+  },
+
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+
+  "AllowedHosts": "*"
+}

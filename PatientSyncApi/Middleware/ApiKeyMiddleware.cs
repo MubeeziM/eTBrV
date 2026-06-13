@@ -49,6 +49,24 @@ public sealed class ApiKeyMiddleware
         if (context.Request.Path.StartsWithSegments("/api")
             && !HttpMethods.IsOptions(context.Request.Method))
         {
+            // /api/auth/* endpoints are public (register, login, forgot-password,
+            // reset-password). They must not require an API key.
+            if (context.Request.Path.StartsWithSegments("/api/auth"))
+            {
+                await _next(context);
+                return;
+            }
+
+            // Requests that carry a JWT Bearer token are authenticated through
+            // the JwtBearer middleware. Skip the shared API key check for them —
+            // the JWT is a stronger credential.
+            var authHeader = context.Request.Headers.Authorization.ToString();
+            if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                await _next(context);
+                return;
+            }
+
             if (!context.Request.Headers.TryGetValue(ApiKeyHeader, out var providedKey)
                 || !string.Equals(providedKey, _validKey, StringComparison.Ordinal))
             {

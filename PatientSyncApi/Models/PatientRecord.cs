@@ -11,6 +11,14 @@ public sealed class PatientRecord
     // ── System / sync fields ──────────────────────────────────────────────
     public Guid     PtDetailsTID         { get; set; }
     public int      HasChanged           { get; set; } = 1;
+    /// <summary>0 = active, 1 = soft-deleted. Propagated to the server on sync.</summary>
+    public int      Deleted              { get; set; } = 0;
+
+    /// <summary>
+    /// The ID of the health facility selected from the tree at data-entry time.
+    /// Stored in PtDetailsT.NearestHFID on the server.
+    /// </summary>
+    public int      NearestHFID          { get; set; }
 
     // ── Registration fields ───────────────────────────────────────────────
     public int      HIVRetest            { get; set; }

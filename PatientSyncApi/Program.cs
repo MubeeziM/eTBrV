@@ -1,5 +1,9 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.IdentityModel.Tokens;
 using PatientSyncApi.Middleware;
+using PatientSyncApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,18 +11,67 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// CORS policy — only the origins listed in "AllowedOrigins" are permitted.
+// TokenService generates signed JWTs for authenticated users.
+builder.Services.AddScoped<TokenService>();
+
+// EmailService sends transactional emails via SMTP (MailKit).
+builder.Services.AddScoped<EmailService>();
+
+// ── JWT Authentication ────────────────────────────────────────────────────────
+// Tokens are issued by AuthController.Login and must be included in subsequent
+// requests as:  Authorization: Bearer <token>
 //
+// SECURITY: The signing key must be kept secret and must be at least 32 bytes.
+//           Set Jwt:Key via environment variable or dotnet user-secrets —
+//           never commit a real key to source control.
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException(
+        "Jwt:Key is not configured. Set it in appsettings.json or as an environment variable.");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer           = true,
+            ValidateAudience         = true,
+            ValidateLifetime         = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer              = builder.Configuration["Jwt:Issuer"],
+            ValidAudience            = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            // No grace period — tokens expire exactly when ExpiresAt says.
+            ClockSkew                = TimeSpan.Zero
+        };
+        // Return a JSON 401 instead of a redirect so the PWA can handle it.
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async ctx =>
+            {
+                ctx.HandleResponse();
+                ctx.Response.StatusCode  = 401;
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.WriteAsJsonAsync(new { error = "Unauthorized." });
+            },
+            OnForbidden = async ctx =>
+            {
+                ctx.Response.StatusCode  = 403;
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.WriteAsJsonAsync(new { error = "You do not have permission to perform this action." });
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// ── CORS ──────────────────────────────────────────────────────────────────────
 // SECURITY: Never use AllowAnyOrigin() in production. Doing so would allow any
 //           website on the internet to send sync requests and potentially forward
 //           patient data to a third party or flood the database with junk records.
 //
-// SECURITY: Only POST and OPTIONS (preflight) are allowed. OPTIONS is required
-//           by the browser's CORS preflight mechanism before the actual POST.
-//
-// SECURITY: Only the two headers the PWA actually sends are whitelisted.
-//           Credentials (cookies / auth headers) are explicitly disallowed because
-//           this API uses API-key authentication, not cookie-based sessions.
+// GET is added alongside POST so the lookup endpoint is reachable from the PWA.
+// Authorization header is whitelisted so the PWA can send JWT bearer tokens.
+// Credentials (cookies) remain disallowed — this API uses JWT, not cookies.
 
 var allowedOrigins = builder.Configuration
     .GetSection("AllowedOrigins")
@@ -28,9 +81,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("GitHubPagesCors", policy =>
         policy
-            .WithOrigins(allowedOrigins)            // set in appsettings.json
-            .WithMethods("POST", "OPTIONS")
-            .WithHeaders("Content-Type", "X-Api-Key")
+            .WithOrigins(allowedOrigins)
+            .WithMethods("GET", "POST", "OPTIONS")
+            .WithHeaders("Content-Type", "X-Api-Key", "Authorization")
             .DisallowCredentials());
 });
 
@@ -54,9 +107,16 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 // has a chance to validate the API key (the browser sends no key in a preflight).
 app.UseCors("GitHubPagesCors");
 
-// Validate the X-Api-Key header for all /api/* routes.
+// API key check for legacy callers (PWA sync before JWT migration).
+// Skips /api/auth/* (public endpoints) and any request already carrying a
+// valid Bearer token (JWT authentication handles those).
 // Must come AFTER UseCors so preflight requests are not blocked.
 app.UseMiddleware<ApiKeyMiddleware>();
+
+// JWT authentication + role-based authorisation.
+// Must come AFTER the API key middleware and BEFORE MapControllers.
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

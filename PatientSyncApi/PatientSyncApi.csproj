@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PatientSyncApi</RootNamespace>
     <AssemblyName>PatientSyncApi</AssemblyName>
+    <!-- Explicitly lock to AnyCPU so VS never accidentally builds an x86 DLL
+         (which would cause a FileLoadException against the win-x64 self-contained host). -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,7 +19,23 @@
       dependency-light, while still using fully parameterised queries that
       are safe from SQL injection.
     -->
+    <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+
+    <!--
+      BCrypt.Net-Next: one-way password hashing with salt.
+      BCrypt is the correct way to store passwords — it is intentionally slow
+      (configurable work factor) which makes brute-force attacks impractical.
+      NEVER use reversible encoding (Base64, AES) for password storage.
+    -->
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+
+    <!--
+      JWT Bearer authentication — validates Authorization: Bearer <token> headers.
+      Tokens are issued by AuthController.Login and carry role/scope claims so
+      PatientsController can enforce per-user data visibility without extra DB calls.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.15" />
   </ItemGroup>
 
 </Project>

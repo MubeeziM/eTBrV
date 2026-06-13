@@ -6,10 +6,17 @@
   <meta name="theme-color" content="#2563eb" />
   <meta name="description" content="Offline patient records app powered by SQLite (sql.js) and IndexedDB." />
 
-  <title>Patient Records</title>
+  <title>eTBr</title>
+
+  <!-- Favicon & PWA icons -->
+  <link rel="icon" type="image/png" sizes="96x96" href="icons/icon-96.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png" />
 
   <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json" />
+
+  <!-- Bootstrap 5.3.3 — loaded before style.css so custom styles can override -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous" />
 
   <!-- App stylesheet -->
   <link rel="stylesheet" href="style.css" />
@@ -25,30 +32,605 @@
   <!-- ========== APP HEADER ========== -->
   <header class="app-header">
     <div class="header-inner">
-      <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
-        <rect x="9" y="3" width="6" height="4" rx="1"/>
-        <path d="M9 12h6M9 16h4"/>
-      </svg>
-      <h1>Patient Records</h1>
+      <img src="icons/icon-48.png" class="header-icon" alt="eTBr logo" />
+      <!-- <h1>eTBr</h1> refers to the name of the app, but we can just use the logo without text in the header to save space and avoid redundancy with the install banner and page title. -->
     </div>
     <div class="header-actions">
       <!-- Install App button: hidden until the browser fires beforeinstallprompt -->
       <button id="install-btn" class="btn-install" aria-label="Install app" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" width="16" height="16" aria-hidden="true">
           <path d="M12 2v13M8 11l4 4 4-4"/>
           <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
         </svg>
-        Install App
+        <span id="install-btn-label">Install App</span>
       </button>
       <!-- Shows online/offline status -->
-      <span id="connection-status" class="status-badge online">Online</span>
+      <span id="connection-status" class="status-badge bg-success text-white">Online</span>
+      <!-- Logged-in user info + sign-out (shown after successful login) -->
+      <div id="user-info-bar" class="user-info-bar" hidden>
+        <button id="logout-btn" class="btn-logout" type="button"
+                data-bs-toggle="modal" data-bs-target="#logout-modal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true" style="flex-shrink:0">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Log Out
+        </button>
+      </div>
       <!-- App version -->
       <span id="app-version" class="app-version"></span>
     </div>
   </header>
 
-  <main class="container">
+  <!-- Install instructions banner: shown for browsers without native install prompt (Firefox, Safari) -->
+  <div id="install-instructions-alert" class="alert alert-dismissible fade" role="alert" hidden
+       style="margin:0;border-radius:0;border:none;border-bottom:3px solid #0ea5e9;background:#f0f9ff;padding:1rem 1.5rem">
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    <h6 style="font-weight:700;margin-bottom:6px;color:#0c4a6e;display:flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M12 2v13M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      How to Install eTBr
+    </h6>
+    <p id="install-instructions-text" class="mb-0" style="color:#075985;font-size:.9rem;line-height:1.6"></p>
+  </div>
+
+  <!-- ========== AUTH SCREEN ========== -->
+  <!-- Shown when the user is not logged in; hidden after a successful login. -->
+  <div id="auth-screen" class="auth-screen">
+
+    <!-- ── Login panel ───────────────────────────────────────────────── -->
+    <div id="auth-login-panel" class="auth-card">
+      <div class="auth-card-header">
+        <img src="icons/icon-96.png" class="auth-logo-icon" alt="eTBr logo" />
+        <h2>Sign In</h2>
+        <!-- <p class="auth-subtitle">Enter Your Username and Password</p> -->
+      </div>
+      <div id="login-error" class="auth-msg auth-msg--error" hidden></div>
+      <form id="login-form" novalidate>
+        <div class="field-group">
+          <label for="login-username">Username or Email</label>
+          <input type="text" id="login-username" autocomplete="username email" placeholder="Username or email address" />
+        </div>
+        <div class="field-group">
+          <label for="login-password">Password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter your password" />
+            <button type="button" class="pwd-toggle" aria-label="Show/hide password" data-target="login-password">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="login-btn" class="btn btn-primary btn-full">Sign In</button>
+      </form>
+      <div class="auth-links">
+        <a href="#" id="show-forgot-link">Forgot password?</a>
+        <a href="#" id="show-register-link">Create an account</a>
+      </div>
+    </div>
+
+    <!-- ── Register panel ────────────────────────────────────────────── -->
+    <div id="auth-register-panel" class="auth-card" hidden>
+      <div class="auth-card-header">
+        <h2>Create Account</h2>
+        <p class="auth-subtitle">New user registration</p>
+      </div>
+      <div id="register-error"   class="auth-msg auth-msg--error"   hidden></div>
+      <div id="register-success" class="auth-msg auth-msg--success" hidden></div>
+      <form id="register-form" novalidate>
+        <div class="field-row">
+          <div class="field-group">
+            <label for="reg-fullname">Full Name <span class="required">*</span></label>
+            <input type="text" id="reg-fullname" maxlength="255" placeholder="e.g. James Akol" />
+          </div>
+          <div class="field-group">
+            <label for="reg-username">Username <span class="required">*</span></label>
+            <input type="text" id="reg-username" autocomplete="username" maxlength="255" placeholder="Choose a username" />
+            <small id="reg-username-hint" class="field-hint" hidden></small>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label for="reg-email">Email Address <span class="required">*</span></label>
+            <input type="email" id="reg-email" autocomplete="email" maxlength="255" placeholder="you@example.com" />
+            <small id="reg-email-hint" class="field-hint" hidden></small>
+          </div>
+          <div class="field-group">
+            <label for="reg-phone">Phone Number</label>
+            <input type="tel" id="reg-phone" maxlength="10" placeholder="Optional" />
+            <small id="reg-phone-hint" class="field-hint" hidden></small>
+          </div>
+        </div>
+        <!-- Cascading location dropdowns -->
+        <fieldset class="location-fieldset">
+          <legend>Where do you work? <span class="field-hint-inline">(leave blank if national level)</span></legend>
+          <div class="field-row">
+            <div class="field-group">
+              <label for="StateID">State</label>
+              <select id="StateID"><option value="0">Loading…</option></select>
+            </div>
+            <div class="field-group">
+              <label for="CountyID">County</label>
+              <select id="CountyID" disabled><option value="0">-- Select a state first --</option></select>
+            </div>
+          </div>
+          <div class="field-group">
+            <label for="HealthFacilityID">Health Facility</label>
+            <select id="HealthFacilityID" disabled><option value="0">-- Select a county first --</option></select>
+          </div>
+          <div class="field-group">
+            <label for="WorkWithID">I work with <span class="required">*</span></label>
+            <select id="WorkWithID">
+              <option value="0">-- Select one --</option>
+              <option value="1">NTP/MoH Juba/UNDP</option>
+              <option value="2">NGO (Sub Recipient)</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="SubRecID">Sub Recipient</label>
+            <select id="SubRecID" disabled><option value="0">-- Select organisation above first --</option></select>
+          </div>
+          <div class="field-group">
+            <label for="NGOLocationID">NGO Field Location</label>
+            <select id="NGOLocationID" disabled><option value="0">-- Select sub recipient first --</option></select>
+          </div>
+        </fieldset>
+        <div class="field-row">
+          <div class="field-group">
+            <label for="reg-password">Password <span class="required">*</span></label>
+            <div class="pwd-wrap">
+              <input type="password" id="reg-password" autocomplete="new-password" placeholder="Min. 8 characters" />
+              <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="reg-password">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <div class="pwd-strength" id="pwd-strength" aria-live="polite" hidden>
+              <div class="pwd-strength-segments">
+                <span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span>
+              </div>
+              <span class="pwd-strength-label" id="pwd-strength-label"></span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label for="reg-confirm">Confirm Password <span class="required">*</span></label>
+            <div class="pwd-wrap">
+              <input type="password" id="reg-confirm" autocomplete="new-password" placeholder="Repeat password" />
+              <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="reg-confirm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <div class="pwd-match" id="pwd-match" aria-live="polite" hidden></div>
+          </div>
+        </div>
+        <button type="submit" id="register-btn" class="btn btn-primary btn-full">Create Account</button>
+      </form>
+      <div class="auth-links">
+        <a href="#" id="show-login-link">Already have an account? Sign in</a>
+      </div>
+    </div>
+
+    <!-- ── Forgot password panel ──────────────────────────────────────── -->
+    <div id="auth-forgot-panel" class="auth-card" hidden>
+      <div class="auth-card-header">
+        <h2>Forgot Password</h2>
+        <p class="auth-subtitle">Enter your email to receive a reset code</p>
+      </div>
+      <div id="forgot-msg" class="auth-msg" hidden></div>
+      <form id="forgot-form" novalidate>
+        <div class="field-group">
+          <label for="forgot-email">Email Address</label>
+          <input type="email" id="forgot-email" placeholder="you@example.com" />
+        </div>
+        <button type="submit" id="forgot-btn" class="btn btn-primary btn-full">Send Reset Code</button>
+      </form>
+      <div class="auth-links">
+        <a href="#" id="show-login-from-forgot">← Back to Sign In</a>
+      </div>
+    </div>
+
+    <!-- ── Reset password panel ───────────────────────────────────────── -->
+    <div id="auth-reset-panel" class="auth-card" hidden>
+      <div class="auth-card-header">
+        <h2>Reset Password</h2>
+        <p class="auth-subtitle">Enter the 6-digit code sent to your email</p>
+      </div>
+      <div id="reset-msg" class="auth-msg" hidden></div>
+      <form id="reset-form" novalidate>
+        <div class="field-group">
+          <label for="reset-username">Username</label>
+          <input type="text" id="reset-username" autocomplete="username" placeholder="Your username" />
+        </div>
+        <div class="field-group">
+          <label>Reset Code (6 digits)</label>
+          <div class="otp-input-group" id="reset-code-group">
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          </div>
+        </div>
+        <div class="field-group">
+          <label for="reset-password">New Password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="reset-password" placeholder="Min. 8 characters" />
+            <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="reset-password">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="pwd-strength" id="reset-pwd-strength" aria-live="polite" hidden>
+            <div class="pwd-strength-segments">
+              <span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span>
+            </div>
+            <span class="pwd-strength-label" id="reset-pwd-strength-label"></span>
+          </div>
+        </div>
+        <div class="field-group">
+          <label for="reset-confirm">Confirm New Password</label>
+          <div class="pwd-wrap">
+            <input type="password" id="reset-confirm" placeholder="Repeat Password" />
+            <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="reset-confirm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="pwd-match" id="reset-pwd-match" aria-live="polite" hidden></div>
+        </div>
+        <button type="submit" id="reset-btn" class="btn btn-primary btn-full">Reset Password</button>
+      </form>
+      <div class="auth-links">
+        <a href="#" id="show-login-from-reset">← Back to Sign In</a>
+      </div>
+    </div>
+
+  </div><!-- /#auth-screen -->
+
+  <main id="app-screen" hidden>
+
+    <!-- ========== DASHBOARD SCREEN ========== -->
+    <div id="dashboard-screen" class="container db-container">
+
+      <!-- Welcome banner -->
+      <div class="db-welcome">
+        <div class="db-welcome-info">
+          <h2 id="db-welcome-name" class="db-welcome-title">Welcome!</h2>
+          <p id="db-welcome-facility" class="db-welcome-sub">Loading…</p>
+        </div>
+        <div class="db-stats">
+          <div class="db-stat">
+            <span id="db-stat-patients" class="db-stat-val">—</span>
+            <span class="db-stat-lbl">ART Patients</span>
+          </div>
+          <div class="db-stat">
+            <span id="db-stat-pending" class="db-stat-val">—</span>
+            <span class="db-stat-lbl">Pending Sync</span>
+          </div>
+          <div class="db-stat">
+            <span id="db-stat-lastsync" class="db-stat-val">—</span>
+            <span class="db-stat-lbl">Last Synced</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section 1: Data Entry ───────────────────────────────────── -->
+      <div class="db-section">
+        <h3 class="db-section-hd">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Data Entry
+        </h3>
+        <div class="db-grid">
+
+          <!-- Index Client Register -->
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Index Client Register</h4>
+              <p>Register HIV index clients and trace their household contacts for testing and linkage to care.</p>
+            </div>
+            <div class="db-card-foot">
+              <span class="db-badge-soon">Coming Soon</span>
+            </div>
+          </div>
+
+          <!-- ART Register (active) -->
+          <div class="db-card db-card--active" id="dash-goto-art" role="button" tabindex="0" aria-label="Open ART Register">
+            <div class="db-card-ico db-card-ico--blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>ART Register</h4>
+              <p>Enter and manage ART patient records, follow-up visits, regimen history and INH prophylaxis.</p>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" tabindex="-1">Open Register
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Dispensing Register -->
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/><line x1="7" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="17" y2="12"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Dispensing Register</h4>
+              <p>Record ARV and CPT drug dispensing quantities and dates for patients on treatment.</p>
+            </div>
+            <div class="db-card-foot">
+              <span class="db-badge-soon">Coming Soon</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Section 2: Patient Care & Monitoring ──────────────────────── -->
+      <div class="db-section">
+        <h3 class="db-section-hd">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Patient Care &amp; Monitoring
+        </h3>
+        <div class="db-grid">
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Monitor Patients on ART</h4>
+              <p>Track viral load suppression rates, treatment outcomes, and patients lost to follow-up.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8.01" y2="14"/><line x1="12" y1="14" x2="12.01" y2="14"/><line x1="16" y1="14" x2="16.01" y2="14"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Appointments &amp; Due Visits</h4>
+              <p>View patients due for or overdue for their next scheduled follow-up appointment.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Defaulter Tracing</h4>
+              <p>Identify and follow up patients who have missed appointments or interrupted treatment.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Section 3: Reports &amp; Analytics ─────────────────────────── -->
+      <div class="db-section">
+        <h3 class="db-section-hd">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Reports &amp; Analytics
+        </h3>
+        <div class="db-grid">
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Generate Reports</h4>
+              <p>Produce PEPFAR, national and facility-level ART programme reports in standard formats.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Charts &amp; Graphs</h4>
+              <p>Visual analytics: viral load suppression trends, gender breakdown, regimen distribution.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Cohort Analysis</h4>
+              <p>Analyse treatment outcomes across patient cohorts by quarter, regimen line or demographics.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Section 4: Data Management ────────────────────────────────── -->
+      <div class="db-section">
+        <h3 class="db-section-hd">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Data Management
+        </h3>
+        <div class="db-grid">
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Search Patients</h4>
+              <p>Cross-register patient search by name, ID number, phone or facility across all data sources.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+          <!-- Sync Data (active) -->
+          <div class="db-card db-card--active" id="dash-goto-sync" role="button" tabindex="0" aria-label="Sync data to server">
+            <div class="db-card-ico db-card-ico--green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Sync Data</h4>
+              <p>Send all pending local records to the central server database. Requires an internet connection.</p>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn db-open-btn--green" tabindex="-1">Sync Now
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Export Database (active) -->
+          <div class="db-card db-card--active" id="dash-goto-export" role="button" tabindex="0" aria-label="Export database">
+            <div class="db-card-ico db-card-ico--indigo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Export Database</h4>
+              <p>Download a full local backup of the SQLite database file for safekeeping or migration.</p>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn db-open-btn--indigo" tabindex="-1">Export .sqlite
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Section 5: System ──────────────────────────────────────────── -->
+      <div class="db-section">
+        <h3 class="db-section-hd">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          System
+        </h3>
+        <div class="db-grid db-grid--2">
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>User Settings &amp; Preferences</h4>
+              <p>Manage your profile, change your password, configure notifications and application preferences.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+          <div class="db-card db-card--soon">
+            <div class="db-card-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="db-card-body">
+              <h4>Help &amp; Support</h4>
+              <p>User guide, keyboard shortcuts, data entry guidelines and contact information for technical support.</p>
+            </div>
+            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /#dashboard-screen -->
+
+    <!-- ========== ART REGISTER SCREEN ========== -->
+    <div id="art-register-screen" hidden>
+      <div class="register-layout">
+
+        <!-- ===== LEFT SIDEBAR ===== -->
+        <aside class="register-sidebar" id="register-sidebar" aria-label="Facility selector">
+
+          <!-- Sidebar header -->
+          <div class="sidebar-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Data Entry</span>
+            <button id="sidebar-close-btn" class="sidebar-close-btn" type="button" aria-label="Close sidebar">&times;</button>
+          </div>
+
+
+          <div class="tree-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>Health Facility</span>
+          </div>
+          <div class="tree-search-wrap">
+            <input type="search" id="tree-search" class="tree-search-input" placeholder="Search facilities&hellip;" autocomplete="off" aria-label="Search health facilities" />
+          </div>
+          <div class="facility-tree" id="facility-tree">
+            <p class="tree-loading">Loading facilities&hellip;</p>
+          </div>
+
+        </aside><!-- /.register-sidebar -->
+
+        <!-- ===== RIGHT MAIN AREA ===== -->
+        <div class="register-main" id="register-main">
+
+          <!-- Mobile: sidebar toggle bar -->
+          <div class="register-topbar">
+            <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" aria-expanded="false" aria-controls="register-sidebar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              <span id="selected-facility-topbar-label">Select a Facility</span>
+            </button>
+          </div>
+
+          <!-- Breadcrumb / back navigation -->
+          <nav class="register-nav" aria-label="Register navigation">
+            <button id="back-to-dashboard-btn" class="btn-back-dash" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Dashboard
+            </button>
+            <span class="register-nav-sep">/</span>
+            <span class="register-nav-title">ART Register</span>
+          </nav>
+
+          <!-- "Select a facility" placeholder (shown when no facility is selected) -->
+          <div id="facility-required-banner" class="facility-required-banner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" aria-hidden="true" class="frb-icon"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <h3>Select a Health Facility</h3>
+            <p>Use the panel on the left to choose the health facility for which you are entering data.</p>
+            <button id="frb-open-sidebar-btn" class="btn btn-primary btn-sm frb-open-btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Choose Facility
+            </button>
+          </div>
+
+          <!-- Selected-facility banner (shown once a facility is selected) -->
+          <div id="selected-facility-banner" class="selected-facility-banner" hidden>
+            <div class="sfb-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" class="sfb-pin" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              <strong id="sfb-name">—</strong>
+              <span class="sfb-breadcrumb" id="sfb-breadcrumb"></span>
+            </div>
+            <button id="sfb-change-btn" class="sfb-change-btn" type="button">Change Facility</button>
+          </div>
+
+          <!-- Register selector — shown once a facility is selected -->
+          <div id="register-selector" class="register-selector" hidden>
+            <div class="rs-row">
+              <label class="rs-label" for="register-select">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                HIV Register
+              </label>
+              <select id="register-select" class="rs-select" aria-label="Select HIV Register">
+                <option value="">— Select HIV Register —</option>
+                <option value="art">ART Register</option>
+                <option value="index" disabled>Index Client Register (coming soon)</option>
+                <option value="dispensing" disabled>Dispensing Register (coming soon)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Register content — hidden until both facility AND register are selected -->
+          <div id="register-content" hidden>
 
     <!-- ========== PATIENT FORM ========== -->
     <section class="card form-card">
@@ -61,6 +643,23 @@
           <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>
         <span>Editing: <strong id="edit-patient-name"></strong> — make your corrections below, then click <em>Update Patient</em>.</span>
+      </div>
+
+      <!-- No-facility banner: visible when user has no linked facility (dataSourceID = 0) -->
+      <div id="no-access-banner" class="alert alert-warning alert-dismissible fade show" role="alert" hidden
+           style="border-left:5px solid #f59e0b;background-color:#fffbeb;border-color:#fde68a;border-radius:10px;margin-bottom:1.25rem">
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <h6 style="margin-bottom:6px;font-weight:700;color:#92400e">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
+               style="vertical-align:middle;margin-right:5px" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          View Only — No Data Entry Permission
+        </h6>
+        <div style="font-size:.88rem;font-weight:400;line-height:1.6;color:#78350f">
+          Your account is not linked to any health facility. Data entry and syncing are disabled.
+          Please contact your administrator to assign a facility to your account.
+        </div>
       </div>
 
       <form id="patient-form" novalidate>
@@ -473,6 +1072,18 @@
             </svg>
             Sync Data
           </button>
+          <button id="sync-log-btn" class="btn btn-secondary btn-sm" type="button"
+                  title="View sync diagnostic log" style="padding:.35rem .7rem;font-size:.78rem"
+                  data-bs-toggle="modal" data-bs-target="#sync-log-modal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:4px">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            Sync Log
+          </button>
         </div>
       </div>
 
@@ -497,7 +1108,7 @@
               <th>Age</th>
               <th>Sex</th>
               <th>ART Start</th>
-              <th>Follow-up Visits</th>
+              <th>Follow-Up Visits</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -521,7 +1132,7 @@
           <thead>
             <tr>
               <th>Month</th><th>Visit Date</th><th>Status</th><th>Regimen</th>
-              <th>TB</th><th>Weight</th><th>CD4</th><th>Viral Load</th><th>Action</th>
+              <th>TB</th><th>CD4</th><th>Viral Load</th><th>Action</th>
             </tr>
           </thead>
           <tbody id="visits-tbody"></tbody>
@@ -530,7 +1141,7 @@
       </div>
 
       <details class="form-section">
-        <summary class="form-section-title">+ Add / Record a Visit</summary>
+        <summary class="form-section-title" id="visit-form-title">+ Add / Record a Visit</summary>
         <div class="form-section-body">
           <div class="field-row">
             <div class="field-group">
@@ -609,7 +1220,149 @@
       </details>
     </section>
 
+          </div><!-- /#register-content -->
+        </div><!-- /.register-main -->
+      </div><!-- /.register-layout -->
+    </div><!-- /#art-register-screen -->
+
   </main>
+
+  <!-- ========== LOGOUT MODAL ========== -->
+  <div class="modal fade" id="logout-modal" tabindex="-1" aria-labelledby="logout-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:360px">
+      <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+
+        <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
+          <div class="d-flex align-items-center gap-3">
+            <div style="width:44px;height:44px;border-radius:12px;background:#fee2e2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.2" width="22" height="22" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </div>
+            <h5 class="modal-title mb-0" id="logout-modal-label" style="font-weight:700;font-size:1.1rem">Sign Out?</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="margin-left:auto"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1rem 1.5rem 0.5rem">
+          <p class="mb-0" style="color:#6b7280;font-size:.93rem;line-height:1.6">
+            You are about to sign out of <strong>ART Patient Register</strong>.
+            <br><br>
+            <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.45rem .75rem;font-size:.85rem;color:#166534">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              Your local patient data stays on this device.
+            </span>
+          </p>
+        </div>
+
+        <div class="modal-footer border-0" style="padding:1.25rem 1.5rem 1.5rem;gap:.75rem">
+          <button type="button" class="btn btn-light fw-600" data-bs-dismiss="modal"
+                  style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">Cancel</button>
+          <button type="button" id="logout-confirm-btn" class="btn btn-danger fw-600"
+                  data-bs-dismiss="modal"
+                  style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">
+            Sign Out
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DELETE CONFIRM MODAL ========== -->
+  <div class="modal fade" id="delete-confirm-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:380px">
+      <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+
+        <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
+          <div class="d-flex align-items-center gap-3">
+            <div style="width:44px;height:44px;border-radius:12px;background:#fee2e2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.2" width="22" height="22" aria-hidden="true">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+                <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+              </svg>
+            </div>
+            <h5 class="modal-title mb-0" style="font-weight:700;font-size:1.1rem">Confirm Delete</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="margin-left:auto"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1rem 1.5rem 0.5rem">
+          <p id="delete-confirm-message" class="mb-0" style="color:#6b7280;font-size:.93rem;line-height:1.6"></p>
+        </div>
+
+        <div class="modal-footer border-0" style="padding:1.25rem 1.5rem 1.5rem;gap:.75rem">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal"
+                  style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">Cancel</button>
+          <button type="button" id="delete-confirm-btn" class="btn btn-danger" data-bs-dismiss="modal"
+                  style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:4px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+            Delete
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <!-- Hidden trigger button for the delete modal -->
+  <button id="delete-confirm-trigger" data-bs-toggle="modal" data-bs-target="#delete-confirm-modal" hidden aria-hidden="true"></button>
+
+  <!-- ========== SYNC LOG MODAL ========== -->
+  <div class="modal fade" id="sync-log-modal" tabindex="-1" aria-labelledby="sync-log-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+
+        <div class="modal-header border-0 pb-0" style="padding:1.25rem 1.5rem 0">
+          <div class="d-flex align-items-center gap-3">
+            <div style="width:40px;height:40px;border-radius:10px;background:#f0f9ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2" width="20" height="20" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+              </svg>
+            </div>
+            <h5 class="modal-title mb-0" id="sync-log-modal-label" style="font-weight:700;font-size:1.05rem">Sync Diagnostic Log</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="margin-left:auto"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1rem 1.5rem 0.5rem">
+          <p style="color:#6b7280;font-size:.82rem;margin-bottom:.6rem">
+            Most recent entries first. Share this log with support if sync keeps failing.
+          </p>
+          <pre id="sync-log-content"
+               style="background:#0f172a;color:#e2e8f0;font-size:.72rem;line-height:1.55;border-radius:10px;
+                      padding:1rem;max-height:55vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0">
+(No sync attempts recorded yet.)
+          </pre>
+        </div>
+
+        <div class="modal-footer border-0" style="padding:1rem 1.5rem 1.25rem;gap:.75rem">
+          <button type="button" id="sync-log-copy-btn" class="btn btn-secondary"
+                  style="border-radius:10px;padding:.5rem 1.1rem;font-size:.88rem;font-weight:600">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:5px">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+            Copy to Clipboard
+          </button>
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal"
+                  style="border-radius:10px;padding:.5rem 1.1rem;font-size:.88rem;font-weight:600;margin-left:auto">
+            Close
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5.3.3 JS bundle (includes Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 
   <!-- ========== SCRIPTS ========== -->
   <!-- db.js must load before app.js because app.js calls DB functions -->

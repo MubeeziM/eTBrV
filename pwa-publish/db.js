@@ -109,14 +109,26 @@ const CREATE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS FollowUpStatusT (FollowUpStatusID INTEGER PRIMARY KEY, FollowUpStatus TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS TBStatusT (TBStatusID INTEGER PRIMARY KEY, TBStatus TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS StopReasonT (StopReasonID INTEGER PRIMARY KEY, StopReason TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS CountyT (CountyID INTEGER PRIMARY KEY, County TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS HealthFacilityT (HFacilityID INTEGER PRIMARY KEY, HFacility TEXT NOT NULL, CountyID INTEGER NOT NULL DEFAULT 0);
-  CREATE TABLE IF NOT EXISTS DataSourceT (DataSourceID INTEGER PRIMARY KEY, DataSource TEXT NOT NULL, HFacilityID INTEGER NOT NULL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS StateT (StateID INTEGER PRIMARY KEY, State TEXT NOT NULL DEFAULT '');
+  CREATE TABLE IF NOT EXISTS CountyT (CountyID INTEGER PRIMARY KEY, County TEXT NOT NULL DEFAULT '');
+  CREATE TABLE IF NOT EXISTS HealthFacilityT (HealthFacilityID INTEGER PRIMARY KEY, HealthFacility TEXT NOT NULL DEFAULT '', CountyID INTEGER NOT NULL DEFAULT 0, StateID INTEGER NOT NULL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS DataSourceT (DataSourceID INTEGER PRIMARY KEY, DataSource TEXT NOT NULL, HealthFacilityID INTEGER NOT NULL DEFAULT 0);
   CREATE TABLE IF NOT EXISTS UsersT (UserTID TEXT PRIMARY KEY, UserName TEXT NOT NULL);
+  CREATE VIEW IF NOT EXISTS vwGeogAreaQ AS
+    SELECT hf.HealthFacilityID,
+           hf.HealthFacility,
+           hf.CountyID,
+           COALESCE(c.County, '')        AS County,
+           hf.StateID,
+           COALESCE(s.State,  '')        AS State
+    FROM   HealthFacilityT hf
+    LEFT JOIN CountyT c ON hf.CountyID = c.CountyID
+    LEFT JOIN StateT  s ON hf.StateID  = s.StateID
+    WHERE  hf.HealthFacilityID > 0;
 
   CREATE TABLE IF NOT EXISTS PtDetailsT (
     PtDetailsTID         TEXT PRIMARY KEY,
-    LocalSeqNo           INTEGER,
+    PatientID            INTEGER,
     NearestHFID          INTEGER NOT NULL DEFAULT 0,
     DataSourceID         INTEGER NOT NULL DEFAULT 0,
     CountyID             INTEGER NOT NULL DEFAULT 0,
@@ -124,6 +136,7 @@ const CREATE_SCHEMA_SQL = `
     HasChanged           INTEGER NOT NULL DEFAULT 1,
     LastModOn            TEXT    NOT NULL DEFAULT '',
     CreatedOn            TEXT    NOT NULL DEFAULT '',
+    Deleted              INTEGER NOT NULL DEFAULT 0,
     HIVRetest            INTEGER NOT NULL DEFAULT 0,
     ARTNo                TEXT    NOT NULL DEFAULT '',
     ARTStartDate         TEXT,
@@ -224,7 +237,8 @@ const CREATE_SCHEMA_SQL = `
     EnteredByID      TEXT NOT NULL DEFAULT '',
     HasChanged       INTEGER NOT NULL DEFAULT 1,
     LastModOn        TEXT NOT NULL DEFAULT '',
-    CreatedOn        TEXT NOT NULL DEFAULT ''
+    CreatedOn        TEXT NOT NULL DEFAULT '',
+    Deleted          INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS IDX_PtFollowUpT_PtID ON PtFollowUpT (PtDetailsTID)
 `;
@@ -284,7 +298,7 @@ const SEED_SQL = `
     (6,'Drugs out of stock'),(7,'Patient lack finances'),
     (8,'Other patient decision'),(9,'Planned treatment interruption'),(10,'Other');
   INSERT OR IGNORE INTO CountyT VALUES (0,'Not configured');
-  INSERT OR IGNORE INTO HealthFacilityT VALUES (0,'Not configured',0);
+  INSERT OR IGNORE INTO HealthFacilityT VALUES (0,'Not configured',0,0);
   INSERT OR IGNORE INTO DataSourceT VALUES (0,'Not configured',0)
 `;
 
@@ -318,6 +332,23 @@ async function initDB() {
 
   _db.exec(CREATE_SCHEMA_SQL);
   _db.exec(SEED_SQL);
+
+  // ── Schema migrations for existing databases ───────────────────────
+  // Add StateID to HealthFacilityT if it was created before this column existed.
+  try { _db.run('ALTER TABLE HealthFacilityT ADD COLUMN StateID INTEGER NOT NULL DEFAULT 0'); }
+  catch (_) { /* column already exists — ignore */ }
+  // Rename HFacilityID/HFacility → HealthFacilityID/HealthFacility (and matching FK in DataSourceT).
+  try { _db.run('ALTER TABLE HealthFacilityT RENAME COLUMN HFacilityID TO HealthFacilityID'); } catch (_) {}
+  try { _db.run('ALTER TABLE HealthFacilityT RENAME COLUMN HFacility   TO HealthFacility');   } catch (_) {}
+  try { _db.run('ALTER TABLE DataSourceT    RENAME COLUMN HFacilityID TO HealthFacilityID'); } catch (_) {}
+  // Add soft-delete column to PtDetailsT and PtFollowUpT for existing databases.
+  try { _db.run('ALTER TABLE PtDetailsT  ADD COLUMN Deleted INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+  try { _db.run('ALTER TABLE PtFollowUpT ADD COLUMN Deleted INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+  // Always drop and recreate vwGeogAreaQ so view definition changes take effect
+  // on existing databases (CREATE VIEW IF NOT EXISTS won't update stale definitions).
+  _db.run('DROP VIEW IF EXISTS vwGeogAreaQ');
+  _db.exec(CREATE_SCHEMA_SQL.match(/CREATE VIEW IF NOT EXISTS vwGeogAreaQ[\s\S]+?;/)[0]);
+
   await _persistDB();
   console.log('[DB] Schema and seed data ready.');
 }
@@ -375,19 +406,35 @@ async function insertPtDetails(data) {
 
 function getAllPtDetails(searchTerm = '') {
   let sql = `
-    SELECT p.PtDetailsTID, p.LocalSeqNo, p.ARTNo, p.FullName, p.Age,
+    SELECT p.PtDetailsTID, p.PatientID, p.ARTNo, p.FullName, p.Age,
            s.Sex, p.Phone1, p.ARTStartDate, p.HasChanged, p.CreatedOn
     FROM PtDetailsT p
     LEFT JOIN SexT s ON p.SexID = s.SexID
+    WHERE p.Deleted = 0
   `;
   const params = [];
   if (searchTerm.trim()) {
-    sql += ` WHERE p.FullName LIKE ? OR p.ARTNo LIKE ? OR COALESCE(p.Phone1,'') LIKE ? OR COALESCE(p.Phone2,'') LIKE ?`;
+    sql += ` AND (p.FullName LIKE ? OR p.ARTNo LIKE ? OR COALESCE(p.Phone1,'') LIKE ? OR COALESCE(p.Phone2,'') LIKE ?)`;
     const like = `%${searchTerm.trim()}%`;
     params.push(like, like, like, like);
   }
   sql += ' ORDER BY p.CreatedOn DESC';
   const results = _db.exec(sql, params);
+  if (!results.length) return [];
+  const { columns, values } = results[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+/** Returns soft-deleted patients for the Deleted Records management view. */
+function getAllDeletedPtDetails() {
+  const results = _db.exec(`
+    SELECT p.PtDetailsTID, p.PatientID, p.ARTNo, p.FullName, p.Age,
+           s.Sex, p.ARTStartDate, p.LastModOn
+    FROM PtDetailsT p
+    LEFT JOIN SexT s ON p.SexID = s.SexID
+    WHERE p.Deleted = 1
+    ORDER BY p.LastModOn DESC
+  `);
   if (!results.length) return [];
   const { columns, values } = results[0];
   return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
@@ -406,7 +453,7 @@ function getPtDetails(ptDetailsTID) {
  * (use getAllPtDetails instead, which joins the sex label and is leaner).
  */
 function getAllPtDetailsForSync() {
-  const r = _db.exec('SELECT * FROM PtDetailsT ORDER BY CreatedOn');
+  const r = _db.exec('SELECT * FROM PtDetailsT WHERE HasChanged = 1 ORDER BY CreatedOn');
   if (!r.length) return [];
   const { columns, values } = r[0];
   return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
@@ -455,17 +502,60 @@ async function deletePtSubRecords(ptDetailsTID) {
 }
 
 async function deletePtDetails(ptDetailsTID) {
-  for (const tbl of ['INHProphylaxisT','PMTCTPregnancyT','RegimenHistoryT','PtFollowUpT']) {
-    _db.run(`DELETE FROM ${tbl} WHERE PtDetailsTID = ?`, [ptDetailsTID]);
-  }
-  _db.run('DELETE FROM PtDetailsT WHERE PtDetailsTID = ?', [ptDetailsTID]);
+  // Soft delete: mark as deleted and flag for sync so the server is updated.
+  const now = _now();
+  _db.run(
+    'UPDATE PtDetailsT SET Deleted = 1, HasChanged = 1, LastModOn = ? WHERE PtDetailsTID = ?',
+    [now, ptDetailsTID]
+  );
   await _persistDB();
-  console.log(`[DB] deletePtDetails: ${ptDetailsTID}`);
+  console.log(`[DB] deletePtDetails (soft): ${ptDetailsTID}`);
+}
+
+/** Restore a soft-deleted patient record. */
+async function undeletePtDetails(ptDetailsTID) {
+  const now = _now();
+  _db.run(
+    'UPDATE PtDetailsT SET Deleted = 0, HasChanged = 1, LastModOn = ? WHERE PtDetailsTID = ?',
+    [now, ptDetailsTID]
+  );
+  await _persistDB();
+  console.log(`[DB] undeletePtDetails: ${ptDetailsTID}`);
 }
 
 async function deleteVisit(ptFollowUpTID) {
   _db.run('DELETE FROM PtFollowUpT WHERE PtFollowUpTID = ?', [ptFollowUpTID]);
   await _persistDB();
+}
+
+async function updateFollowUp(ptFollowUpTID, data, artStartDate) {
+  const now = _now();
+  const visitMonth = calcVisitMonth(artStartDate, data.VisitDate);
+  const bmi = calcBMI(data.WeightKg, data.HeightCm);
+  _db.run(`
+    UPDATE PtFollowUpT SET
+      HasChanged = 1, LastModOn = ?,
+      VisitDate = ?, VisitMonth = ?,
+      FollowUpStatusID = ?, RegimenID = ?, TBStatusID = ?,
+      StopReasonID = ?, StopOtherText = ?, WeeksInterrupted = ?,
+      WeightKg = ?, HeightCm = ?, BMI = ?, CPTDrugID = ?,
+      CD4Value = ?, CD4IsPercent = ?, ViralLoad = ?, Notes = ?
+    WHERE PtFollowUpTID = ?`,
+    [
+      now,
+      data.VisitDate||null, visitMonth,
+      data.FollowUpStatusID||0, data.RegimenID||0, data.TBStatusID||0,
+      data.StopReasonID||0, data.StopOtherText||null, data.WeeksInterrupted||0,
+      data.WeightKg||null, data.HeightCm||null, bmi, data.CPTDrugID||0,
+      data.CD4Value||null, data.CD4IsPercent||0, data.ViralLoad||null, data.Notes||null,
+      ptFollowUpTID
+    ]
+  );
+  // Bump the parent so the next sync includes this patient.
+  _db.run('UPDATE PtDetailsT SET HasChanged = 1, LastModOn = ? WHERE PtDetailsTID = ?',
+    [now, data.PtDetailsTID]);
+  await _persistDB();
+  console.log(`[DB] updateFollowUp: ${ptFollowUpTID}`);
 }
 
 // ─── INHProphylaxisT ─────────────────────────────────────────────────────
@@ -583,6 +673,11 @@ async function insertFollowUp(data, artStartDate) {
       data.EnteredByID||'', now, now
     ]
   );
+  // A new follow-up must also flag the parent so the next sync includes this patient.
+  _db.run(
+    'UPDATE PtDetailsT SET HasChanged = 1, LastModOn = ? WHERE PtDetailsTID = ?',
+    [now, data.PtDetailsTID]
+  );
   await _persistDB();
   return tid;
 }
@@ -618,6 +713,62 @@ function getLookupAll(tableName) {
   return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
 }
 
+// ─── Geographic area (facility tree) helpers ──────────────────────────────
+
+/**
+ * Upsert fresh geo-tree data from the server into the three normalised tables
+ * (StateT, CountyT, HealthFacilityT).  The SQLite view vwGeogAreaQ then
+ * reflects the updated data automatically — no separate flat cache needed.
+ *
+ * @param {Array<{healthFacilityID,healthFacility,countyID,county,stateID,state}>} items
+ */
+function upsertGeoAreaData(items) {
+  if (!_db) throw new Error('DB not ready');
+
+  // Collect unique states and counties to avoid redundant writes
+  const states   = new Map();   // stateID  → stateName
+  const counties = new Map();   // countyID → countyName
+  for (const it of items) {
+    if (it.stateID  && !states.has(it.stateID))    states.set(it.stateID,   it.state);
+    if (it.countyID && !counties.has(it.countyID)) counties.set(it.countyID, it.county);
+  }
+
+  // Upsert states
+  const stmtState = _db.prepare('INSERT OR REPLACE INTO StateT (StateID, State) VALUES (?,?)');
+  for (const [id, name] of states)   stmtState.run([id, name]);
+  stmtState.free();
+
+  // Upsert counties
+  const stmtCounty = _db.prepare('INSERT OR REPLACE INTO CountyT (CountyID, County) VALUES (?,?)');
+  for (const [id, name] of counties) stmtCounty.run([id, name]);
+  stmtCounty.free();
+
+  // Upsert facilities
+  const stmtFac = _db.prepare(
+    'INSERT OR REPLACE INTO HealthFacilityT (HealthFacilityID, HealthFacility, CountyID, StateID) VALUES (?,?,?,?)'
+  );
+  for (const it of items)
+    stmtFac.run([it.healthFacilityID, it.healthFacility, it.countyID, it.stateID]);
+  stmtFac.free();
+
+  _persistDB();
+}
+
+/**
+ * Return all rows from vwGeogAreaQ ordered by State → County → Facility.
+ * The view joins HealthFacilityT + CountyT + StateT.
+ * @returns {Array<{HealthFacilityID,HealthFacility,CountyID,County,StateID,State}>}
+ */
+function getGeoAreaData() {
+  if (!_db) return [];
+  const r = _db.exec(
+    'SELECT HealthFacilityID, HealthFacility, CountyID, County, StateID, State FROM vwGeogAreaQ ORDER BY State, County, HealthFacility'
+  );
+  if (!r.length) return [];
+  const { columns, values } = r[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────
 
 function exportDB() {
@@ -634,6 +785,100 @@ function exportDB() {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   console.log('[DB] Exported as art-register.sqlite');
+}
+
+// ─── Sync getters for child tables ───────────────────────────────────────
+
+/**
+ * Returns all INH prophylaxis rows for the given patient TIDs — used in the full sync payload.
+ * @param {string[]} ptDetailsTIDs
+ * @returns {Object[]}
+ */
+function getAllINHForSync(ptDetailsTIDs) {
+  if (!ptDetailsTIDs || !ptDetailsTIDs.length) return [];
+  const placeholders = ptDetailsTIDs.map(() => '?').join(',');
+  const r = _db.exec(
+    `SELECT * FROM INHProphylaxisT WHERE PtDetailsTID IN (${placeholders}) ORDER BY PtDetailsTID, SequenceNo`,
+    ptDetailsTIDs
+  );
+  if (!r.length) return [];
+  const { columns, values } = r[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+/**
+ * Returns all PMTCT pregnancy rows for the given patient TIDs — used in the full sync payload.
+ * @param {string[]} ptDetailsTIDs
+ * @returns {Object[]}
+ */
+function getAllPMTCTForSync(ptDetailsTIDs) {
+  if (!ptDetailsTIDs || !ptDetailsTIDs.length) return [];
+  const placeholders = ptDetailsTIDs.map(() => '?').join(',');
+  const r = _db.exec(
+    `SELECT * FROM PMTCTPregnancyT WHERE PtDetailsTID IN (${placeholders}) ORDER BY PtDetailsTID, PregnancyNo`,
+    ptDetailsTIDs
+  );
+  if (!r.length) return [];
+  const { columns, values } = r[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+/**
+ * Returns all regimen history rows for the given patient TIDs — used in the full sync payload.
+ * @param {string[]} ptDetailsTIDs
+ * @returns {Object[]}
+ */
+function getAllRegimenHistoryForSync(ptDetailsTIDs) {
+  if (!ptDetailsTIDs || !ptDetailsTIDs.length) return [];
+  const placeholders = ptDetailsTIDs.map(() => '?').join(',');
+  const r = _db.exec(
+    `SELECT * FROM RegimenHistoryT WHERE PtDetailsTID IN (${placeholders}) ORDER BY PtDetailsTID, RegimenLine, SequenceNo`,
+    ptDetailsTIDs
+  );
+  if (!r.length) return [];
+  const { columns, values } = r[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+/**
+ * Returns all follow-up visit rows for the given patient TIDs — used in the full sync payload.
+ * @param {string[]} ptDetailsTIDs
+ * @returns {Object[]}
+ */
+function getAllFollowUpsForSync(ptDetailsTIDs) {
+  if (!ptDetailsTIDs || !ptDetailsTIDs.length) return [];
+  const placeholders = ptDetailsTIDs.map(() => '?').join(',');
+  const r = _db.exec(
+    `SELECT * FROM PtFollowUpT WHERE PtDetailsTID IN (${placeholders}) ORDER BY PtDetailsTID, VisitDate`,
+    ptDetailsTIDs
+  );
+  if (!r.length) return [];
+  const { columns, values } = r[0];
+  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+/**
+ * After a successful sync, marks all records for the given patient TIDs as
+ * HasChanged = 0 on the local device.  This prevents re-syncing unchanged
+ * records on the next sync — they will be re-flagged HasChanged = 1 whenever
+ * they are edited again.
+ * @param {string[]} ptDetailsTIDs
+ */
+async function markRecordsSynced(ptDetailsTIDs) {
+  if (!ptDetailsTIDs || !ptDetailsTIDs.length) return;
+  const placeholders = ptDetailsTIDs.map(() => '?').join(',');
+  _db.run(
+    `UPDATE PtDetailsT SET HasChanged = 0 WHERE PtDetailsTID IN (${placeholders})`,
+    ptDetailsTIDs
+  );
+  for (const tbl of ['INHProphylaxisT', 'PMTCTPregnancyT', 'RegimenHistoryT', 'PtFollowUpT']) {
+    _db.run(
+      `UPDATE ${tbl} SET HasChanged = 0 WHERE PtDetailsTID IN (${placeholders})`,
+      ptDetailsTIDs
+    );
+  }
+  await _persistDB();
+  console.log(`[DB] markRecordsSynced: ${ptDetailsTIDs.length} patient(s) marked clean.`);
 }
 
 // ─── Backward-compat shims ────────────────────────────────────────────────

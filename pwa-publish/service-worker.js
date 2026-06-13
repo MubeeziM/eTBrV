@@ -12,7 +12,7 @@
 
 // Bump this version string whenever you update any cached file so that
 // the old cache is discarded and users get fresh assets.
-const CACHE_VERSION = 'patient-pwa-v090620261314';
+const CACHE_VERSION = 'patient-pwa-v130620261356';
 
 // ─── App shell files to pre-cache ────────────────────────────────────────
 // These are the minimum files needed to run offline after the first visit.
@@ -23,8 +23,8 @@ const APP_SHELL = [
   './app.js',
   './db.js',
   './manifest.json',
-  './icons/icon-192.svg',
-  './icons/icon-512.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
   // sql.js files (CDN) — cached so the app works fully offline
   'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js',
   'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm'
