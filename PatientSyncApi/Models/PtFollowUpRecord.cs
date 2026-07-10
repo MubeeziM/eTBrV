@@ -19,7 +19,7 @@ public sealed class PtFollowUpRecord
     public int       CPTDrugID        { get; set; }
     public decimal?  CD4Value         { get; set; }
     public int       CD4IsPercent     { get; set; }
-    public string?   ViralLoad        { get; set; }
+    public int?      ViralLoad        { get; set; }
     public string?   Notes            { get; set; }
     public int       HasChanged       { get; set; } = 1;
 }

@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>eTBr Dashboard — 5 Design Options</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #0f172a;
+      color: #1e293b;
+      padding: 2rem 1rem;
+    }
+    .page-title {
+      text-align: center;
+      color: #f1f5f9;
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: .5rem;
+      letter-spacing: -.3px;
+    }
+    .page-sub {
+      text-align: center;
+      color: #94a3b8;
+      font-size: .9rem;
+      margin-bottom: 2.5rem;
+    }
+    .option-wrap {
+      max-width: 1100px;
+      margin: 0 auto 3.5rem;
+    }
+    .option-label {
+      color: #fff;
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: .75rem;
+      padding: .5rem 1rem;
+      background: rgba(255,255,255,.1);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+    }
+    .option-label span {
+      display: inline-block;
+      background: #3b82f6;
+      color: #fff;
+      font-size: .75rem;
+      font-weight: 800;
+      padding: .25rem .65rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .preview-frame {
+      background: #f0f4f8;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 40px rgba(0,0,0,.35);
+    }
+    /* ── Shared mock header ── */
+    .mock-header {
+      background: #2563eb;
+      padding: .75rem 1.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .mock-header-logo {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .mock-logo-box {
+      width: 32px; height: 32px;
+      background: rgba(255,255,255,.25);
+      border-radius: 7px;
+    }
+    .mock-header-right {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+    }
+    .mock-badge {
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 7px;
+      padding: .3rem .7rem;
+      font-size: .75rem;
+      font-weight: 600;
+    }
+    .mock-badge.green { background: #16a34a; border-color: #16a34a; }
+    .mock-badge.gray  { background: rgba(255,255,255,.15); }
+
+
+    /* ════════════════════════════════════════
+       OPTION 1 — "Launchpad"
+       Gradient tiles, 2×3 grid, no descriptions
+    ════════════════════════════════════════ */
+    .opt1 { padding: 1.5rem; }
+    .opt1-welcome {
+      background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 60%, #2563eb 100%);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .opt1-welcome h2 { font-size: 1.3rem; font-weight: 800; }
+    .opt1-welcome p  { font-size: .85rem; color: rgba(255,255,255,.8); margin-top: 2px; }
+    .opt1-stats {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+    .opt1-stat {
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 10px;
+      padding: .55rem 1rem;
+      text-align: center;
+      min-width: 78px;
+    }
+    .opt1-stat-val { font-size: 1.3rem; font-weight: 800; color: #fff; display: block; }
+    .opt1-stat-lbl { font-size: .65rem; font-weight: 600; color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: .06em; display: block; margin-top: 1px; }
+    .opt1-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .opt1-tile {
+      border-radius: 14px;
+      padding: 1.5rem 1.25rem;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+      position: relative;
+      overflow: hidden;
+      min-height: 130px;
+    }
+    .opt1-tile::after {
+      content: '';
+      position: absolute;
+      right: -20px; top: -20px;
+      width: 90px; height: 90px;
+      background: rgba(255,255,255,.08);
+      border-radius: 50%;
+    }
+    .opt1-tile:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .opt1-tile svg { width: 28px; height: 28px; flex-shrink: 0; }
+    .opt1-tile-name { font-size: 1rem; font-weight: 700; line-height: 1.2; }
+    .opt1-tile-sub  { font-size: .78rem; color: rgba(255,255,255,.78); line-height: 1.4; }
+    .tile-blue   { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+    .tile-teal   { background: linear-gradient(135deg, #0891b2, #0e7490); }
+    .tile-amber  { background: linear-gradient(135deg, #d97706, #b45309); }
+    .tile-violet { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+    .tile-green  { background: linear-gradient(135deg, #059669, #047857); }
+    .tile-rose   { background: linear-gradient(135deg, #e11d48, #be123c); }
+    .opt1-arrow {
+      margin-top: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      font-size: .75rem;
+      font-weight: 700;
+      color: rgba(255,255,255,.85);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+
+    /* ════════════════════════════════════════
+       OPTION 2 — "Spotlight"
+       One giant Reports hero, compact row of tools below
+    ════════════════════════════════════════ */
+    .opt2 { padding: 1.5rem; }
+    .opt2-top {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .opt2-user-card {
+      flex: 1;
+      background: #fff;
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      border: 2px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .opt2-user-card h2 { font-size: 1.15rem; font-weight: 800; color: #0f172a; }
+    .opt2-user-card p  { font-size: .82rem; color: #64748b; margin-top: 2px; }
+    .opt2-stats-col {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .opt2-stat-chip {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: .5rem .85rem;
+      white-space: nowrap;
+    }
+    .opt2-stat-chip .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-blue   { background: #2563eb; }
+    .dot-teal   { background: #0891b2; }
+    .dot-amber  { background: #d97706; }
+    .dot-green  { background: #16a34a; }
+    .opt2-chip-val { font-size: 1.1rem; font-weight: 800; color: #0f172a; }
+    .opt2-chip-lbl { font-size: .72rem; color: #64748b; font-weight: 600; margin-left: 2px; }
+
+    /* Big spotlight reports card */
+    .opt2-spotlight {
+      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+      border-radius: 16px;
+      padding: 2rem 2rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+      box-shadow: 0 6px 24px rgba(180,83,9,.35);
+    }
+    .opt2-spotlight:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(180,83,9,.45); }
+    .opt2-spotlight-left h3 { font-size: 1.6rem; font-weight: 800; margin-bottom: .35rem; }
+    .opt2-spotlight-left p  { font-size: .9rem; color: rgba(255,255,255,.85); max-width: 380px; line-height: 1.6; }
+    .opt2-spotlight-right {
+      width: 72px; height: 72px;
+      background: rgba(255,255,255,.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .opt2-spotlight-right svg { width: 36px; height: 36px; }
+    .opt2-tools {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: .75rem;
+    }
+    .opt2-tool {
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .5rem;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s, transform .15s;
+      text-align: center;
+    }
+    .opt2-tool:hover { border-color: #2563eb; box-shadow: 0 4px 16px rgba(37,99,235,.18); transform: translateY(-2px); }
+    .opt2-tool-ico {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .opt2-tool-ico svg { width: 24px; height: 24px; }
+    .opt2-tool-name { font-size: .82rem; font-weight: 700; color: #1e293b; line-height: 1.3; }
+    .ico-blue   { background: #eff6ff; }
+    .ico-blue   svg { stroke: #2563eb; }
+    .ico-teal   { background: #ecfeff; }
+    .ico-teal   svg { stroke: #0891b2; }
+    .ico-violet { background: #f5f3ff; }
+    .ico-violet svg { stroke: #7c3aed; }
+    .ico-green  { background: #f0fdf4; }
+    .ico-green  svg { stroke: #059669; }
+    .ico-rose   { background: #fff1f2; }
+    .ico-rose   svg { stroke: #e11d48; }
+
+
+    /* ════════════════════════════════════════
+       OPTION 3 — "Clinic Home Screen"
+       iOS-style round icon grid + greeting
+    ════════════════════════════════════════ */
+    .opt3 { padding: 0; }
+    .opt3-hero {
+      background: linear-gradient(160deg, #0c1a3a 0%, #1e3a8a 50%, #2563eb 100%);
+      padding: 2rem 1.5rem 3.5rem;
+      color: #fff;
+      text-align: center;
+      position: relative;
+    }
+    .opt3-hero h2 { font-size: 1.6rem; font-weight: 800; margin-bottom: .25rem; }
+    .opt3-hero p  { font-size: .9rem; color: rgba(255,255,255,.75); margin-bottom: 1.25rem; }
+    .opt3-mini-stats {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .opt3-mini-stat {
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 10px;
+      padding: .5rem 1rem;
+      text-align: center;
+    }
+    .opt3-mini-stat strong { font-size: 1.2rem; font-weight: 800; display: block; }
+    .opt3-mini-stat span   { font-size: .68rem; color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: .07em; }
+    .opt3-body {
+      background: #f0f4f8;
+      padding: 1.5rem 1.5rem 2rem;
+      margin-top: -1.5rem;
+      border-radius: 20px 20px 0 0;
+      position: relative;
+    }
+    .opt3-section-label {
+      font-size: .7rem;
+      font-weight: 800;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      margin-bottom: .85rem;
+    }
+    .opt3-primary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .opt3-app-icon {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .45rem;
+      cursor: pointer;
+    }
+    .opt3-icon-circle {
+      width: 64px; height: 64px;
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .opt3-app-icon:hover .opt3-icon-circle {
+      transform: scale(1.08);
+      box-shadow: 0 6px 20px rgba(0,0,0,.2);
+    }
+    .opt3-icon-circle svg { width: 30px; height: 30px; stroke: #fff; }
+    .ic-blue    { background: linear-gradient(135deg, #3b82f6, #1d4ed8); box-shadow: 0 4px 12px rgba(37,99,235,.4); }
+    .ic-teal    { background: linear-gradient(135deg, #06b6d4, #0e7490); box-shadow: 0 4px 12px rgba(8,145,178,.4); }
+    .ic-amber   { background: linear-gradient(135deg, #f59e0b, #b45309); box-shadow: 0 4px 12px rgba(217,119,6,.4); }
+    .ic-violet  { background: linear-gradient(135deg, #8b5cf6, #6d28d9); box-shadow: 0 4px 12px rgba(124,58,237,.4); }
+    .ic-green   { background: linear-gradient(135deg, #10b981, #047857); box-shadow: 0 4px 12px rgba(5,150,105,.4); }
+    .ic-rose    { background: linear-gradient(135deg, #f43f5e, #be123c); box-shadow: 0 4px 12px rgba(225,29,72,.4); }
+    .ic-slate   { background: linear-gradient(135deg, #475569, #334155); box-shadow: 0 4px 12px rgba(71,85,105,.4); }
+    .opt3-app-icon-name {
+      font-size: .78rem;
+      font-weight: 600;
+      color: #1e293b;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .opt3-secondary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: .85rem;
+    }
+
+
+    /* ════════════════════════════════════════
+       OPTION 4 — "Clinical Dashboard"
+       Data-metric focus, horizontal nav strip, simple CTA
+    ════════════════════════════════════════ */
+    .opt4 { padding: 1.5rem; }
+    .opt4-greeting {
+      margin-bottom: 1.25rem;
+    }
+    .opt4-greeting h2 { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
+    .opt4-greeting p  { font-size: .85rem; color: #64748b; }
+    .opt4-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: .85rem;
+      margin-bottom: 1.5rem;
+    }
+    .opt4-metric {
+      border-radius: 14px;
+      padding: 1.1rem 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+      border-left: 5px solid transparent;
+    }
+    .opt4-metric.blue   { background: #eff6ff; border-left-color: #2563eb; }
+    .opt4-metric.teal   { background: #ecfeff; border-left-color: #0891b2; }
+    .opt4-metric.amber  { background: #fffbeb; border-left-color: #d97706; }
+    .opt4-metric.green  { background: #f0fdf4; border-left-color: #16a34a; }
+    .opt4-metric-val  { font-size: 2rem; font-weight: 900; line-height: 1; }
+    .opt4-metric.blue  .opt4-metric-val { color: #1d4ed8; }
+    .opt4-metric.teal  .opt4-metric-val { color: #0e7490; }
+    .opt4-metric.amber .opt4-metric-val { color: #b45309; }
+    .opt4-metric.green .opt4-metric-val { color: #15803d; }
+    .opt4-metric-lbl  { font-size: .75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-top: .15rem; }
+    .opt4-actions {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 1rem;
+    }
+    .opt4-primary {
+      background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+      border-radius: 16px;
+      padding: 1.75rem 1.5rem;
+      color: #fff;
+      cursor: pointer;
+      transition: transform .15s;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+      box-shadow: 0 4px 18px rgba(180,83,9,.35);
+    }
+    .opt4-primary:hover { transform: translateY(-2px); }
+    .opt4-primary svg { width: 32px; height: 32px; }
+    .opt4-primary h3  { font-size: 1.2rem; font-weight: 800; }
+    .opt4-primary p   { font-size: .83rem; color: rgba(255,255,255,.82); line-height: 1.55; }
+    .opt4-secondary {
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: border-color .15s, transform .15s;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: .6rem;
+    }
+    .opt4-secondary:hover { border-color: #2563eb; transform: translateY(-2px); }
+    .opt4-sec-ico {
+      width: 42px; height: 42px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .opt4-sec-ico svg { width: 22px; height: 22px; }
+    .opt4-secondary h4 { font-size: .9rem; font-weight: 700; color: #0f172a; }
+    .opt4-secondary p  { font-size: .78rem; color: #64748b; line-height: 1.45; }
+    .opt4-bottom-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .85rem;
+      margin-top: .85rem;
+    }
+    .opt4-mini-btn {
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      padding: .85rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color .15s;
+    }
+    .opt4-mini-btn:hover { border-color: #2563eb; }
+    .opt4-mini-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .opt4-mini-btn span { font-size: .82rem; font-weight: 600; color: #1e293b; }
+
+
+    /* ════════════════════════════════════════
+       OPTION 5 — "Ribbon Rows"
+       Full-width horizontal banner cards
+       Bold colors, large touch targets
+    ════════════════════════════════════════ */
+    .opt5 { padding: 0; }
+    .opt5-hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      padding: 1.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .opt5-hero-text h2 { font-size: 1.35rem; font-weight: 800; color: #fff; }
+    .opt5-hero-text p  { font-size: .85rem; color: #94a3b8; margin-top: 3px; }
+    .opt5-pill-stats {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    .opt5-pill {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 999px;
+      padding: .45rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      white-space: nowrap;
+    }
+    .opt5-pill-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .opt5-pill strong { font-size: .95rem; font-weight: 800; color: #fff; }
+    .opt5-pill span   { font-size: .72rem; color: rgba(255,255,255,.65); font-weight: 600; }
+    .opt5-body { padding: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+    .opt5-ribbon {
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .opt5-ribbon:hover { transform: translateX(4px); }
+    .opt5-ribbon::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 6px;
+      border-radius: 14px 0 0 14px;
+    }
+    .opt5-ribbon.r-blue   { background: #eff6ff; }
+    .opt5-ribbon.r-blue::before   { background: #2563eb; }
+    .opt5-ribbon.r-amber  { background: #fffbeb; }
+    .opt5-ribbon.r-amber::before  { background: #d97706; }
+    .opt5-ribbon.r-teal   { background: #ecfeff; }
+    .opt5-ribbon.r-teal::before   { background: #0891b2; }
+    .opt5-ribbon.r-violet { background: #f5f3ff; }
+    .opt5-ribbon.r-violet::before { background: #7c3aed; }
+    .opt5-ribbon.r-green  { background: #f0fdf4; }
+    .opt5-ribbon.r-green::before  { background: #059669; }
+    .opt5-rib-ico {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .opt5-rib-ico svg { width: 26px; height: 26px; }
+    .ri-blue   { background: #dbeafe; }
+    .ri-blue   svg { stroke: #1d4ed8; }
+    .ri-amber  { background: #fde68a; }
+    .ri-amber  svg { stroke: #92400e; }
+    .ri-teal   { background: #cffafe; }
+    .ri-teal   svg { stroke: #0e7490; }
+    .ri-violet { background: #ede9fe; }
+    .ri-violet svg { stroke: #6d28d9; }
+    .ri-green  { background: #bbf7d0; }
+    .ri-green  svg { stroke: #15803d; }
+    .opt5-rib-text { flex: 1; }
+    .opt5-rib-text h4 { font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+    .opt5-rib-text p  { font-size: .8rem; color: #475569; line-height: 1.5; }
+    .opt5-rib-arrow {
+      display: flex; align-items: center;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+    .opt5-rib-arrow svg { width: 20px; height: 20px; }
+    .opt5-ribbon.r-amber .opt5-rib-text h4 { color: #78350f; }
+    .opt5-ribbon.r-amber .opt5-rib-text p  { color: #92400e; }
+    .opt5-ribbon.r-amber .opt5-rib-arrow   { color: #b45309; }
+  </style>
+</head>
+<body>
+
+  <h1 class="page-title">eTBr Dashboard — 5 Redesign Options</h1>
+  <p class="page-sub">Review each option below and pick your favourite. All show the same core actions: Enter Data, TB/HIV Reports, Monitor, Search, Sync.</p>
+
+
+  <!-- ══════════════════════════════════════════════
+       OPTION 1 — "Launchpad"
+  ══════════════════════════════════════════════ -->
+  <div class="option-wrap">
+    <div class="option-label">
+      <span>Option 1</span> Launchpad — Colourful gradient tiles, 2×3 grid
+    </div>
+    <div class="preview-frame">
+      <!-- Mock header -->
+      <div class="mock-header">
+        <div class="mock-header-logo">
+          <div class="mock-logo-box"></div>
+        </div>
+        <div class="mock-header-right">
+          <span class="mock-badge green">Online</span>
+          <span class="mock-badge gray">Log Out</span>
+        </div>
+      </div>
+      <!-- Dashboard -->
+      <div class="opt1">
+        <!-- Welcome banner with live stats -->
+        <div class="opt1-welcome">
+          <div>
+            <h2>Welcome, Dr. Amara</h2>
+            <p>Juba Teaching Hospital &nbsp;·&nbsp; Sunday, 5 July 2026</p>
+          </div>
+          <div class="opt1-stats">
+            <div class="opt1-stat">
+              <span class="opt1-stat-val">248</span>
+              <span class="opt1-stat-lbl">ART Patients</span>
+            </div>
+            <div class="opt1-stat">
+              <span class="opt1-stat-val">63</span>
+              <span class="opt1-stat-lbl">TB Patients</span>
+            </div>
+            <div class="opt1-stat">
+              <span class="opt1-stat-val">4</span>
+              <span class="opt1-stat-lbl">Pending Sync</span>
+            </div>
+            <div class="opt1-stat">
+              <span class="opt1-stat-val">Today</span>
+              <span class="opt1-stat-lbl">Last Synced</span>
+            </div>
+          </div>
+        </div>
+        <!-- 2×3 tile grid -->
+        <div class="opt1-grid">
+          <!-- Enter Data -->
+          <div class="opt1-tile tile-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            <div class="opt1-tile-name">Enter Data</div>
+            <div class="opt1-tile-sub">ART Register & Unit TB Register</div>
+            <div class="opt1-arrow">Open →</div>
+          </div>
+          <!-- Monitor TB -->
+          <div class="opt1-tile tile-teal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <div class="opt1-tile-name">Monitor TB</div>
+            <div class="opt1-tile-sub">Track treatment milestones &amp; sputum results</div>
+            <div class="opt1-arrow">Open →</div>
+          </div>
+          <!-- TB/HIV Reports — the most prominent -->
+          <div class="opt1-tile tile-amber" style="border: 3px solid rgba(255,255,255,.4);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <div class="opt1-tile-name">TB/HIV Reports</div>
+            <div class="opt1-tile-sub">Program reports &amp; DHIS2 submission</div>
+            <div class="opt1-arrow">Open →</div>
+          </div>
+          <!-- Search -->
+          <div class="opt1-tile tile-violet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <div class="opt1-tile-name">Search Patients</div>
+            <div class="opt1-tile-sub">Cross-register patient search</div>
+            <div class="opt1-arrow">Search →</div>
+          </div>
+          <!-- Sync -->
+          <div class="opt1-tile tile-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            <div class="opt1-tile-name">Sync Data</div>
+            <div class="opt1-tile-sub">Upload pending records to the eTBr server</div>
+            <div class="opt1-arrow">Sync →</div>
+          </div>
+          <!-- Data Quality -->
+          <div class="opt1-tile tile-rose">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            <div class="opt1-tile-name">Data Quality</div>
+            <div class="opt1-tile-sub">Find duplicates &amp; missing data</div>
+            <div class="opt1-arrow">Check →</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       OPTION 2 — "Spotlight on Reports"
+  ══════════════════════════════════════════════ -->
+  <div class="option-wrap">
+    <div class="option-label">
+      <span>Option 2</span> Spotlight — Reports as hero card, quick-action tools below
+    </div>
+    <div class="preview-frame">
+      <div class="mock-header">
+        <div class="mock-header-logo"><div class="mock-logo-box"></div></div>
+        <div class="mock-header-right">
+          <span class="mock-badge green">Online</span>
+          <span class="mock-badge gray">Log Out</span>
+        </div>
+      </div>
+      <div class="opt2">
+        <!-- Top row: greeting + stat chips -->
+        <div class="opt2-top">
+          <div class="opt2-user-card">
+            <h2>Good morning, Dr. Amara 👋</h2>
+            <p>Juba Teaching Hospital &nbsp;·&nbsp; Sunday, 5 July 2026</p>
+          </div>
+          <div class="opt2-stats-col">
+            <div class="opt2-stat-chip">
+              <div class="dot dot-blue"></div>
+              <span class="opt2-chip-val">248</span>
+              <span class="opt2-chip-lbl">ART Patients</span>
+            </div>
+            <div class="opt2-stat-chip">
+              <div class="dot dot-teal"></div>
+              <span class="opt2-chip-val">63</span>
+              <span class="opt2-chip-lbl">TB Patients</span>
+            </div>
+            <div class="opt2-stat-chip">
+              <div class="dot dot-amber"></div>
+              <span class="opt2-chip-val">4</span>
+              <span class="opt2-chip-lbl">Pending Sync</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SPOTLIGHT: Reports hero -->
+        <div class="opt2-spotlight">
+          <div class="opt2-spotlight-left">
+            <h3>📊 TB/HIV Reports</h3>
+            <p>Generate quarterly &amp; annual program reports, submit them to DHIS2, and download for review. Full eTBr–DHIS2 interoperability.</p>
+          </div>
+          <div class="opt2-spotlight-right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+        </div>
+
+        <!-- 4 tool cards -->
+        <div class="opt2-tools">
+          <div class="opt2-tool">
+            <div class="opt2-tool-ico ico-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            </div>
+            <div class="opt2-tool-name">Enter Data</div>
+          </div>
+          <div class="opt2-tool">
+            <div class="opt2-tool-ico ico-teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div class="opt2-tool-name">Monitor TB</div>
+          </div>
+          <div class="opt2-tool">
+            <div class="opt2-tool-ico ico-violet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <div class="opt2-tool-name">Search Patients</div>
+          </div>
+          <div class="opt2-tool">
+            <div class="opt2-tool-ico ico-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </div>
+            <div class="opt2-tool-name">Sync Data</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       OPTION 3 — "Clinic Home Screen" (iOS-style)
+  ══════════════════════════════════════════════ -->
+  <div class="option-wrap">
+    <div class="option-label">
+      <span>Option 3</span> Clinic Home Screen — App-icon grid, familiar &amp; touch-friendly
+    </div>
+    <div class="preview-frame">
+      <div class="mock-header">
+        <div class="mock-header-logo"><div class="mock-logo-box"></div></div>
+        <div class="mock-header-right">
+          <span class="mock-badge green">Online</span>
+          <span class="mock-badge gray">Log Out</span>
+        </div>
+      </div>
+      <div class="opt3">
+        <!-- Deep blue hero -->
+        <div class="opt3-hero">
+          <h2>Welcome, Dr. Amara</h2>
+          <p>Juba Teaching Hospital &nbsp;·&nbsp; Sunday, 5 July 2026</p>
+          <div class="opt3-mini-stats">
+            <div class="opt3-mini-stat">
+              <strong>248</strong><span>ART Patients</span>
+            </div>
+            <div class="opt3-mini-stat">
+              <strong>63</strong><span>TB Patients</span>
+            </div>
+            <div class="opt3-mini-stat">
+              <strong>4</strong><span>Pending Sync</span>
+            </div>
+            <div class="opt3-mini-stat">
+              <strong>Today</strong><span>Last Synced</span>
+            </div>
+          </div>
+        </div>
+        <!-- App icon grid -->
+        <div class="opt3-body">
+          <p class="opt3-section-label">Quick Access</p>
+          <!-- Primary 3-column row -->
+          <div class="opt3-primary-grid">
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+              </div>
+              <span class="opt3-app-icon-name">Enter Data</span>
+            </div>
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-amber" style="width:64px;height:64px;border-radius:18px;border:3px solid #fbbf24;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              </div>
+              <span class="opt3-app-icon-name" style="font-weight:800;color:#92400e;">TB/HIV Reports</span>
+            </div>
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-teal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </div>
+              <span class="opt3-app-icon-name">Monitor TB</span>
+            </div>
+          </div>
+          <p class="opt3-section-label">Tools</p>
+          <!-- Secondary 4-column row -->
+          <div class="opt3-secondary-grid">
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-violet" style="width:52px;height:52px;border-radius:14px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+              <span class="opt3-app-icon-name" style="font-size:.72rem;">Search</span>
+            </div>
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-green" style="width:52px;height:52px;border-radius:14px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              </div>
+              <span class="opt3-app-icon-name" style="font-size:.72rem;">Sync Data</span>
+            </div>
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-rose" style="width:52px;height:52px;border-radius:14px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+              </div>
+              <span class="opt3-app-icon-name" style="font-size:.72rem;">Data Quality</span>
+            </div>
+            <div class="opt3-app-icon">
+              <div class="opt3-icon-circle ic-slate" style="width:52px;height:52px;border-radius:14px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+              <span class="opt3-app-icon-name" style="font-size:.72rem;">More</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       OPTION 4 — "Clinical Dashboard"
+  ══════════════════════════════════════════════ -->
+  <div class="option-wrap">
+    <div class="option-label">
+      <span>Option 4</span> Clinical Dashboard — Data metrics front &amp; centre, clean Reports CTA
+    </div>
+    <div class="preview-frame">
+      <div class="mock-header">
+        <div class="mock-header-logo"><div class="mock-logo-box"></div></div>
+        <div class="mock-header-right">
+          <span class="mock-badge green">Online</span>
+          <span class="mock-badge gray">Log Out</span>
+        </div>
+      </div>
+      <div class="opt4">
+        <!-- Greeting -->
+        <div class="opt4-greeting">
+          <h2>Good morning, Dr. Amara</h2>
+          <p>Juba Teaching Hospital &nbsp;·&nbsp; Sunday, 5 July 2026</p>
+        </div>
+        <!-- 4 metric cards -->
+        <div class="opt4-metrics">
+          <div class="opt4-metric blue">
+            <div class="opt4-metric-val">248</div>
+            <div class="opt4-metric-lbl">ART Patients</div>
+          </div>
+          <div class="opt4-metric teal">
+            <div class="opt4-metric-val">63</div>
+            <div class="opt4-metric-lbl">TB Patients</div>
+          </div>
+          <div class="opt4-metric amber">
+            <div class="opt4-metric-val">4</div>
+            <div class="opt4-metric-lbl">Pending Sync</div>
+          </div>
+          <div class="opt4-metric green">
+            <div class="opt4-metric-val">Today</div>
+            <div class="opt4-metric-lbl">Last Synced</div>
+          </div>
+        </div>
+        <!-- Actions row -->
+        <div class="opt4-actions">
+          <!-- Reports as dominant card -->
+          <div class="opt4-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <h3>TB/HIV Reports</h3>
+            <p>Generate program reports &amp; submit to DHIS2. Full interoperability with the national system.</p>
+          </div>
+          <!-- Enter Data -->
+          <div class="opt4-secondary">
+            <div class="opt4-sec-ico ico-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            </div>
+            <h4>Enter Data</h4>
+            <p>ART Register &amp; Unit TB Register</p>
+          </div>
+          <!-- Monitor TB -->
+          <div class="opt4-secondary">
+            <div class="opt4-sec-ico ico-teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <h4>Monitor TB</h4>
+            <p>Track treatment &amp; sputum milestones</p>
+          </div>
+        </div>
+        <!-- Bottom row -->
+        <div class="opt4-bottom-row">
+          <button class="opt4-mini-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>Search Patients</span>
+          </button>
+          <button class="opt4-mini-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            <span>Sync Data</span>
+          </button>
+          <button class="opt4-mini-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            <span>Check Data Quality</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       OPTION 5 — "Ribbon Rows"
+  ══════════════════════════════════════════════ -->
+  <div class="option-wrap">
+    <div class="option-label">
+      <span>Option 5</span> Ribbon Rows — Full-width banners, bold left accent, very scannable
+    </div>
+    <div class="preview-frame">
+      <div class="mock-header">
+        <div class="mock-header-logo"><div class="mock-logo-box"></div></div>
+        <div class="mock-header-right">
+          <span class="mock-badge green">Online</span>
+          <span class="mock-badge gray">Log Out</span>
+        </div>
+      </div>
+      <div class="opt5">
+        <!-- Dark hero with pill stats -->
+        <div class="opt5-hero">
+          <div class="opt5-hero-text">
+            <h2>Welcome, Dr. Amara</h2>
+            <p>Juba Teaching Hospital &nbsp;·&nbsp; Sunday, 5 July 2026</p>
+          </div>
+          <div class="opt5-pill-stats">
+            <div class="opt5-pill">
+              <div class="opt5-pill-dot" style="background:#60a5fa"></div>
+              <strong>248</strong><span>ART</span>
+            </div>
+            <div class="opt5-pill">
+              <div class="opt5-pill-dot" style="background:#22d3ee"></div>
+              <strong>63</strong><span>TB</span>
+            </div>
+            <div class="opt5-pill">
+              <div class="opt5-pill-dot" style="background:#fbbf24"></div>
+              <strong>4</strong><span>Pending</span>
+            </div>
+            <div class="opt5-pill">
+              <div class="opt5-pill-dot" style="background:#4ade80"></div>
+              <strong>Today</strong><span>Synced</span>
+            </div>
+          </div>
+        </div>
+        <!-- Ribbon cards -->
+        <div class="opt5-body">
+          <!-- Reports — highlighted -->
+          <div class="opt5-ribbon r-amber">
+            <div class="opt5-rib-ico ri-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </div>
+            <div class="opt5-rib-text">
+              <h4>TB/HIV Reports</h4>
+              <p>Generate program reports, submit to DHIS2 &amp; download for review</p>
+            </div>
+            <div class="opt5-rib-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+          <!-- Enter Data -->
+          <div class="opt5-ribbon r-blue">
+            <div class="opt5-rib-ico ri-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            </div>
+            <div class="opt5-rib-text">
+              <h4>Enter Data</h4>
+              <p>Patient records for ART Register &amp; Unit TB Register</p>
+            </div>
+            <div class="opt5-rib-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+          <!-- Monitor TB -->
+          <div class="opt5-ribbon r-teal">
+            <div class="opt5-rib-ico ri-teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div class="opt5-rib-text">
+              <h4>Monitor TB Patients</h4>
+              <p>See who is due or missed sputum, HIV test, CPT &amp; ART</p>
+            </div>
+            <div class="opt5-rib-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+          <!-- Search -->
+          <div class="opt5-ribbon r-violet">
+            <div class="opt5-rib-ico ri-violet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <div class="opt5-rib-text">
+              <h4>Search Patients</h4>
+              <p>Cross-register search by name, ID or facility</p>
+            </div>
+            <div class="opt5-rib-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+          <!-- Sync -->
+          <div class="opt5-ribbon r-green">
+            <div class="opt5-rib-ico ri-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </div>
+            <div class="opt5-rib-text">
+              <h4>Sync Data</h4>
+              <p>Upload 4 pending records to the eTBr server</p>
+            </div>
+            <div class="opt5-rib-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

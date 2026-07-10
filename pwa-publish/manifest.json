@@ -1,12 +1,12 @@
 {
   "name": "eTBr",
   "short_name": "eTBr",
-  "description": "Offline-capable patient data collection app using SQLite via sql.js",
+  "description": "Offline-capable ART register",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f0f4f8",
   "theme_color": "#2563eb",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     { "src": "icons/icon-48.png",  "sizes": "48x48",   "type": "image/png" },
     { "src": "icons/icon-72.png",  "sizes": "72x72",   "type": "image/png" },

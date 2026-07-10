@@ -13,12 +13,28 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="Templates\ART_Monthly_Report_Form_Rev.xlsx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Templates\Template_DSTB_NTP_Report.xlsx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Templates\Template_LFA_Verification_Report.xlsx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
       Microsoft.Data.SqlClient: official Microsoft SQL Server driver for .NET.
       ADO.NET is used directly (no EF Core) to keep the project simple and
       dependency-light, while still using fully parameterised queries that
       are safe from SQL injection.
     -->
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
 

@@ -4,6 +4,28 @@
 # Usage:  .\deploy.ps1
 #         .\deploy.ps1 -Target pwa      (PWA only)
 #         .\deploy.ps1 -Target api      (API only)
+#
+# ── API DEPLOYMENT — REQUIRED STEPS TO AVOID ERROR_FILE_IN_USE ─────────────
+#
+#  PatientSyncApi.exe runs as a child process outside w3wp.exe (outofprocess
+#  hosting).  Windows locks the EXE while it is running, so msdeploy cannot
+#  overwrite it while the app is alive. 
+#
+#  CORRECT PROCEDURE EVERY TIME:
+#    1. Open SmarterASP.NET control panel → Hosting → IIS Manager
+#    2. Application Pools → find the API pool → click STOP  (NOT Recycle)
+#    3. Wait ~30 seconds for PatientSyncApi.exe to terminate
+#    4. Run:  .\deploy.ps1 -Target api
+#    5. When deploy succeeds, click START on the same app pool
+#       (or leave it — IIS will auto-start it on the first request)
+#
+#  If you get ERROR_INSUFFICIENT_ACCESS_TO_SITE_FOLDER:
+#    • The app pool was stopped AND the deploy user lost access.
+#    • Start the pool first, wait 10 s, then Stop it again and redeploy.
+#
+#  Architecture:  PatientSyncApi.exe is win-x64 (64-bit).
+#                 The IIS app pool does NOT need to be 64-bit — w3wp.exe only
+#                 proxies HTTP; our EXE runs independently.
 # =============================================================================
 param(
   [ValidateSet('all','pwa','api')]
@@ -38,6 +60,7 @@ function Invoke-CloudflarePurge {
 
   $files = @(
     'https://art.etbr.org/app.js',
+    'https://art.etbr.org/db.js',
     'https://art.etbr.org/service-worker.js',
     'https://art.etbr.org/index.html',
     'https://art.etbr.org/style.css',
@@ -73,20 +96,29 @@ function Invoke-CloudflarePurge {
 function Deploy-PWA {
   Write-Host "`n── Deploying PWA to art.etbr.org ──"
 
+  # Ensure staging folder exists (created on first run or after a clean)
+  New-Item -ItemType Directory -Force -Path "$pwaLocal\icons" | Out-Null
+
   # Sync local source → pwa-publish first
   foreach ($f in @('app.js','db.js','index.html','style.css','service-worker.js','manifest.json')) {
     Copy-Item "$root\$f" "$pwaLocal\$f" -Force
   }
   Copy-Item "$root\icons\*" "$pwaLocal\icons\" -Force -Recurse
+  # Copy Excel report templates for offline PWA generation
+  New-Item -ItemType Directory -Force -Path "$pwaLocal\templates" | Out-Null
+  Copy-Item "$root\PatientSyncApi\Templates\Template_DSTB_NTP_Report.xlsx" "$pwaLocal\templates\Template_DSTB_NTP_Report.xlsx" -Force
+  Copy-Item "$root\PatientSyncApi\Templates\Template_LFA_Verification_Report.xlsx" "$pwaLocal\templates\Template_LFA_Verification_Report.xlsx" -Force
+  Copy-Item "$root\PatientSyncApi\Templates\ART_Monthly_Report_Form_Rev.xlsx" "$pwaLocal\templates\ART_Monthly_Report_Form_Rev.xlsx" -Force
+  Copy-Item "$root\PatientSyncApi\Templates\Template_ExportedData.xlsx" "$pwaLocal\templates\Template_ExportedData.xlsx" -Force
   # Deploy web.config (controls Cache-Control headers so Cloudflare doesn't over-cache)
   Copy-Item "$root\pwa-web.config" "$pwaLocal\web.config" -Force
 
   # Stamp build version (vDDMMYYYYHHMM) into pwa-publish/app.js and service-worker.js
   $buildVersion = 'v' + (Get-Date -Format 'ddMMyyyyHHmm')
-  (Get-Content "$pwaLocal\app.js") -replace "v__BUILD__", $buildVersion |
-    Set-Content "$pwaLocal\app.js"
-  (Get-Content "$pwaLocal\service-worker.js") -replace "v__BUILD__", $buildVersion |
-    Set-Content "$pwaLocal\service-worker.js"
+  (Get-Content "$pwaLocal\app.js" -Encoding UTF8) -replace "v__BUILD__", $buildVersion |
+    Set-Content "$pwaLocal\app.js" -Encoding UTF8
+  (Get-Content "$pwaLocal\service-worker.js" -Encoding UTF8) -replace "v__BUILD__", $buildVersion |
+    Set-Content "$pwaLocal\service-worker.js" -Encoding UTF8
   Write-Host "  Version: $buildVersion"
 
   # Web Deploy sync
@@ -154,22 +186,19 @@ function Deploy-API {
   $logsDir = "$root\PatientSyncApi\bin\Release\net8.0\publish\logs"
   if (-not (Test-Path $logsDir)) { New-Item -ItemType Directory -Path $logsDir | Out-Null }
 
-  # Web Deploy — deploy while app pool is STOPPED so no file locks.
-  # Future deploys use -enableRule:AppOffline (inprocess releases handles cleanly).
   $wdUrl  = "https://win8062.site4now.net:8172/msdeploy.axd?site=micahm-001-subsite5"
   $wdSite = "micahm-001-subsite5"
+
   & $msdeploy `
     -verb:sync `
     "-source:contentPath=$apiLocal" `
     "-dest:contentPath=$wdSite,computerName=$wdUrl,userName=$wdUser,password=$wdPass,authType=Basic,includeAcls=False" `
     -allowUntrusted `
-    -enableRule:AppOffline `
     "-skip:objectName=dirPath,absolutePath=logs" `
     "-skip:objectName=filePath,absolutePath=PatientSyncApiDD.exe" `
-    -retryAttempts:6 `
-    -retryInterval:3000 2>&1 | Select-String "^(Total|Error)" | ForEach-Object { Write-Host "  $_" }
+    -retryAttempts:3 2>&1 | Select-String "^(Total|Error)" | ForEach-Object { Write-Host "  $_" }
   Write-Host "  API deployed OK"
-  Write-Host "  *** ACTION REQUIRED: recycle the app pool in SmarterASP.NET dashboard to load the new DLL ***"
+  Write-Host "  *** Start the app pool in SmarterASP.NET if it is stopped ***"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

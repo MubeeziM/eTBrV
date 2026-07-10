@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 --  Migration: Add Deleted column to patient tables for soft-delete support
 --
 --  Run in SSMS.  Safe to re-run — each step is guarded by an existence check.
@@ -15,42 +15,42 @@
 USE [db_ac602a_v6nkwi3rvw];
 GO
 
--- PtDetailsT — main patient record
+-- PtDetailsARTT — main patient record
 IF NOT EXISTS (
     SELECT 1 FROM sys.columns
-    WHERE  object_id = OBJECT_ID('PtDetailsT') AND name = 'Deleted'
+    WHERE  object_id = OBJECT_ID('PtDetailsARTT') AND name = 'Deleted'
 )
 BEGIN
-    ALTER TABLE PtDetailsT
-        ADD Deleted BIT NOT NULL CONSTRAINT DF_PtDetailsT_Deleted DEFAULT 0;
-    PRINT 'Added PtDetailsT.Deleted';
+    ALTER TABLE PtDetailsARTT
+        ADD Deleted BIT NOT NULL CONSTRAINT DF_PtDetailsARTT_Deleted DEFAULT 0;
+    PRINT 'Added PtDetailsARTT.Deleted';
 END
 ELSE
-    PRINT 'PtDetailsT.Deleted already exists — skipping.';
+    PRINT 'PtDetailsARTT.Deleted already exists — skipping.';
 GO
 
--- PtFollowUpT — follow-up visit records
+-- PtFollowUpARTT — follow-up visit records
 IF NOT EXISTS (
     SELECT 1 FROM sys.columns
-    WHERE  object_id = OBJECT_ID('PtFollowUpT') AND name = 'Deleted'
+    WHERE  object_id = OBJECT_ID('PtFollowUpARTT') AND name = 'Deleted'
 )
 BEGIN
-    ALTER TABLE PtFollowUpT
-        ADD Deleted BIT NOT NULL CONSTRAINT DF_PtFollowUpT_Deleted DEFAULT 0;
-    PRINT 'Added PtFollowUpT.Deleted';
+    ALTER TABLE PtFollowUpARTT
+        ADD Deleted BIT NOT NULL CONSTRAINT DF_PtFollowUpARTT_Deleted DEFAULT 0;
+    PRINT 'Added PtFollowUpARTT.Deleted';
 END
 ELSE
-    PRINT 'PtFollowUpT.Deleted already exists — skipping.';
+    PRINT 'PtFollowUpARTT.Deleted already exists — skipping.';
 GO
 
 -- Create index for efficient filtering of non-deleted records
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes
-    WHERE  object_id = OBJECT_ID('PtDetailsT') AND name = 'IX_PtDetailsT_Deleted'
+    WHERE  object_id = OBJECT_ID('PtDetailsARTT') AND name = 'IX_PtDetailsARTT_Deleted'
 )
 BEGIN
-    CREATE INDEX IX_PtDetailsT_Deleted ON PtDetailsT(Deleted);
-    PRINT 'Created index IX_PtDetailsT_Deleted';
+    CREATE INDEX IX_PtDetailsARTT_Deleted ON PtDetailsARTT(Deleted);
+    PRINT 'Created index IX_PtDetailsARTT_Deleted';
 END
 GO
 

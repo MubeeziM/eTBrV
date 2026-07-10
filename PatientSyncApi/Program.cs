@@ -11,11 +11,28 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
+// IMemoryCache is used by the SSE report-progress endpoint to cache the
+// finished Excel workbook between stream completion and the download request.
+builder.Services.AddMemoryCache();
+
 // TokenService generates signed JWTs for authenticated users.
 builder.Services.AddScoped<TokenService>();
 
 // EmailService sends transactional emails via SMTP (MailKit).
 builder.Services.AddScoped<EmailService>();
+
+// AuditService writes rows to LogT. IHttpContextAccessor is required so
+// the service can read the current user's JWT claims without them being
+// passed manually on every call site.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AuditService>();
+
+// IHttpClientFactory is used by Dhis2Controller to POST report data to DHIS2.
+// Named client "dhis2" can be configured further here if needed (e.g., timeout).
+builder.Services.AddHttpClient("dhis2", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 // Tokens are issued by AuthController.Login and must be included in subsequent
@@ -82,8 +99,9 @@ builder.Services.AddCors(options =>
     options.AddPolicy("GitHubPagesCors", policy =>
         policy
             .WithOrigins(allowedOrigins)
-            .WithMethods("GET", "POST", "OPTIONS")
+            .WithMethods("GET", "POST", "PUT", "OPTIONS")
             .WithHeaders("Content-Type", "X-Api-Key", "Authorization")
+            .WithExposedHeaders("Content-Disposition")
             .DisallowCredentials());
 });
 

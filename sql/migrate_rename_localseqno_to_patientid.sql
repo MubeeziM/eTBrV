@@ -1,5 +1,5 @@
--- =============================================================================
---  Migration: Rename LocalSeqNo → PatientID in PtDetailsT
+﻿-- =============================================================================
+--  Migration: Rename LocalSeqNo → PatientID in PtDetailsARTT
 --
 --  Run once in SSMS. sp_rename is safe to re-run if guarded — the IF block
 --  checks the current column name before renaming.
@@ -10,11 +10,11 @@ GO
 
 IF EXISTS (
     SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID('PtDetailsT')
+    WHERE object_id = OBJECT_ID('PtDetailsARTT')
       AND name      = 'LocalSeqNo'
 )
 BEGIN
-    EXEC sp_rename 'PtDetailsT.LocalSeqNo', 'PatientID', 'COLUMN';
+    EXEC sp_rename 'PtDetailsARTT.LocalSeqNo', 'PatientID', 'COLUMN';
     PRINT 'Column renamed: LocalSeqNo → PatientID';
 END
 ELSE

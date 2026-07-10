@@ -41,6 +41,16 @@ public sealed class RegisterRequest
     public int     SubRecID     { get; set; }
 }
 
+/// <summary>Payload for PUT /api/auth/users/{userTID}/facilities.</summary>
+public sealed class UserFacilitiesRequest
+{
+    /// <summary>
+    /// Explicit list of HealthFacilityIDs to assign.
+    /// An empty list clears all assignments (reverts to default scope).
+    /// </summary>
+    public List<int> FacilityIds { get; set; } = new();
+}
+
 /// <summary>Login payload.</summary>
 public sealed class LoginRequest
 {
@@ -76,6 +86,8 @@ public sealed class LoginResponse
     public int          SuperUserID  { get; set; }
     /// <summary>All role names encoded in the token (e.g. "DataEntrant", "Admin").</summary>
     public List<string> Roles        { get; set; } = new();
+    /// <summary>NGO/Sub-Recipient partner name from SubRecT.SubRec. Empty if user is not NGO-affiliated.</summary>
+    public string       NgoName      { get; set; } = string.Empty;
 }
 
 /// <summary>Initiates a forgot-password flow — caller supplies their email address.</summary>

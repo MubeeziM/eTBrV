@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 -- ART Patient Register — SQL Server 2025 Schema
 -- sql/create_patients_table.sql
 --
@@ -13,7 +13,7 @@ USE [db_ac602a_v6nkwi3rvw];
 GO
 
 -- Safety: skip if already created
-IF OBJECT_ID('PtDetailsT', 'U') IS NOT NULL
+IF OBJECT_ID('PtDetailsARTT', 'U') IS NOT NULL
 BEGIN
   PRINT 'Schema already exists — skipping.';
   RETURN;
@@ -59,12 +59,12 @@ CREATE TABLE RegimenCategoryT (
   RegimenCategory    VARCHAR(40) NOT NULL
 );
 
-CREATE TABLE RegimenT (
-  RegimenID          INTEGER NOT NULL CONSTRAINT PK_RegimenT PRIMARY KEY,
+CREATE TABLE RegimenARTT (
+  RegimenID          INTEGER NOT NULL CONSTRAINT PK_RegimenARTT PRIMARY KEY,
   Regimen            VARCHAR(120) NOT NULL,
   RegimenCode        VARCHAR(10) NOT NULL,
   RegimenCategoryID  INTEGER NOT NULL
-    CONSTRAINT FK_RegimenT_Category REFERENCES RegimenCategoryT(RegimenCategoryID)
+    CONSTRAINT FK_RegimenARTT_Category REFERENCES RegimenCategoryT(RegimenCategoryID)
 );
 
 CREATE TABLE RegimenChangeReasonT (
@@ -147,7 +147,7 @@ INSERT INTO RegimenCategoryT VALUES
   (0,'Not recorded'),(1,'Adult 1st Line'),(2,'Adult 2nd Line'),
   (3,'Child 1st Line'),(4,'Child 2nd Line');
 
-INSERT INTO RegimenT (RegimenID, Regimen, RegimenCode, RegimenCategoryID) VALUES
+INSERT INTO RegimenARTT (RegimenID, Regimen, RegimenCode, RegimenCategoryID) VALUES
   (1,'TDF + 3TC + DTG','1a',1),(2,'TDF + 3TC + EFV','1b',1),
   (3,'AZT + 3TC + DTG','1c',1),(4,'AZT + 3TC + NVP','1d',1),
   (5,'AZT + 3TC + EFV','1e',1),(6,'ABC + 3TC + DTG','1f',1),
@@ -212,22 +212,23 @@ CREATE VIEW vwGeogAreaQ AS
     LEFT JOIN CountyT c ON hf.CountyID = c.CountyID
     LEFT JOIN StateT  s ON hf.StateID  = s.StateID
     WHERE  hf.HealthFacilityID NOT IN (0, 15, 17, 435)
-      AND  COALESCE(s.State, '') NOT LIKE '%Training%';
+      AND  COALESCE(s.State, '') NOT LIKE '%Training%'
+      AND  hf.eTBrDHIS = 1;
 
 -- =============================================================================
--- MAIN TABLE: PtDetailsT
+-- MAIN TABLE: PtDetailsARTT
 -- =============================================================================
 
-CREATE TABLE PtDetailsT (
+CREATE TABLE PtDetailsARTT (
   PtDetailsTID          UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID()
-                          CONSTRAINT PK_PtDetailsT PRIMARY KEY,
+                          CONSTRAINT PK_PtDetailsARTT PRIMARY KEY,
   PatientID             INTEGER IDENTITY(1,1) NOT NULL,
   NearestHFID           INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_HF REFERENCES HealthFacilityT(HealthFacilityID),
+    CONSTRAINT FK_PtDetailsARTT_HF REFERENCES HealthFacilityT(HealthFacilityID),
   DataSourceID          INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_DS REFERENCES DataSourceT(DataSourceID),
+    CONSTRAINT FK_PtDetailsARTT_DS REFERENCES DataSourceT(DataSourceID),
   CountyID              INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_County REFERENCES CountyT(CountyID),
+    CONSTRAINT FK_PtDetailsARTT_County REFERENCES CountyT(CountyID),
   EnteredByID           UNIQUEIDENTIFIER NULL,
   HasChanged            INTEGER NOT NULL DEFAULT 1,
   LastModOn             DATETIME2(3) NOT NULL DEFAULT GETDATE(),
@@ -236,48 +237,48 @@ CREATE TABLE PtDetailsT (
   ARTNo                 VARCHAR(30) NOT NULL,
   ARTStartDate          DATE NULL,
   DateEnrolledInCare    DATE NULL,
-  FullName              VARCHAR(100) NOT NULL,
+  PtName                VARCHAR(100) NOT NULL,
   ResidenceAddress      VARCHAR(200) NULL,
   Phone1                VARCHAR(15) NULL,
   Phone2                VARCHAR(15) NULL,
   OccupationID          INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_Occ REFERENCES OccupationT(OccupationID),
+    CONSTRAINT FK_PtDetailsARTT_Occ REFERENCES OccupationT(OccupationID),
   OccupationOther       VARCHAR(100) NULL,
   KeyPopuID             INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_KP REFERENCES KeyPopuT(KeyPopuID),
+    CONSTRAINT FK_PtDetailsARTT_KP REFERENCES KeyPopuT(KeyPopuID),
   KeyPopuOther          VARCHAR(100) NULL,
   Age                   INTEGER NOT NULL DEFAULT 0,
   DateOfBirth           DATE NULL,
   SexID                 INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_Sex REFERENCES SexT(SexID),
+    CONSTRAINT FK_PtDetailsARTT_Sex REFERENCES SexT(SexID),
   WeightKg              DECIMAL(5,1) NULL,
   HeightCm              DECIMAL(5,1) NULL,
   MUACCm                DECIMAL(4,1) NULL,
   BMI                   DECIMAL(5,2) NULL,
   WHOStageID            INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_WHO REFERENCES WHOStageT(WHOStageID),
+    CONSTRAINT FK_PtDetailsARTT_WHO REFERENCES WHOStageT(WHOStageID),
   CD4Value              DECIMAL(7,1) NULL,
   CD4IsPercent          INTEGER NOT NULL DEFAULT 0,
   CPTStartDate          DATE NULL,
   CPTDrugID             INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_CPT REFERENCES CPTDrugT(CPTDrugID),
+    CONSTRAINT FK_PtDetailsARTT_CPT REFERENCES CPTDrugT(CPTDrugID),
   TBRxStartDate         DATE NULL,
   UnitTBNo              VARCHAR(50) NULL,
   TBStatusID            INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_TBStatus REFERENCES TBStatusT(TBStatusID),
+    CONSTRAINT FK_PtDetailsARTT_TBStatus REFERENCES TBStatusT(TBStatusID),
   BreastfeedingID       INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_BF REFERENCES BreastfeedingT(BreastfeedingID),
+    CONSTRAINT FK_PtDetailsARTT_BF REFERENCES BreastfeedingT(BreastfeedingID),
   IsTransferIn          INTEGER NOT NULL DEFAULT 0,
   TransferFromFacility  VARCHAR(100) NULL,
   GuardianName          VARCHAR(100) NULL,
   GuardianPhone1        VARCHAR(15) NULL,
-  CONSTRAINT UQ_PtDetailsT_ARTNo UNIQUE (ARTNo)
+  CONSTRAINT UQ_PtDetailsARTT_ARTNo UNIQUE (ARTNo)
 );
 
-CREATE INDEX IX_PtDetailsT_ARTNo        ON PtDetailsT(ARTNo);
-CREATE INDEX IX_PtDetailsT_FullName     ON PtDetailsT(FullName);
-CREATE INDEX IX_PtDetailsT_ARTStartDate ON PtDetailsT(ARTStartDate);
-CREATE INDEX IX_PtDetailsT_HasChanged   ON PtDetailsT(HasChanged);
+CREATE INDEX IX_PtDetailsARTT_ARTNo        ON PtDetailsARTT(ARTNo);
+CREATE INDEX IX_PtDetailsARTT_PtName      ON PtDetailsARTT(PtName);
+CREATE INDEX IX_PtDetailsARTT_ARTStartDate ON PtDetailsARTT(ARTStartDate);
+CREATE INDEX IX_PtDetailsARTT_HasChanged   ON PtDetailsARTT(HasChanged);
 GO
 
 -- =============================================================================
@@ -288,7 +289,7 @@ CREATE TABLE INHProphylaxisT (
   INHProphylaxisTID  UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID()
                        CONSTRAINT PK_INHProphylaxisT PRIMARY KEY,
   PtDetailsTID       UNIQUEIDENTIFIER NOT NULL
-    CONSTRAINT FK_INH_PtDetails REFERENCES PtDetailsT(PtDetailsTID),
+    CONSTRAINT FK_INH_PtDetails REFERENCES PtDetailsARTT(PtDetailsTID),
   SequenceNo         INTEGER NOT NULL,
   INHDate            DATE NULL,
   EnteredByID        UNIQUEIDENTIFIER NULL,
@@ -302,7 +303,7 @@ CREATE TABLE PMTCTPregnancyT (
   PMTCTPregnancyTID   UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID()
                         CONSTRAINT PK_PMTCTPregnancyT PRIMARY KEY,
   PtDetailsTID        UNIQUEIDENTIFIER NOT NULL
-    CONSTRAINT FK_PMTCT_PtDetails REFERENCES PtDetailsT(PtDetailsTID),
+    CONSTRAINT FK_PMTCT_PtDetails REFERENCES PtDetailsARTT(PtDetailsTID),
   PregnancyNo         INTEGER NOT NULL,
   ANCNo               VARCHAR(50) NULL,
   DeliveryDate        DATE NULL,
@@ -319,11 +320,11 @@ CREATE TABLE RegimenHistoryT (
   RegimenHistoryTID   UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID()
                         CONSTRAINT PK_RegimenHistoryT PRIMARY KEY,
   PtDetailsTID        UNIQUEIDENTIFIER NOT NULL
-    CONSTRAINT FK_RegimenHistory_PtDetails REFERENCES PtDetailsT(PtDetailsTID),
+    CONSTRAINT FK_RegimenHistory_PtDetails REFERENCES PtDetailsARTT(PtDetailsTID),
   RegimenLine         INTEGER NOT NULL,
   SequenceNo          INTEGER NOT NULL,
   RegimenID           INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_RegimenHistory_Regimen REFERENCES RegimenT(RegimenID),
+    CONSTRAINT FK_RegimenHistory_Regimen REFERENCES RegimenARTT(RegimenID),
   ChangeReasonID      INTEGER NOT NULL DEFAULT 0
     CONSTRAINT FK_RegimenHistory_Reason REFERENCES RegimenChangeReasonT(RegimenChangeReasonID),
   OtherReasonText     VARCHAR(200) NULL,
@@ -335,17 +336,17 @@ CREATE TABLE RegimenHistoryT (
 );
 CREATE INDEX IX_RegimenHistoryT_PtDetailsTID ON RegimenHistoryT(PtDetailsTID);
 
-CREATE TABLE PtFollowUpT (
+CREATE TABLE PtFollowUpARTT (
   PtFollowUpTID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID()
-                       CONSTRAINT PK_PtFollowUpT PRIMARY KEY,
+                       CONSTRAINT PK_PtFollowUpARTT PRIMARY KEY,
   PtDetailsTID       UNIQUEIDENTIFIER NOT NULL
-    CONSTRAINT FK_FollowUp_PtDetails REFERENCES PtDetailsT(PtDetailsTID),
+    CONSTRAINT FK_FollowUp_PtDetails REFERENCES PtDetailsARTT(PtDetailsTID),
   VisitDate          DATE NULL,
   VisitMonth         INTEGER NULL,
   FollowUpStatusID   INTEGER NOT NULL DEFAULT 0
     CONSTRAINT FK_FollowUp_Status REFERENCES FollowUpStatusT(FollowUpStatusID),
   RegimenID          INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_FollowUp_Regimen REFERENCES RegimenT(RegimenID),
+    CONSTRAINT FK_FollowUp_Regimen REFERENCES RegimenARTT(RegimenID),
   TBStatusID         INTEGER NOT NULL DEFAULT 0
     CONSTRAINT FK_FollowUp_TBStatus REFERENCES TBStatusT(TBStatusID),
   StopReasonID       INTEGER NOT NULL DEFAULT 0
@@ -366,9 +367,9 @@ CREATE TABLE PtFollowUpT (
   LastModOn          DATETIME2(3) NOT NULL DEFAULT GETDATE(),
   CreatedOn          DATETIME2(3) NOT NULL DEFAULT GETDATE()
 );
-CREATE INDEX IX_PtFollowUpT_PtDetailsTID ON PtFollowUpT(PtDetailsTID);
-CREATE INDEX IX_PtFollowUpT_VisitDate    ON PtFollowUpT(VisitDate);
-CREATE INDEX IX_PtFollowUpT_HasChanged   ON PtFollowUpT(HasChanged);
+CREATE INDEX IX_PtFollowUpARTT_PtDetailsTID ON PtFollowUpARTT(PtDetailsTID);
+CREATE INDEX IX_PtFollowUpARTT_VisitDate    ON PtFollowUpARTT(VisitDate);
+CREATE INDEX IX_PtFollowUpARTT_HasChanged   ON PtFollowUpARTT(HasChanged);
 GO
 
 PRINT 'ART Register schema created and seeded successfully.';
@@ -377,10 +378,10 @@ GO
 -- =============================================================================
 -- PATCH: Run this separately if the tables were already created without TBStatusID
 -- =============================================================================
-IF COL_LENGTH('PtDetailsT','TBStatusID') IS NULL
+IF COL_LENGTH('PtDetailsARTT','TBStatusID') IS NULL
 BEGIN
-  ALTER TABLE PtDetailsT ADD TBStatusID INTEGER NOT NULL DEFAULT 0
-    CONSTRAINT FK_PtDetailsT_TBStatus REFERENCES TBStatusT(TBStatusID);
-  PRINT 'PATCH: TBStatusID added to PtDetailsT.';
+  ALTER TABLE PtDetailsARTT ADD TBStatusID INTEGER NOT NULL DEFAULT 0
+    CONSTRAINT FK_PtDetailsARTT_TBStatus REFERENCES TBStatusT(TBStatusID);
+  PRINT 'PATCH: TBStatusID added to PtDetailsARTT.';
 END
 GO

@@ -170,7 +170,7 @@ CREATE TABLE CrossRefGpUsersT (
     SubRecID    INT          NOT NULL CONSTRAINT DF_CrossRef_SubRecID    DEFAULT 0,
 
     HasChanged  BIT          NOT NULL CONSTRAINT DF_CrossRef_HasChanged  DEFAULT 0,
-    CountryID   INT          NOT NULL CONSTRAINT DF_CrossRef_CountryID   DEFAULT 0,
+    CountryID   INT          NOT NULL CONSTRAINT DF_CrossRef_CountryID   DEFAULT 1,
     DistrictID  INT          NOT NULL CONSTRAINT DF_CrossRef_DistrictID  DEFAULT 0,
     AdminID     INT          NOT NULL CONSTRAINT DF_CrossRef_AdminID     DEFAULT 0,
     SuperUserID INT          NOT NULL CONSTRAINT DF_CrossRef_SuperUserID DEFAULT 0,

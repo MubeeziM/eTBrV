@@ -26,6 +26,7 @@
   --radius:        12px;
   --shadow:        0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
   --transition:    .18s ease;
+  --nav-h:         60px;  /* sticky nav bar height — both sidebars offset by this */
 }
 
 html {
@@ -34,7 +35,7 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -201,22 +202,66 @@ input[type="number"],
 input[type="search"],
 select,
 textarea {
+  display: block;
   width: 100%;
-  padding: .6rem .85rem;
+  height: 2.75rem;
+  padding: 0 .85rem;
   border: 1.5px solid var(--border);
   border-radius: 8px;
   font-size: .95rem;
-  color: var(--text);
+  line-height: calc(2.75rem - 3px); /* 3px = 1.5px top border + 1.5px bottom border */
+  color: #0000F0;
+  font-weight: 400;
   background: #fff;
   transition: border-color var(--transition), box-shadow var(--transition);
   outline: none;
   font-family: inherit;
+  box-sizing: border-box;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+/* Keep placeholder text lighter so it stays visually distinct from entered data */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* textarea needs to grow with content */
+textarea {
+  height: auto;
+  min-height: 2.75rem;
+  overflow: auto;
+  line-height: 1.5;
+  padding: .6rem .85rem;
+}
+
+/* Normalise <select> height on mobile (iOS/Android inflate native selects) */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .85rem center;
+  padding-right: 2.5rem;
+  cursor: pointer;
+  /* Centre text vertically — line-height alone does not work on <select> in most browsers */
+  line-height: 1.2;
+  padding-top: .68rem;
+  padding-bottom: .68rem;
 }
 
 /* Dropdowns show "-- Select --" in muted colour (placeholder style).
-   JS adds .select-has-value when a real option is chosen. */
-select { color: var(--text-muted); }
-select.select-has-value { color: var(--text); }
+   JS adds .select-has-value when a real option is chosen.
+   JS adds .date-has-value to date inputs when a date is picked. */
+select { color: var(--text-muted); font-weight: 400; }
+select.select-has-value { color: #0000F0; }
+
+input[type="date"],
+input[type="month"] { color: var(--text-muted); font-weight: 400; }
+input[type="date"].date-has-value,
+input[type="month"].date-has-value { color: #0000F0; }
 
 input[type="text"]:focus,
 input[type="password"]:focus,
@@ -237,6 +282,129 @@ textarea.invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px rgba(220,38,38,.12);
 }
+
+/* ── Report modal ────────────────────────────────────────── */
+#art-report-modal .modal-dialog {
+  max-width: 640px;
+}
+#art-report-modal .modal-content {
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+/* ── Status message animation ─────────────────────────────── */
+@keyframes rptStatusIn {
+  from { opacity: 0; transform: translateY(-10px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0)     scale(1);   }
+}
+#rpt-status.rpt-status-anim {
+  animation: rptStatusIn 2s cubic-bezier(.22,.68,0,1.2) forwards;
+}
+
+/* ── Geo checkbox tree (report modal) ─────────────────────── */
+.rpt-tree-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  padding: .35rem .6rem;
+  border: 1.5px solid #94a3b8 !important;
+}
+
+/* Stronger borders on all selects/inputs inside the report modal */
+#art-report-modal .form-select,
+#art-report-modal .form-control {
+  border: 1.5px solid #94a3b8;
+}
+
+/* Match old eTBr system label colour */
+#art-report-modal .form-label {
+  color: #1b5e42;
+}
+
+/* Footer tinted to complement the sage-green body */
+#art-report-modal .modal-footer {
+  background: #cce0cc;
+  border-top: 1px solid #b2d4b2;
+  padding: .5rem 1rem;
+}
+.rpt-tree-node {
+  line-height: 1.75;
+  user-select: none;
+}
+.rpt-tree-toggle {
+  display: inline-block;
+  width: 16px;
+  font-size: .6rem;
+  color: #475569;
+  cursor: pointer;
+  text-align: center;
+  vertical-align: middle;
+}
+.rpt-tree-toggle::before       { content: '\25B6'; }
+.rpt-tree-toggle.open::before  { content: '\25BC'; }
+.rpt-tree-cb {
+  margin: 0 5px 0 0;
+  vertical-align: middle;
+  cursor: pointer;
+  accent-color: #1a3a5c;
+}
+.rpt-tree-cb:disabled { cursor: not-allowed; opacity: .6; }
+.rpt-tree-label {
+  cursor: pointer;
+  vertical-align: middle;
+  font-size: .875rem;
+}
+.rpt-tree-state    { padding: 3px 0; font-weight: 600; }
+.rpt-tree-county   { padding: 2px 0 2px 20px; }
+.rpt-tree-facility { padding: 1px 0 1px 40px; color: #374151; }
+.rpt-tree-children { display: none; }
+.rpt-tree-children.open { display: block; }
+#rpt-tree-summary  { font-size: .8rem; color: #64748b; min-height: 1.2em; }
+
+.rpt-summary-header {
+  font-size: .78rem;
+  font-weight: 600;
+  color: #1b5e42;
+  margin-bottom: .3rem;
+}
+.rpt-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  max-height: 78px;
+  overflow-y: auto;
+}
+.rpt-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  background: #e8f4ee;
+  color: #1b5e42;
+  border: 1px solid #b2d4b2;
+  border-radius: 1rem;
+  padding: .1rem .45rem .1rem .55rem;
+  font-size: .75rem;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+.rpt-summary-chip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-size: .85rem;
+  line-height: 1;
+  color: #1b5e42;
+  opacity: .6;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+}
+.rpt-summary-chip-close:hover { opacity: 1; background: #b2d4b2; }
 
 textarea { resize: vertical; }
 
@@ -286,6 +454,7 @@ textarea { resize: vertical; }
   padding: .38rem .7rem;
   font-size: .82rem;
   border-radius: 6px;
+  border: 1px solid transparent;
 }
 
 .btn-danger:hover { background: #fee2e2; }
@@ -298,7 +467,7 @@ textarea { resize: vertical; }
   font-size: .85rem;
 }
 
-.btn-secondary:hover { background: var(--surface); }
+.btn-secondary:hover { background: var(--border); color: var(--text); }
 
 /* ---------- Sync Button ---------- */
 .btn-sync {
@@ -356,8 +525,11 @@ textarea { resize: vertical; }
   opacity: 0;
   pointer-events: none;
   transition: opacity .3s, transform .3s;
-  white-space: nowrap;
-  z-index: 999;
+  white-space: normal;
+  word-break: break-word;
+  max-width: min(92vw, 440px);
+  text-align: center;
+  z-index: 9999; /* above all Bootstrap modals (1055) and any stacked layers */
   box-shadow: 0 4px 20px rgba(0,0,0,.25);
 }
 
@@ -413,6 +585,20 @@ textarea { resize: vertical; }
   border: 1px solid var(--border);
 }
 
+/* data entry. Keep TB list compact with internal scroll while preserving horizontal scroll. */
+.table-wrap--tb-scroll {
+  max-height: min(65vh, 350px);
+  overflow: auto;
+  border: 1.5px solid #94a3b8;
+}
+
+.table-wrap--tb-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--primary);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -448,11 +634,138 @@ tbody td {
   white-space: nowrap;
 }
 
-/* Address column can wrap */
-tbody td:nth-child(6) {
+/* Address column can wrap (ART table only) */
+#patients-table tbody td:nth-child(6) {
   white-space: normal;
   min-width: 140px;
 }
+
+/* Actions column — never clip or truncate action buttons */
+#patients-table tbody td:last-child,
+#tb-patient-table tbody td:last-child {
+  max-width: none;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+
+#tb-patient-table tbody tr {
+  height: 42px;
+} 
+
+#tb-patient-table thead th {
+  padding: .45rem 1rem;
+}
+
+#tb-patient-table tbody td {
+  padding: .18rem 1rem;
+  line-height: 1.1;
+  font-size: .90rem;
+}
+
+#tb-patient-table tbody td:last-child {
+  padding-left: .55rem;
+  padding-right: .55rem;
+}
+
+#tb-patient-table .tb-edit-btn,
+#tb-patient-table .tb-delete-btn,
+#tb-patient-table .tb-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 .35rem;
+  margin-top: 0;
+  line-height: 1;
+  gap: .15rem;
+  box-sizing: border-box;
+}
+
+#tb-patient-table .tb-edit-btn svg,
+#tb-patient-table .tb-delete-btn svg,
+#tb-patient-table .tb-view-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+
+/* deleted TB records */
+/* Match the deleted TB-records table to the main TB table styling */
+#tb-deleted-patients-section table thead th {
+  padding: .45rem 1rem;
+}
+
+#tb-deleted-patients-section table tbody tr {
+  height: 42px;
+  border-bottom: 1px solid var(--border);
+}
+
+#tb-deleted-patients-section table tbody td {
+  padding: .18rem 1rem;
+  line-height: 1.1;
+  font-size: .90rem;
+  vertical-align: middle;
+}
+
+#tb-deleted-patients-section .tb-undelete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 .35rem;
+  margin-top: 0;
+  line-height: 1;
+  gap: .15rem;
+  box-sizing: border-box;
+}
+
+
+/* ART patient list + deleted ART records */
+#patients-table thead th,
+#deleted-patients-section table thead th {
+  padding: .45rem 1rem;
+}
+
+#patients-table tbody tr,
+#deleted-patients-section table tbody tr {
+  height: 42px;
+}
+
+#patients-table tbody td,
+#deleted-patients-section table tbody td {
+  padding: .18rem 1rem;
+  line-height: 1.1;
+  font-size: .90rem;
+  vertical-align: middle;
+}
+
+#patients-table tbody td:last-child,
+#deleted-patients-section table tbody td:last-child {
+  padding-left: .55rem;
+  padding-right: .55rem;
+}
+
+#patients-table .edit-btn,
+#patients-table .delete-btn,
+#patients-table .view-btn,
+#patients-table .visits-btn,
+#deleted-patients-section .undelete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 .35rem;
+  margin-top: 0;
+  line-height: 1;
+  gap: .15rem;
+  box-sizing: border-box;
+}
+
+
 
 /* Empty state message */
 .empty-state {
@@ -477,10 +790,11 @@ tbody td:nth-child(6) {
 
 /* Collapsible form sections */
 .form-section {
-  border: 1px solid var(--border);
+  border: 1.5px solid #94a3b8;
   border-radius: 8px;
   margin-bottom: 1rem;
   overflow: hidden;
+  box-shadow: 0 1px 4px rgba(27,94,66,.07);
 }
 
 .form-section-title {
@@ -499,8 +813,49 @@ tbody td:nth-child(6) {
 details[open] > .form-section-title::before { content: '▼ '; }
 
 .form-section-body {
-  padding: 1rem;
-  border-top: 1px solid var(--border);
+  padding: 1.1rem 1rem;
+  background: #f0f7f0;
+  border-top: 1.5px solid #b2d4b2;
+}
+
+/* Inputs / selects inside data-entry form sections */
+.form-section-body input[type="text"],
+.form-section-body input[type="number"],
+.form-section-body input[type="date"],
+.form-section-body input[type="month"],
+.form-section-body input[type="tel"],
+.form-section-body input[type="email"],
+.form-section-body select,
+.form-section-body textarea {
+  border-color: #94a3b8;
+  background: #fff;
+  color: #0000F0;
+  font-weight: 400;
+}
+.form-section-body input[type="text"]:focus,
+.form-section-body input[type="number"]:focus,
+.form-section-body input[type="date"]:focus,
+.form-section-body input[type="month"]:focus,
+.form-section-body input[type="tel"]:focus,
+.form-section-body input[type="email"]:focus,
+.form-section-body select:focus,
+.form-section-body textarea:focus {
+  border-color: #1b5e42;
+  box-shadow: 0 0 0 3px rgba(27,94,66,.15);
+}
+
+/* Dates and dropdowns with no value yet: look like placeholder (muted, normal weight).
+   JS adds .date-has-value / .select-has-value when the user makes a selection. */
+.form-section-body select:not(.select-has-value),
+.form-section-body input[type="date"]:not(.date-has-value),
+.form-section-body input[type="month"]:not(.date-has-value) {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Labels inside form sections */
+.form-section-body label {
+  color: #1b5e42;
 }
 
 /* Wider grid for multi-column rows on larger screens */
@@ -513,6 +868,18 @@ details[open] > .form-section-title::before { content: '▼ '; }
   background: #f8fafc !important;
   color: var(--text-muted) !important;
   cursor: default;
+}
+
+/* Frozen section (e.g., ART/CPT when HIV is Negative) */
+.field-frozen {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+.field-frozen input,
+.field-frozen select {
+  background: #f1f5f9 !important;
+  color: var(--text-muted) !important;
 }
 
 /* Small helper text below fields */
@@ -647,16 +1014,19 @@ details[open] > .form-section-title::before { content: '▼ '; }
 /* Form actions row */
 .form-actions {
   margin-top: .5rem;
-  display: flex;
-  gap: .5rem;
-  align-items: stretch;
+  /* Bootstrap row/col-2-8-2 handles the flexbox layout */
 }
-/* Let the primary button grow to fill remaining space */
+/* Primary button fills its Bootstrap column */
 .form-actions .btn-primary {
-  flex: 1;
-  width: auto;
+  width: 100%;
   margin-top: 0;
 }
+/* Collapse a side column when its button is hidden */
+.form-actions-cancel:has(> [hidden]),
+.form-actions-back:has(> [hidden]) { display: none; }
+/* White text on the info-coloured side buttons */
+.form-actions .btn-info { color: #fff; }
+.form-actions .btn-info:hover { color: #fff; }
 
 /* Input for date and month types */
 input[type="date"],
@@ -1026,12 +1396,85 @@ input[type="month"]:focus {
   border-radius: var(--radius);
   padding: 1.5rem 1.75rem;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: 1.25rem;
   flex-wrap: wrap;
   box-shadow: 0 4px 20px rgba(37,99,235,.35);
 }
+
+/* Search stat box */
+.db-stat--search {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: background .15s, border-color .15s;
+}
+.db-stat--search:hover,
+.db-stat--search:focus-visible {
+  background: rgba(255,255,255,.28);
+  border-color: rgba(255,255,255,.55);
+  outline: none;
+}
+.db-stat--search svg {
+  color: #fff;
+}
+
+/* Clickable stat tiles (ART Patients, TB Patients) */
+.db-stat--clickable {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: background .15s, border-color .15s, transform .1s;
+  text-decoration: none;
+}
+.db-stat--clickable:hover,
+.db-stat--clickable:focus-visible {
+  background: rgba(255,255,255,.28);
+  border-color: rgba(255,255,255,.55);
+  outline: none;
+  transform: translateY(-1px);
+}
+.db-stat--clickable:active { transform: translateY(0); }
+
+/* ── User Management section panels ─────────────────────────────── */
+.umgmt-panel {
+  margin-top: 1.25rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f9fafb;
+  animation: umgmt-fadein .2s ease;
+}
+@keyframes umgmt-fadein {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.umgmt-panel-hd {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .75rem 1.1rem;
+  background: #f3f4f6;
+  border-bottom: 1.5px solid #e5e7eb;
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.umgmt-panel-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 .25rem;
+  transition: color .15s;
+}
+.umgmt-panel-close:hover { color: #dc2626; }
 
 .db-welcome-title {
   font-size: 1.25rem;
@@ -1070,6 +1513,7 @@ input[type="month"]:focus {
   font-weight: 700;
   color: #fff;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .db-stat-lbl {
@@ -1109,6 +1553,11 @@ input[type="month"]:focus {
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 }
 
+/* 3-column fixed-width variant — top action cards */
+.db-grid--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 /* ── Individual dashboard card ──────────────────────────────────────── */
 .db-card {
   background: var(--card);
@@ -1118,6 +1567,7 @@ input[type="month"]:focus {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;  /* prevent grid item from overflowing its column */
   transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition);
 }
 
@@ -1170,6 +1620,8 @@ input[type="month"]:focus {
   color: var(--text);
   margin-bottom: .3rem;
   line-height: 1.3;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .db-card-body p {
@@ -1177,6 +1629,8 @@ input[type="month"]:focus {
   color: var(--text-muted);
   line-height: 1.55;
   margin: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* ── Card footer ────────────────────────────────────────────────────── */
@@ -1280,17 +1734,36 @@ input[type="month"]:focus {
   .db-welcome {
     flex-direction: column;
     gap: 1rem;
+    padding: 1.25rem 1rem;
   }
   .db-stats {
     width: 100%;
-    justify-content: space-between;
+    gap: .3rem;
+    flex-wrap: nowrap;
   }
   .db-stat {
     flex: 1;
     min-width: 0;
+    padding: .4rem .15rem;
   }
-  .db-grid, .db-grid--2 {
+  .db-stat-val {
+    font-size: .85rem;
+  }
+  .db-stat-lbl {
+    font-size: .5rem;
+    letter-spacing: 0;
+  }
+  .db-grid, .db-grid--2, .db-grid--3 {
     grid-template-columns: 1fr;
+  }
+  .db-card-body {
+    padding: 0 1rem .65rem;
+  }
+  .db-card-foot {
+    padding: .65rem 1rem;
+  }
+  .db-card-ico {
+    padding: .85rem 1rem .5rem;
   }
 }
 
@@ -1305,7 +1778,7 @@ input[type="month"]:focus {
 
 .register-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 30% 1fr;
   min-height: calc(100vh - 60px);
   align-items: start;
 }
@@ -1313,15 +1786,15 @@ input[type="month"]:focus {
 /* ── Sidebar ─────────────────────────────────────────────── */
 .register-sidebar {
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--nav-h);              /* stick below the nav bar, not behind it */
+  height: calc(100vh - var(--nav-h));
   overflow-y: auto;
   background: var(--card);
   border-right: 1.5px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  z-index: 100;
+  z-index: 50;  /* below nav bar (100) so it never overlaps it */
 }
 
 .sidebar-header {
@@ -1349,6 +1822,48 @@ input[type="month"]:focus {
   padding: 0 .2rem;
 }
 .sidebar-close-btn:hover { color: var(--danger); }
+
+/* Desktop collapse/expand button (hidden on mobile) */
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .25rem .4rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn:hover { color: var(--primary); border-color: var(--primary); }
+
+/* ── Desktop collapsed state ────────────────────────────── */
+.register-layout.sidebar--collapsed {
+  grid-template-columns: 40px 1fr;
+}
+.register-sidebar.sidebar--collapsed {
+  width: 40px;
+  min-width: 40px;
+  overflow: hidden;
+  cursor: pointer;  /* clicking anywhere on bar re-expands it */
+}
+.register-sidebar.sidebar--collapsed > *:not(.sidebar-header) {
+  display: none;
+}
+.register-sidebar.sidebar--collapsed .sidebar-header {
+  flex-direction: column;
+  padding: .75rem .3rem;
+  gap: .5rem;
+  border-bottom: none;
+}
+.register-sidebar.sidebar--collapsed .sidebar-header > *:not(.sidebar-collapse-btn) {
+  display: none;
+}
+.register-sidebar.sidebar--collapsed .sidebar-collapse-btn {
+  margin-left: 0;
+}
 
 .sidebar-divider {
   margin: .5rem 0;
@@ -1457,11 +1972,57 @@ input[type="month"]:focus {
   padding: 0;
   margin: 0;
 }
-.tree-list--county  { padding-left: 1rem; }
-.tree-list--facility { padding-left: 1.2rem; }
+
+/* Child lists indent — lines are drawn per node, not on the ul */
+.tree-list--state,
+.tree-list--county,
+.tree-list--facility {
+  margin-left: 0.7rem;
+  padding-left: 0.7rem;
+}
+
+/* Vertical + horizontal connectors per node */
+.tree-node--state,
+.tree-node--county,
+.tree-node--facility {
+  position: relative;
+}
+
+/* ::before — vertical segment; runs full height for all but the last child,
+   which stops at the branch midpoint (creating └ instead of ├) */
+.tree-node--state::before,
+.tree-node--county::before,
+.tree-node--facility::before {
+  content: '';
+  position: absolute;
+  left: -0.7rem;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px solid #c8ced8;
+}
+.tree-node--state:last-child::before,
+.tree-node--county:last-child::before,
+.tree-node--facility:last-child::before {
+  bottom: auto;
+  height: 0.7rem;
+}
+
+/* ::after — horizontal branch to the node content */
+.tree-node--state::after,
+.tree-node--county::after,
+.tree-node--facility::after {
+  content: '';
+  position: absolute;
+  left: -0.7rem;
+  top: 0.7rem;
+  width: 0.7rem;
+  border-top: 1px solid #c8ced8;
+}
 
 .tree-details { display: block; }
 
+.tree-summary--country,
 .tree-summary--state,
 .tree-summary--county {
   display: flex;
@@ -1470,27 +2031,43 @@ input[type="month"]:focus {
   padding: .35rem .4rem;
   border-radius: 6px;
   cursor: pointer;
-  font-size: .84rem;
+  font-size: .90rem;
   font-weight: 600;
   color: var(--text);
   list-style: none;
   user-select: none;
   transition: background var(--transition);
 }
+.tree-summary--country::-webkit-details-marker,
 .tree-summary--state::-webkit-details-marker,
 .tree-summary--county::-webkit-details-marker { display: none; }
+.tree-summary--country:hover,
 .tree-summary--state:hover,
 .tree-summary--county:hover { background: var(--bg); }
 
-.tree-summary--state  { font-size: .86rem; }
-.tree-summary--county { font-weight: 500; }
+.tree-summary--country { font-size: .88rem; font-weight: 700; }
+.tree-summary--state   { font-size: .86rem; }
+.tree-summary--county  { font-weight: 500; }
 
-.tree-toggle-icon {
-  transition: transform .15s ease;
+/* [+] / [−] toggle indicator */
+.tree-toggle-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  color: var(--text-muted);
+  width: 1.05rem;
+  height: 1.05rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #374151;
+  border: 1px solid #9ca3af;
+  background: #f3f4f6;
+  border-radius: 2px;
+  line-height: 1;
 }
-.tree-details[open] > summary .tree-toggle-icon { transform: rotate(90deg); }
+details:not([open]) > summary .tree-toggle-box::before { content: '+'; }
+details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
 
 .tree-icon { flex-shrink: 0; color: var(--text-muted); }
 
@@ -1592,29 +2169,49 @@ input[type="month"]:focus {
   flex-shrink: 0;
 }
 .sfb-change-btn:hover { background: var(--primary); color: #fff; }
+.sfb-baseline-btn {
+  background: none;
+  border: 1.5px solid #f59e0b;
+  color: #f59e0b;
+  border-radius: 6px;
+  padding: .3rem .75rem;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
+  flex-shrink: 0;
+}
+.sfb-baseline-btn:hover { background: #f59e0b; color: #fff; }
 
 /* ── Register selector (facility banner → register dropdown → content) ── */
 .register-selector {
   background: #f8fafc;
   border-bottom: 1.5px solid var(--border);
   padding: .75rem 1.25rem;
+  display: flex;
+  align-items: center;
 }
 .rs-row {
   display: flex;
   align-items: center;
   gap: .75rem;
   flex-wrap: wrap;
+  width: 100%;
 }
 .rs-label {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  align-self: center;
   gap: .35rem;
   font-size: .8125rem;
   font-weight: 600;
   color: #475569;
   white-space: nowrap;
   min-width: 7rem;
+  line-height: 1;
 }
+.rs-label svg { flex-shrink: 0; display: block; }
 .rs-select {
   flex: 1;
   min-width: 220px;
@@ -1640,9 +2237,21 @@ input[type="month"]:focus {
 }
 .rs-select option:disabled { color: #94a3b8; }
 
+/* ── Large screen (laptop+): narrower sidebar ───────────── */
+@media (min-width: 1200px) {
+  .register-layout {
+    grid-template-columns: 20% 1fr;
+  }
+}
+
 /* ── Mobile responsive ──────────────────────────────────── */
 @media (max-width: 767px) {
-  .register-layout {
+  /* Always single-column on mobile — override the desktop collapsed state too
+     (sidebar is position:fixed so it doesn't occupy grid space, but the
+     sidebar--collapsed rule has higher specificity and would otherwise reserve
+     a 40px column, squeezing register-main when rotated from landscape). */
+  .register-layout,
+  .register-layout.sidebar--collapsed {
     grid-template-columns: 1fr;
   }
 
@@ -1664,6 +2273,7 @@ input[type="month"]:focus {
   }
 
   .sidebar-close-btn { display: block; }
+  .sidebar-collapse-btn { display: none; }
 
   .register-topbar {
     display: flex;
@@ -1705,5 +2315,1181 @@ input[type="month"]:focus {
 
 @media (min-width: 768px) {
   .sidebar-toggle-btn { display: none; }
+}
+
+/* ============================================================
+   TB MONITORING SCREEN
+   ============================================================ */
+
+/* Teal colour variant for the monitoring dashboard card */
+.db-card-ico--teal svg { stroke: #0d9488; }
+.db-open-btn--teal { background: #0d9488; }
+.db-card--active:hover .db-open-btn--teal { background: #0f766e; }
+
+#tb-monitoring-screen {
+  min-height: calc(100vh - 60px);
+}
+
+/* Two-pane layout: narrow sidebar + main content */
+.mon-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: calc(100vh - 60px);
+  align-items: start;
+}
+
+/* ── Sidebar (facility filter) ───────────────────────────── */
+.mon-sidebar {
+  position: sticky;
+  top: var(--nav-h);              /* stick below the nav bar, not behind it */
+  height: calc(100vh - var(--nav-h));
+  overflow-y: auto;
+  background: var(--card);
+  border-right: 1.5px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 50;  /* below nav bar (100) so it never overlaps it */
+}
+
+.mon-sidebar-hd {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: 1rem 1rem .75rem;
+  font-weight: 700;
+  font-size: .9rem;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.mon-sidebar-hd svg { flex-shrink: 0; color: var(--primary); }
+.mon-sidebar-hd span { flex: 1; }
+
+.mon-sidebar-close {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 .2rem;
+}
+.mon-sidebar-close:hover { color: var(--danger); }
+
+.mon-filter-body {
+  padding: .75rem .85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+}
+
+.mon-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.mon-filter-label {
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+
+.mon-filter-sel {
+  width: 100%;
+  padding: .4rem .7rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: .88rem;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--transition);
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .7rem center;
+  padding-right: 2rem;
+  cursor: pointer;
+}
+.mon-filter-sel:focus { border-color: var(--primary); background-color: #fff; }
+
+.mon-filter-fhd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mon-filter-all-cb {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.mon-facilities-list {
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: .35rem .5rem;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+}
+
+.mon-facility-cb-row {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  padding: .22rem .1rem;
+  cursor: pointer;
+}
+
+.mon-facility-cb-row input[type="checkbox"] {
+  flex-shrink: 0;
+  margin-top: .15rem;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.mon-facility-cb-label {
+  font-size: .82rem;
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+/* ── Monitoring sidebar: collapsible (desktop) ───────────── */
+.mon-layout.mon-collapsed {
+  grid-template-columns: 40px 1fr;
+}
+.mon-sidebar.mon-collapsed {
+  width: 40px;
+  min-width: 40px;
+  overflow: hidden;
+}
+.mon-sidebar.mon-collapsed > *:not(.mon-sidebar-hd):not(.mon-sidebar-expand-hint) {
+  display: none;
+}
+.mon-sidebar.mon-collapsed .mon-sidebar-hd {
+  flex-direction: column;
+  padding: .75rem .3rem;
+  gap: .5rem;
+  border-bottom: none;
+}
+.mon-sidebar.mon-collapsed .mon-sidebar-hd > *:not(.mon-sidebar-collapse-btn) {
+  display: none;
+}
+/* Hint text shown vertically in the collapsed sidebar strip */
+.mon-sidebar-expand-hint {
+  display: none;
+}
+.mon-sidebar.mon-collapsed > .mon-sidebar-expand-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: .68rem;
+  font-weight: 600;
+  color: var(--primary);
+  letter-spacing: .04em;
+  padding: .75rem 0;
+  flex: 1;
+  cursor: pointer;
+  user-select: none;
+  opacity: .75;
+  transition: opacity .15s;
+}
+.mon-sidebar.mon-collapsed > .mon-sidebar-expand-hint:hover {
+  opacity: 1;
+}
+
+/* Compact funnel button that sits next to the facility label in the mode/context bar.
+   Visible at all breakpoints; on mobile it opens the overlay, on desktop it
+   expands the collapsed sidebar. */
+.mon-filter-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  padding: .25rem .4rem;
+  color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color .15s, background .15s;
+}
+.mon-filter-bar-btn:hover {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, .06);
+}
+
+/* ── Monitoring sidebar: collapsible (desktop) ───────────── */
+.mon-filter-body {
+  padding: .5rem .6rem .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  overflow-y: auto;
+}
+
+
+/* ── Main area ───────────────────────────────────────────── */
+.mon-main {
+  flex: 1;
+  padding: .75rem 1rem 2rem;
+  min-width: 0;
+}
+
+/* ── Mode toggle bar ─────────────────────────────────────── */
+.mon-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .5rem .75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: .85rem;
+  flex-wrap: wrap;
+}
+
+.mon-mode-toggle {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.mon-mode-label {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: .88rem;
+  user-select: none;
+}
+
+.mon-mode-label input[type="checkbox"] {
+  accent-color: var(--primary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.mon-mode-missed { color: var(--danger); }
+.mon-mode-due    { color: #059669; }
+
+.mon-showing-label {
+  font-size: .82rem;
+  color: var(--text-muted);
+  margin-left: auto;
+  font-style: italic;
+}
+
+/* ── Content grid: stats panel (left) + patient list (right) */
+.mon-content-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+/* Clicking the collapsed bar re-expands the sidebar */
+.mon-sidebar.mon-collapsed {
+  cursor: pointer;
+}
+.mon-sidebar.mon-collapsed .mon-sidebar-hd {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* ── Stats / category panel ──────────────────────────────── */
+.mon-stats-panel {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: sticky;
+  top: calc(var(--nav-h) + .5rem);
+}
+
+.mon-stats-group {
+  border-bottom: 1.5px solid var(--border);
+}
+.mon-stats-group:last-child { border-bottom: none; }
+
+.mon-stats-group-hd {
+  background: #1a3a5c;
+  color: #fff;
+  font-size: .76rem;
+  font-weight: 700;
+  padding: .55rem .85rem;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.mon-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem;
+  padding: .52rem .85rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition), color var(--transition);
+  font-size: .82rem;
+  color: var(--text);
+}
+.mon-stat-row:last-child { border-bottom: none; }
+.mon-stat-row:hover:not(.mon-stat-row--active) {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.mon-stat-row--active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.mon-stat-label { flex: 1; line-height: 1.3; }
+
+.mon-stat-count {
+  font-size: .92rem;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Patient list area ───────────────────────────────────── */
+.mon-list-area {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  padding: .85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  min-width: 0;
+}
+
+.mon-list-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1a3a5c;
+  text-align: center;
+  padding: .2rem 0 .05rem;
+  line-height: 1.4;
+}
+
+.mon-list-subtitle {
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-align: center;
+}
+
+.mon-list-hint {
+  font-size: .8rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+  min-height: 1.1em;
+}
+
+.mon-list-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-top: .35rem;
+}
+
+/* Monitoring table scroll wrapper */
+.table-wrap--mon-scroll {
+  max-height: min(58vh, 440px);
+  overflow: auto;
+  border: 1.5px solid #94a3b8;
+  border-radius: 6px;
+}
+
+.table-wrap--mon-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--primary);
+}
+
+/* Monitoring patient table — rows are clickable */
+#mon-patient-table tbody tr { cursor: pointer; }
+#mon-patient-table tbody tr:hover { background: var(--primary-light); }
+
+/* Days-late cell colouring (set via JS class) */
+.mon-days-late   { color: var(--danger);  font-weight: 700; }
+.mon-days-due    { color: #059669; font-weight: 700; }
+.mon-days-today  { color: #d97706; font-weight: 700; }
+
+/* ── Mobile responsive ───────────────────────────────────── */
+@media (max-width: 768px) {
+  .mon-layout { grid-template-columns: 1fr; }
+
+  .mon-sidebar {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    width: 260px;
+    height: 100%;
+    z-index: 200;
+    transition: left .25s ease;
+    box-shadow: none;
+  }
+  .mon-sidebar.mon-sidebar--open {
+    left: 0;
+    box-shadow: 4px 0 20px rgba(0,0,0,.2);
+  }
+  .mon-sidebar-close { display: block; }
+
+  .mon-content-grid { grid-template-columns: 1fr; }
+
+  /* On mobile, stats panel goes below the list */
+  .mon-stats-panel {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    border-radius: var(--radius);
+  }
+  .mon-stats-group {
+    min-width: 155px;
+    flex-shrink: 0;
+    border-bottom: none;
+    border-right: 1.5px solid var(--border);
+  }
+  .mon-stats-group:last-child { border-right: none; }
+
+  /* On mobile the sidebar is gone so the table can be taller */
+  .table-wrap--mon-scroll,
+  .table-wrap--dq-scroll {
+    max-height: min(72vh, 520px);
+  }
+}
+
+/* ── Phone portrait: stack the two stats groups vertically ──────────── */
+/* In landscape the horizontal-scroll layout (set in the ≤768px rule above)  */
+/* is fine. In portrait the groups are too narrow side-by-side, so we flip    */
+/* the stats panel to a column and restore the original bottom-border divider.*/
+@media (max-width: 768px) and (orientation: portrait) {
+  .mon-stats-panel {
+    flex-direction: column;
+    overflow-x: unset;
+  }
+  .mon-stats-group {
+    min-width: 0;
+    flex-shrink: 1;
+    border-right: none;
+    border-bottom: 1.5px solid var(--border);
+  }
+  .mon-stats-group:last-child { border-bottom: none; }
+}
+
+/* ── Portrait-tablet: monitoring sidebar becomes mobile overlay ─────── */
+/* Applies when the screen is taller than it is wide (portrait) and is       */
+/* tablet-sized — gives the same single-column layout as a phone portrait.   */
+@media (orientation: portrait) and (min-width: 769px) and (max-width: 1100px) {
+  /* Single-column outer grid; override desktop and collapsed-40px variants */
+  .mon-layout,
+  .mon-layout.mon-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  /* Sidebar: fixed off-screen overlay (same as ≤768 px phone behaviour) */
+  .mon-sidebar {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    width: 260px;
+    min-width: unset;       /* undo desktop mon-collapsed min-width */
+    height: 100%;
+    z-index: 200;
+    transition: left .25s ease;
+    box-shadow: none;
+    overflow-y: auto;       /* undo desktop mon-collapsed overflow:hidden */
+  }
+  /* Desktop collapsed rules would narrow the hidden sidebar — reset them */
+  .mon-sidebar.mon-collapsed {
+    width: 260px;
+    min-width: unset;
+    overflow-y: auto;
+    cursor: default;
+  }
+  .mon-sidebar.mon-sidebar--open {
+    left: 0;
+    box-shadow: 4px 0 20px rgba(0,0,0,.2);
+  }
+  .mon-sidebar-close { display: block; }
+  /* Hide the desktop collapse-to-40px button inside the monitoring/DQ sidebars */
+  #mon-sidebar .sidebar-collapse-btn,
+  #dq-sidebar  .sidebar-collapse-btn { display: none; }
+
+  /* Content grid: single column; stats groups fit in one row at ~33% each.
+     Monitoring (2 groups) gets 50% each; DQ (3 groups) gets 33% each. */
+  .mon-content-grid { grid-template-columns: 1fr; }
+  .mon-stats-panel {
+    position: static;           /* override desktop position:sticky */
+    overflow: hidden;
+    display: flex;
+    flex-wrap: nowrap;          /* force all groups into one row */
+    border-radius: var(--radius);
+  }
+  .mon-stats-group {
+    flex: 1 1 0;                /* equal share of available width */
+    min-width: 0;               /* allow shrinking below content width */
+    border-bottom: none;
+    border-right: 1.5px solid var(--border);
+  }
+  .mon-stats-group:last-child { border-right: none; }
+
+  /* DQ screen uses Bootstrap col-md-3 / col-md-9 instead of mon-content-grid.
+     Bootstrap's md breakpoint fires at ≥768 px so the columns sit side-by-side
+     on the portrait tablet. Force full-width stacking here. */
+  #tb-quality-screen .col-md-3,
+  #tb-quality-screen .col-md-9 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+  .table-wrap--mon-scroll,
+  .table-wrap--dq-scroll { max-height: min(72vh, 520px); }
+
+  /* Show the "Filter Facilities" / "Data Quality Check" topbar buttons */
+  #tb-monitoring-screen .register-topbar,
+  #tb-quality-screen    .register-topbar {
+    display: flex;
+    align-items: center;
+    background: var(--card);
+    border-bottom: 1.5px solid var(--border);
+    padding: .5rem .75rem;
+    margin-bottom: .75rem;
+  }
+  #tb-monitoring-screen .sidebar-toggle-btn,
+  #tb-quality-screen    .sidebar-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    background: none;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: .45rem .75rem;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+  }
+  #tb-monitoring-screen .sidebar-toggle-btn:hover,
+  #tb-quality-screen    .sidebar-toggle-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+}
+
+/* ── Print styles ────────────────────────────────────────── */
+@page { size: landscape; margin: 1cm; }
+
+@media print {
+  .mon-sidebar, .mon-stats-panel, .mon-mode-bar,
+  .mon-list-actions, .register-nav, .register-topbar,
+  .app-header, .mon-list-hint { display: none !important; }
+  .mon-layout { display: block !important; }
+  .mon-content-grid { display: block !important; }
+  .mon-list-area { border: none; padding: 0; gap: .2rem; }
+  .mon-list-title { font-size: 1.15rem; }
+  .table-wrap--mon-scroll { max-height: none; overflow: visible; border: none; }
+}
+
+/* ============================================================
+   PATIENT SEARCH SCREEN
+   ============================================================ */
+
+#patient-search-screen {
+  min-height: calc(100vh - 60px);
+  background: #f8fafc;
+}
+
+.psearch-layout {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+
+/* ── Search bar ─────────────────────────────────────────────── */
+.psearch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: .75rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+
+.psearch-input-wrap {
+  position: relative;
+  flex: 1 1 260px;
+  display: flex;
+  align-items: center;
+}
+
+.psearch-icon {
+  position: absolute;
+  right: .75rem;
+  pointer-events: none;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.psearch-input {
+  width: 100%;
+  padding: .55rem 2.75rem .55rem .75rem;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: #1e293b;
+  background: #f8fafc;
+  transition: border-color .15s, box-shadow .15s;
+  /* remove browser default search-input clear button */
+  -webkit-appearance: none;
+}
+.psearch-input:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.12);
+  background: #fff;
+}
+.psearch-input::-webkit-search-cancel-button { display: none; }
+
+.psearch-clear-btn {
+  position: absolute;
+  right: .5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: .25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s, background .15s;
+}
+.psearch-clear-btn:hover { color: #dc2626; background: #fee2e2; }
+
+/* ── Register filter chips ──────────────────────────────────── */
+.psearch-chips {
+  display: flex;
+  gap: .4rem;
+  flex-shrink: 0;
+}
+
+.psearch-chip {
+  padding: .35rem .85rem;
+  border-radius: 20px;
+  border: 1.5px solid #e2e8f0;
+  background: #f1f5f9;
+  font-size: .8rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all .15s;
+}
+.psearch-chip:hover { border-color: #7c3aed; color: #7c3aed; }
+.psearch-chip--active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+.psearch-chip--active:hover { background: #6d28d9; border-color: #6d28d9; color: #fff; }
+
+/* ── Result count ───────────────────────────────────────────── */
+.psearch-count {
+  font-size: .82rem;
+  color: #64748b;
+  margin-bottom: .2rem;
+  padding-left: .25rem;
+}
+
+/* ── Click-hint text shown when results are visible ─────────── */
+.psearch-hint {
+  font-size: .78rem;
+  color: #94a3b8;
+  margin-bottom: .5rem;
+  padding-left: .25rem;
+}
+
+/* ── Empty state ────────────────────────────────────────────── */
+.psearch-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .75rem;
+  padding: 4rem 1rem;
+  color: #94a3b8;
+  text-align: center;
+}
+.psearch-empty p { margin: 0; font-size: .95rem; max-width: 340px; }
+
+/* ── Results table ──────────────────────────────────────────── */
+.psearch-table-wrap {
+  background: #fff;
+  border: 1.5px solid #94a3b8;
+  border-radius: 8px;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 350px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+
+.psearch-table {
+  margin: 0;
+  font-size: .88rem;
+  width: 100%;
+}
+.psearch-table thead th {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: .85rem;
+  padding: .5rem .85rem;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.psearch-table tbody tr {
+  transition: background .12s;
+  height: 42px;
+  border-bottom: 1px solid var(--border);
+}
+.psearch-table tbody tr:hover { background: var(--primary-light); }
+.psearch-table tbody tr:focus { outline: 2px solid var(--primary); outline-offset: -2px; }
+.psearch-table tbody td {
+  padding: .18rem .85rem;
+  line-height: 1.1;
+  vertical-align: middle;
+}
+.psearch-table tbody tr:last-child td { border-bottom: none; }
+
+/* ── Register badges ─────────────────────────────────────────── */
+.psearch-badge {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  padding: .15rem .5rem;
+  border-radius: 4px;
+}
+.psearch-badge--art {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.psearch-badge--tb {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .psearch-table thead th:nth-child(4),
+  .psearch-table tbody td:nth-child(4),
+  .psearch-table thead th:nth-child(5),
+  .psearch-table tbody td:nth-child(5) { display: none; }
+}
+@media (max-width: 480px) {
+  .psearch-bar { flex-wrap: nowrap; align-items: center; gap: .5rem; padding: .6rem .75rem; }
+  .psearch-input-wrap { flex: 1 1 0; min-width: 0; }
+  .psearch-chips { flex-shrink: 0; gap: .3rem; }
+  .psearch-chip { padding: .3rem .6rem; font-size: .75rem; }
+  .psearch-table thead th:nth-child(6),
+  .psearch-table tbody td:nth-child(6) { display: none; }
+}
+
+
+/* ─── Custom Bootstrap column: 2.5 out of 12 = 20.833 % ──────────────── */
+@media (min-width: 768px) {
+  .col-md-2half {
+    flex: 0 0 auto;
+    width: 20.8333333333%;
+    max-width: 20.8333333333%;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/*  DATA QUALITY CHECK SCREEN  (matches monitoring navy/blue theme)        */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+/* Stats group header — same navy as monitoring */
+.dq-stats-group-hd {
+  background: #1a3a5c;
+  color: #fff;
+  font-size: .76rem;
+  font-weight: 700;
+  padding: .55rem .85rem;
+  text-align: center;
+  line-height: 1.45;
+}
+
+/* Category rows */
+.dq-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem;
+  padding: .52rem .85rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition), color var(--transition);
+  font-size: .82rem;
+  color: var(--text);
+}
+.dq-stat-row:last-child { border-bottom: none; }
+.dq-stat-row:hover:not(.dq-stat-row--active) {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.dq-stat-row--active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Count badge */
+.dq-stat-count {
+  font-size: .92rem;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.dq-stat-count--issue { color: #dc2626; }
+.dq-stat-row--active .dq-stat-count--issue { color: #fff; }
+
+/* Inline issue badge in the Notes column */
+.dq-issue-badge {
+  display: inline-block;
+  font-size: .73rem;
+  color: var(--primary-dark);
+  background: var(--primary-light);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  padding: .1rem .45rem;
+  line-height: 1.5;
+}
+
+/* List title */
+.dq-list-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1a3a5c;
+  text-align: center;
+  padding: .2rem 0 .05rem;
+  line-height: 1.4;
+}
+.dq-list-subtitle {
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-align: center;
+}
+
+/* Context bar */
+.dq-context-bar {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: .45rem .75rem;
+  background: var(--primary-light);
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  margin-bottom: .85rem;
+  color: #1a3a5c;
+  font-weight: 600;
+  font-size: .88rem;
+}
+
+/* Data Quality check table: navy sticky header */
+.table-wrap--dq-scroll {
+  max-height: min(58vh, 440px);
+  overflow: auto;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+}
+.table-wrap--dq-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1a3a5c;
+  color: #fff;
+}
+#dq-patient-table tbody tr:hover { background: var(--primary-light); }
+
+/* Hide Notes/Issue column when not relevant (toggled by JS) */
+#dq-patient-table.dq-hide-notes th:nth-child(9),
+#dq-patient-table.dq-hide-notes td:nth-child(9) { display: none; }
+
+#dq-patient-table tbody tr[data-tid] { cursor: pointer; }
+
+/* Skipped-gaps view: narrow TB-number column, facility left-aligned */
+#dq-patient-table tr.dq-row--gap td:first-child {
+  width: 130px;
+  white-space: nowrap;
+}
+#dq-patient-table tr.dq-row--gap td:last-child {
+  text-align: left;
+}
+#dq-thead-skipped th:first-child {
+  width: 130px;
+}
+#dq-thead-skipped th:last-child {
+  text-align: left;
+}
+
+/* Print */
+@media print {
+  #tb-quality-screen .mon-layout { display: block !important; }
+  #tb-quality-screen .mon-sidebar,
+  #tb-quality-screen #dq-stats-panel,
+  #tb-quality-screen .dq-context-bar,
+  #tb-quality-screen .mon-list-actions,
+  #tb-quality-screen .register-nav { display: none !important; }
+  .table-wrap--dq-scroll { max-height: none; overflow: visible; border: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/*  PRE-REPORT DATA QUALITY CHECK MODAL                                    */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+/* Modal header */
+.pre-rpt-dq-header {
+  background: #1a3a5c;
+  color: #fff;
+  border-radius: 1rem 1rem 0 0;
+  padding: .6rem 1rem;
+}
+
+/* Period info banner */
+.pre-dq-period-info {
+  background: #eef2f7;
+  border: 1px solid #c0d0e8;
+  border-radius: 8px;
+  padding: .6rem .85rem;
+  font-size: .85rem;
+  color: #1a3a5c;
+}
+.pre-dq-period-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: .4rem;
+  margin-top: .3rem;
+}
+.pre-dq-tag {
+  display: inline-block;
+  font-size: .78rem;
+  font-weight: 600;
+  padding: .18rem .6rem;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.pre-dq-tag--cf  { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+.pre-dq-tag--to  { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.pre-dq-tag--sc  { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.pre-dq-period-note { font-size: .73rem; color: #64748b; margin-top: .3rem; }
+
+/* Summary banner */
+.pre-dq-summary {
+  border-radius: 8px;
+  padding: .5rem .85rem;
+  font-size: .875rem;
+}
+.pre-dq-summary--pass { background: #dcfce7; color: #14532d; border: 1px solid #86efac; }
+.pre-dq-summary--fail { background: #fef2f2; color: #7f1d1d; border: 1px solid #fca5a5; }
+
+/* Auto-close preference pill below checklist table */
+.pre-dq-autoclose-pill {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  margin-top: .45rem;
+  padding: .5rem .85rem;
+  border-radius: 8px;
+  border: 1px solid #86efac;
+  background: #dcfce7;
+  font-size: .8rem;
+  color: #14532d;
+  cursor: pointer;
+  user-select: none;
+  font-weight: normal;
+  box-sizing: border-box;
+}
+
+/* Loading state */
+.pre-dq-loading {
+  display: flex;
+  align-items: center;
+  padding: .75rem;
+  font-size: .875rem;
+  color: #64748b;
+}
+
+/* Checklist */
+.pre-dq-checklist {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pre-dq-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 76px 54px;
+  align-items: center;
+  gap: .5rem;
+  padding: .48rem .75rem;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: .845rem;
+  background: #fff;
+  transition: background .12s;
+}
+.pre-dq-row:last-child { border-bottom: none; }
+.pre-dq-row:hover { background: #f8fafc; }
+.pre-dq-row--fail { background: #fffaf9; cursor: pointer; }
+.pre-dq-row--fail:hover { background: #fff5f5; }
+.pre-dq-row--fail.pre-dq-row--open { background: #fff0ee; }
+.pre-dq-hint {
+  font-size: .72rem;
+  color: #64748b;
+  padding: .3rem .75rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-style: italic;
+}
+
+/* Icon cell */
+.pre-dq-row-icon { text-align: center; }
+
+/* Column header */
+.pre-dq-checklist-hdr {
+  display: grid;
+  grid-template-columns: 28px 1fr 76px 54px;
+  gap: .5rem;
+  padding: .3rem .75rem;
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+.pre-dq-hdr-cell {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  text-align: center;
+}
+.pre-dq-icon {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 900;
+  border-radius: 50%;
+}
+.pre-dq-icon--pass { background: #dcfce7; color: #16a34a; }
+.pre-dq-icon--fail { background: #fee2e2; color: #dc2626; }
+
+/* Label cell */
+.pre-dq-row-label { color: #1e293b; }
+.pre-dq-row--fail .pre-dq-row-label { color: #7f1d1d; font-weight: 500; }
+
+/* Period badge */
+.pre-dq-row-period { text-align: center; }
+.pre-dq-period-badge {
+  font-size: .7rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: .1rem .4rem;
+  white-space: nowrap;
+}
+
+/* Count (pass = plain span; fail = clickable button) */
+.pre-dq-row-count { text-align: center; }
+.pre-dq-count { min-width: 32px; text-align: center; font-size: .88rem; font-weight: 700; }
+.pre-dq-count--pass { color: #16a34a; }
+.pre-dq-count--fail {
+  all: unset;
+  cursor: pointer;
+  color: #dc2626;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: .1rem .55rem;
+  font-size: .88rem;
+  font-weight: 700;
+  transition: background .12s, color .12s;
+  min-width: 32px;
+  display: inline-block;
+  text-align: center;
+}
+.pre-dq-count--fail:hover { background: #fecaca; color: #991b1b; text-decoration: underline; }
+
+/* Detail panel */
+.pre-dq-detail-title {
+  font-size: .9rem;
+  font-weight: 700;
+  color: #1a3a5c;
+  padding: .2rem 0;
+}
+.pre-dq-detail-table-wrap {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 6px;
+}
+.pre-dq-detail-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1a3a5c;
+  color: #fff;
+  font-size: .78rem;
+  padding: .3rem .5rem;
+}
+#pre-dq-detail-table tbody td { font-size: .8rem; padding: .28rem .5rem; }
+#pre-dq-detail-table tbody tr:hover { background: #f0f4ff; }
+
+/* Inline note badge in the detail table */
+.pre-dq-detail-note {
+  display: inline-block;
+  font-size: .72rem;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  padding: .1rem .4rem;
+  line-height: 1.5;
 }
 

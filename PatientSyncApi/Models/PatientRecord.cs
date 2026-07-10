@@ -16,7 +16,7 @@ public sealed class PatientRecord
 
     /// <summary>
     /// The ID of the health facility selected from the tree at data-entry time.
-    /// Stored in PtDetailsT.NearestHFID on the server.
+    /// Stored in PtDetailsARTT.NearestHFID on the server.
     /// </summary>
     public int      NearestHFID          { get; set; }
 
@@ -25,7 +25,7 @@ public sealed class PatientRecord
     public string   ARTNo                { get; set; } = string.Empty;
     public DateTime? ARTStartDate        { get; set; }
     public DateTime? DateEnrolledInCare  { get; set; }
-    public string   FullName             { get; set; } = string.Empty;
+    public string   PtName               { get; set; } = string.Empty;
     public string?  ResidenceAddress     { get; set; }
     public string?  Phone1               { get; set; }
     public string?  Phone2               { get; set; }

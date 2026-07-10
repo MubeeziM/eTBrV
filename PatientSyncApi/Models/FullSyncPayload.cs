@@ -1,7 +1,7 @@
 namespace PatientSyncApi.Models;
 
 /// <summary>
-/// Full sync payload sent from the PWA — contains PtDetailsT plus all child-table records.
+/// Full sync payload sent from the PWA — contains PtDetailsARTT plus all child-table records.
 /// </summary>
 public sealed class FullSyncPayload
 {

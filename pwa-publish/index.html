@@ -85,7 +85,8 @@
         <h2>Sign In</h2>
         <!-- <p class="auth-subtitle">Enter Your Username and Password</p> -->
       </div>
-      <div id="login-error" class="auth-msg auth-msg--error" hidden></div>
+      <div id="login-error"   class="auth-msg auth-msg--error"   hidden></div>
+      <div id="login-success" class="auth-msg auth-msg--success" hidden></div>
       <form id="login-form" novalidate>
         <div class="field-group">
           <label for="login-username">Username or Email</label>
@@ -111,8 +112,8 @@
     <!-- ── Register panel ────────────────────────────────────────────── -->
     <div id="auth-register-panel" class="auth-card" hidden>
       <div class="auth-card-header">
-        <h2>Create Account</h2>
-        <p class="auth-subtitle">New user registration</p>
+        <h2>Create eTBr Account</h2>
+        <p class="auth-subtitle">New eTBr user registration</p>
       </div>
       <div id="register-error"   class="auth-msg auth-msg--error"   hidden></div>
       <div id="register-success" class="auth-msg auth-msg--success" hidden></div>
@@ -282,6 +283,73 @@
       </div>
     </div>
 
+    <!-- ── Offline PIN entry panel ──────────────────────────────────────── -->
+    <div id="auth-offline-pin-panel" class="auth-card" hidden>
+      <div class="auth-card-header">
+        <img src="icons/icon-96.png" class="auth-logo-icon" alt="eTBr logo" />
+        <h2>Offline Access</h2>
+        <p class="auth-subtitle" id="offline-pin-subtitle">Enter your PIN to continue</p>
+      </div>
+      <div id="offline-pin-error" class="auth-msg auth-msg--error" hidden></div>
+      <form id="offline-pin-form" novalidate>
+        <div class="field-group" style="text-align:center">
+          <label>6-digit PIN</label>
+          <div class="otp-input-group" id="offline-pin-group">
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          </div>
+        </div>
+        <button type="submit" id="offline-pin-btn" class="btn btn-primary btn-full mt-3">Unlock</button>
+      </form>
+      <div class="auth-links">
+        <a href="#" id="offline-pin-use-password">Sign in with password instead (requires internet)</a>
+      </div>
+    </div>
+
+    <!-- ── PIN Enrollment panel ─────────────────────────────────── -->
+    <div id="auth-enroll-pin-panel" class="auth-card" hidden>
+      <div class="auth-card-header">
+        <img src="icons/icon-96.png" class="auth-logo-icon" alt="eTBr logo" />
+        <h2>Set Offline PIN</h2>
+        <p class="auth-subtitle" id="enroll-pin-subtitle">Set a PIN for offline access</p>
+      </div>
+      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1.1rem;text-align:center">
+        Enter a 6-digit PIN so you can unlock this app when there is no internet connection.
+        Your PIN is stored only on this device and never sent to the  eTBr server.
+      </p>
+      <div id="pin-enroll-error" class="auth-msg auth-msg--error" hidden></div>
+      <div class="field-group" style="text-align:center">
+        <label>Choose a PIN</label>
+        <div class="otp-input-group" id="pin-enroll-group">
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+        </div>
+      </div>
+      <div class="field-group mt-3" style="text-align:center">
+        <label>Confirm PIN</label>
+        <div class="otp-input-group" id="pin-enroll-confirm-group">
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+          <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+        </div>
+      </div>
+      <button type="button" id="pin-enroll-save-btn" class="btn btn-primary btn-full mt-3">Save PIN</button>
+      <div class="auth-links">
+        <a href="#" id="pin-enroll-skip-btn">Skip for now</a>
+      </div>
+    </div>
+
   </div><!-- /#auth-screen -->
 
   <main id="app-screen" hidden>
@@ -293,162 +361,89 @@
       <div class="db-welcome">
         <div class="db-welcome-info">
           <h2 id="db-welcome-name" class="db-welcome-title">Welcome!</h2>
-          <p id="db-welcome-facility" class="db-welcome-sub">Loading…</p>
+          <p id="db-welcome-facility" class="db-welcome-sub"></p>
+          <p id="db-welcome-roles" class="db-welcome-sub">Loading…</p>
         </div>
+
         <div class="db-stats">
-          <div class="db-stat">
+          <button type="button" class="db-stat db-stat--clickable" id="db-stat-art-tile" aria-label="Browse all ART patients">
             <span id="db-stat-patients" class="db-stat-val">—</span>
             <span class="db-stat-lbl">ART Patients</span>
-          </div>
-          <div class="db-stat">
+          </button>
+          <button type="button" class="db-stat db-stat--clickable" id="db-stat-tb-tile" aria-label="Browse all TB patients">
+            <span id="db-stat-tb-patients" class="db-stat-val">—</span>
+            <span class="db-stat-lbl">TB Patients</span>
+          </button>
+          <button type="button" class="db-stat db-stat--clickable" id="db-stat-pending-tile" aria-label="Browse all pending-sync patients">
             <span id="db-stat-pending" class="db-stat-val">—</span>
             <span class="db-stat-lbl">Pending Sync</span>
-          </div>
+          </button>
           <div class="db-stat">
             <span id="db-stat-lastsync" class="db-stat-val">—</span>
             <span class="db-stat-lbl">Last Synced</span>
           </div>
+          <button type="button" id="db-header-search-btn" class="db-stat db-stat--search" aria-label="Search patients">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span class="db-stat-lbl">Search</span>
+          </button>
         </div>
       </div>
 
-      <!-- ── Section 1: Data Entry ───────────────────────────────────── -->
+      <!-- ── Top row: Data Entry · Monitoring · Reports & DHIS2 ─────────── -->
       <div class="db-section">
         <h3 class="db-section-hd">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Data Entry
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Clinical Operations
         </h3>
-        <div class="db-grid">
+        <div class="db-grid db-grid--3">
 
-          <!-- Index Client Register -->
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          <!-- Data Entry -->
+          <div class="db-card db-card--active" id="dash-goto-data-entry" role="button" tabindex="0" aria-label="Open Data Entry">
+            <div class="db-card-ico" style="background:#ccfbf1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
             </div>
-            <div class="db-card-body">
-              <h4>Index Client Register</h4>
-              <p>Register HIV index clients and trace their household contacts for testing and linkage to care.</p>
+            <div class="db-card-body mt-3">
+              <h4>Data Entry</h4>
+              <p>Enter patient records for ART Register, Unit TB Register, and other clinical registers.</p>
             </div>
             <div class="db-card-foot">
-              <span class="db-badge-soon">Coming Soon</span>
-            </div>
-          </div>
-
-          <!-- ART Register (active) -->
-          <div class="db-card db-card--active" id="dash-goto-art" role="button" tabindex="0" aria-label="Open ART Register">
-            <div class="db-card-ico db-card-ico--blue">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
-            </div>
-            <div class="db-card-body">
-              <h4>ART Register</h4>
-              <p>Enter and manage ART patient records, follow-up visits, regimen history and INH prophylaxis.</p>
-            </div>
-            <div class="db-card-foot">
-              <button class="db-open-btn" tabindex="-1">Open Register
+              <button class="db-open-btn" style="background:#059669;border-color:#7c3aed;color:#fff" tabindex="-1">Enter Data
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
               </button>
             </div>
           </div>
 
-          <!-- Dispensing Register -->
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/><line x1="7" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="17" y2="12"/></svg>
+          <!-- Monitor TB Patients -->
+          <div class="db-card db-card--active" id="dash-goto-tb-monitoring" role="button" tabindex="0" aria-label="Monitor TB patients on treatment">
+            <div class="db-card-ico" style="background:#ccfbf1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             </div>
-            <div class="db-card-body">
-              <h4>Dispensing Register</h4>
-              <p>Record ARV and CPT drug dispensing quantities and dates for patients on treatment.</p>
+            <div class="db-card-body mt-3">
+              <h4>Monitor TB Patients on Treatment</h4>
+              <p>Instantly see which patients have missed or are due for sputum smears, HIV testing, CPT/ART etc.</p>
             </div>
             <div class="db-card-foot">
-              <span class="db-badge-soon">Coming Soon</span>
+              <button class="db-open-btn" style="background:#059669;border-color:#059669;color:#fff" tabindex="-1">Monitor
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
             </div>
           </div>
 
-        </div>
-      </div>
-
-      <!-- ── Section 2: Patient Care & Monitoring ──────────────────────── -->
-      <div class="db-section">
-        <h3 class="db-section-hd">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          Patient Care &amp; Monitoring
-        </h3>
-        <div class="db-grid">
-
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <!-- Reports & DHIS2 (combined) -->
+          <div class="db-card db-card--active" style="cursor:pointer" data-bs-toggle="modal" data-bs-target="#art-report-modal" id="report-card">
+            <div class="db-card-ico" style="background:#ccfbf1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.8" width="32" height="32" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             </div>
-            <div class="db-card-body">
-              <h4>Monitor Patients on ART</h4>
-              <p>Track viral load suppression rates, treatment outcomes, and patients lost to follow-up.</p>
+            <div class="db-card-body mt-3">
+              <h4>TB/HIV Reports</h4>
+              <p>Generate program reports, submit them to DHIS2, and retrieve as needed (eTBr–DHIS2 interoperability).</p>
             </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
-          </div>
-
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8.01" y2="14"/><line x1="12" y1="14" x2="12.01" y2="14"/><line x1="16" y1="14" x2="16.01" y2="14"/></svg>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#059669;border-color:#d97706;color:#fff" tabindex="-1"
+                      onclick="event.stopPropagation()">Generate
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
             </div>
-            <div class="db-card-body">
-              <h4>Appointments &amp; Due Visits</h4>
-              <p>View patients due for or overdue for their next scheduled follow-up appointment.</p>
-            </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
-          </div>
-
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-            </div>
-            <div class="db-card-body">
-              <h4>Defaulter Tracing</h4>
-              <p>Identify and follow up patients who have missed appointments or interrupted treatment.</p>
-            </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- ── Section 3: Reports &amp; Analytics ─────────────────────────── -->
-      <div class="db-section">
-        <h3 class="db-section-hd">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          Reports &amp; Analytics
-        </h3>
-        <div class="db-grid">
-
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            </div>
-            <div class="db-card-body">
-              <h4>Generate Reports</h4>
-              <p>Produce PEPFAR, national and facility-level ART programme reports in standard formats.</p>
-            </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
-          </div>
-
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-            </div>
-            <div class="db-card-body">
-              <h4>Charts &amp; Graphs</h4>
-              <p>Visual analytics: viral load suppression trends, gender breakdown, regimen distribution.</p>
-            </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
-          </div>
-
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-            </div>
-            <div class="db-card-body">
-              <h4>Cohort Analysis</h4>
-              <p>Analyse treatment outcomes across patient cohorts by quarter, regimen line or demographics.</p>
-            </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
           </div>
 
         </div>
@@ -462,44 +457,89 @@
         </h3>
         <div class="db-grid">
 
-          <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <div class="db-card db-card--active" id="dash-goto-patient-search" role="button" tabindex="0" aria-label="Search patients across all registers">
+            <div class="db-card-ico" style="background:#ede9fe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </div>
-            <div class="db-card-body">
+            <div class="db-card-body mt-3">
               <h4>Search Patients</h4>
-              <p>Cross-register patient search by name, ID number, phone or facility across all data sources.</p>
-            </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
-          </div>
-
-          <!-- Sync Data (active) -->
-          <div class="db-card db-card--active" id="dash-goto-sync" role="button" tabindex="0" aria-label="Sync data to server">
-            <div class="db-card-ico db-card-ico--green">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-            </div>
-            <div class="db-card-body">
-              <h4>Sync Data</h4>
-              <p>Send all pending local records to the central server database. Requires an internet connection.</p>
+              <p>Cross-register patient search by patient name, ID number, phone or facility across all data sources.</p>
             </div>
             <div class="db-card-foot">
-              <button class="db-open-btn db-open-btn--green" tabindex="-1">Sync Now
+              <button class="db-open-btn" style="background:#7c3aed;border-color:#7c3aed;color:#fff" tabindex="-1">Search
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
               </button>
             </div>
           </div>
 
-          <!-- Export Database (active) -->
-          <div class="db-card db-card--active" id="dash-goto-export" role="button" tabindex="0" aria-label="Export database">
+          <!-- Sync Data (active) -->
+          <div class="db-card db-card--active" id="dash-goto-sync" role="button" tabindex="0" aria-label="Sync data to the eTBr server">
+            <div class="db-card-ico" style="background:#ede9fe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>Sync Data</h4>
+              <p>Send all pending local records to the eTBr server. Requires an internet connection.</p>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#7c3aed;border-color:#059669;color:#fff" tabindex="-1">Sync Now
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Data Quality Check -->
+          <div class="db-card db-card--active" id="dash-goto-tb-quality" role="button" tabindex="0" aria-label="Check data quality in the TB register">
+            <div class="db-card-ico" style="background:#fef3c7">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.8" width="32" height="32" aria-hidden="true">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+              </svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>Check Data Quality</h4>
+              <p>Find duplicates, missing registration info, inconsistent outcomes, and other data quality issues in the DS-TB register.</p>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#d97706;border-color:#059669;color:#fff" tabindex="-1">Check Quality
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Export Database — hidden for now, kept for future use -->
+          <div class="db-card db-card--active" id="dash-goto-export" role="button" tabindex="0" aria-label="Export database" hidden>
             <div class="db-card-ico db-card-ico--indigo">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </div>
-            <div class="db-card-body">
+            <div class="db-card-body mt-3">
               <h4>Export Database</h4>
               <p>Download a full local backup of the SQLite database file for safekeeping or migration.</p>
             </div>
             <div class="db-card-foot">
               <button class="db-open-btn db-open-btn--indigo" tabindex="-1">Export .sqlite
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- ART Baseline Data (active, write users only — JS shows/hides) -->
+          <div class="db-card db-card--active" id="dash-goto-baseline" role="button" tabindex="0"
+               aria-label="Configure ART baseline data" hidden>
+            <div class="db-card-ico" style="background:#fef3c7">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.8" width="32" height="32" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="3" y1="15" x2="21" y2="15"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>ART Baseline Data</h4>
+              <p>Set a starting point for cumulative ART counts so reports remain accurate without re-entering all prior records.</p>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#d97706;border-color:#d97706;color:#fff" tabindex="-1">Configure
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
               </button>
             </div>
@@ -521,7 +561,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
             <div class="db-card-body">
-              <h4>User Settings &amp; Preferences</h4>
+              <h4>User Settings and Preferences</h4>
               <p>Manage your profile, change your password, configure notifications and application preferences.</p>
             </div>
             <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
@@ -532,13 +572,176 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
             <div class="db-card-body">
-              <h4>Help &amp; Support</h4>
+              <h4>Help and Support</h4>
               <p>User guide, keyboard shortcuts, data entry guidelines and contact information for technical support.</p>
             </div>
             <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
           </div>
 
         </div>
+      </div>
+
+      <!-- ── Section: User Management (SuperUser / Admin only) ──────────── -->
+      <div class="db-section" id="usermgmt-section" hidden>
+        <h3 class="db-section-hd">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          User Management
+        </h3>
+        <div class="db-grid db-grid--3">
+
+          <!-- Card: Account Approvals -->
+          <div class="db-card db-card--active" id="umgmt-card-approvals" role="button" tabindex="0" aria-label="Review pending account approvals">
+            <div class="db-card-ico" style="background:#dbeafe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>Account Approvals</h4>
+              <p>Review and approve new eTBr users.</p>
+              <span id="approval-badge" class="badge bg-danger" style="font-size:0.75rem;margin-top:0.3rem" hidden>0 pending</span>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#2563eb;border-color:#d97706;color:#fff" tabindex="-1">Review
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Card: Active Users -->
+          <div class="db-card db-card--active" id="umgmt-card-users" role="button" tabindex="0" aria-label="Manage active user accounts">
+            <div class="db-card-ico" style="background:#dbeafe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>Active Users</h4>
+              <p>View and manage all approved eTBr user accounts.</p>
+              <span id="usermgmt-count-badge" style="font-size:0.82rem;color:#6b7280;margin-top:0.3rem;display:block">— accounts</span>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#2563eb;border-color:#2563eb;color:#fff" tabindex="-1">Manage
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Card: Active Sessions -->
+          <div class="db-card db-card--active" id="umgmt-card-sessions" role="button" tabindex="0" aria-label="View currently active sessions">
+            <div class="db-card-ico" style="background:#dbeafe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>Active Sessions</h4>
+              <p>See who is currently using the eTBr right now.</p>
+              <span id="sessions-count-badge" style="font-size:0.82rem;color:#6b7280;margin-top:0.3rem;display:block">— online</span>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#2563eb;border-color:#059669;color:#fff" tabindex="-1">View
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Panel: Account Approvals ──────────────────────────────────── -->
+        <div id="approval-panel" class="umgmt-panel" hidden>
+          <div class="umgmt-panel-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+            User Account Approvals
+            <button type="button" class="umgmt-panel-close" data-panel="approval-panel" aria-label="Close">×</button>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:1rem 1.25rem">
+            <div id="approval-loading" style="color:#6b7280;font-size:0.9rem;padding:0.5rem 0" hidden>Loading pending accounts…</div>
+            <p id="approval-empty" class="text-muted" style="font-size:0.9rem;margin:0.5rem 0">No pending accounts awaiting approval.</p>
+            <div id="approval-table-wrap" hidden>
+              <p style="font-size:0.82rem;color:#6b7280;margin-bottom:0.75rem">The following users have registered and are waiting for your approval before they can access the system.</p>
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:0.88rem" aria-label="Pending user accounts">
+                  <thead>
+                    <tr style="background:#f3f4f6;text-align:left">
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Full Name</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Username</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Email</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Phone</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Organisation</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Registered</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="approval-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Panel: Active Users ────────────────────────────────────────── -->
+        <div id="usermgmt-panel" class="umgmt-panel" hidden>
+          <div class="umgmt-panel-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            Active Users
+            <button type="button" id="usermgmt-refresh-btn" title="Refresh list" style="background:none;border:none;cursor:pointer;padding:0 6px;color:#6b7280;vertical-align:middle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </button>
+            <button type="button" class="umgmt-panel-close" data-panel="usermgmt-panel" aria-label="Close">×</button>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:1rem 1.25rem">
+            <div id="usermgmt-loading" style="color:#6b7280;font-size:0.9rem;padding:0.5rem 0" hidden>Loading users…</div>
+            <p id="usermgmt-empty" class="text-muted" style="font-size:0.9rem;margin:0.5rem 0" hidden>No active users found.</p>
+            <div id="usermgmt-table-wrap" hidden>
+              <p style="font-size:0.82rem;color:#6b7280;margin-bottom:0.75rem">Active accounts in your organisation. Deactivating a user immediately revokes their access.</p>
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:0.88rem" aria-label="Active user accounts">
+                  <thead>
+                    <tr style="background:#f3f4f6;text-align:left">
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Full Name</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Username</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Email</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Phone</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Role</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Approved</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usermgmt-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Panel: Active Sessions ─────────────────────────────────────── -->
+        <div id="sessions-panel" class="umgmt-panel" hidden>
+          <div class="umgmt-panel-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Active Sessions
+            <button type="button" id="sessions-refresh-btn" title="Refresh" style="background:none;border:none;cursor:pointer;padding:0 6px;color:#6b7280;vertical-align:middle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </button>
+            <button type="button" class="umgmt-panel-close" data-panel="sessions-panel" aria-label="Close">×</button>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:1rem 1.25rem">
+            <div id="sessions-loading" style="color:#6b7280;font-size:0.9rem;padding:0.5rem 0" hidden>Loading sessions…</div>
+            <p id="sessions-empty" class="text-muted" style="font-size:0.9rem;margin:0.5rem 0" hidden>No active sessions in the last 60 minutes.</p>
+            <div id="sessions-table-wrap" hidden>
+              <p style="font-size:0.82rem;color:#6b7280;margin-bottom:0.75rem">Users who have been active in the last 60 minutes.</p>
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:0.88rem" aria-label="Active sessions">
+                  <thead>
+                    <tr style="background:#f3f4f6;text-align:left">
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Full Name</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Username</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Role</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Last Active</th>
+                      <th style="padding:0.5rem 0.75rem;font-weight:600;border-bottom:2px solid #e5e7eb;color:#374151">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sessions-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     </div><!-- /#dashboard-screen -->
@@ -554,6 +757,9 @@
           <div class="sidebar-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             <span>Data Entry</span>
+            <button id="sidebar-collapse-btn" class="sidebar-collapse-btn" type="button" aria-label="Collapse sidebar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
             <button id="sidebar-close-btn" class="sidebar-close-btn" type="button" aria-label="Close sidebar">&times;</button>
           </div>
 
@@ -589,7 +795,7 @@
               Dashboard
             </button>
             <span class="register-nav-sep">/</span>
-            <span class="register-nav-title">ART Register</span>
+            <span class="register-nav-title">Data Entry</span>
           </nav>
 
           <!-- "Select a facility" placeholder (shown when no facility is selected) -->
@@ -611,6 +817,9 @@
               <span class="sfb-breadcrumb" id="sfb-breadcrumb"></span>
             </div>
             <button id="sfb-change-btn" class="sfb-change-btn" type="button">Change Facility</button>
+            <button id="sfb-baseline-btn" class="sfb-baseline-btn" type="button" hidden>
+              Set Baseline Data
+            </button>
           </div>
 
           <!-- Register selector — shown once a facility is selected -->
@@ -618,11 +827,12 @@
             <div class="rs-row">
               <label class="rs-label" for="register-select">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                HIV Register
+                Clinical Register
               </label>
-              <select id="register-select" class="rs-select" aria-label="Select HIV Register">
-                <option value="">— Select HIV Register —</option>
+              <select id="register-select" class="rs-select" aria-label="Select Clinical Register">
+                <option value="">— Select Register —</option>
                 <option value="art">ART Register</option>
+                <option value="tb">Unit TB Register</option>
                 <option value="index" disabled>Index Client Register (coming soon)</option>
                 <option value="dispensing" disabled>Dispensing Register (coming soon)</option>
               </select>
@@ -632,6 +842,8 @@
           <!-- Register content — hidden until both facility AND register are selected -->
           <div id="register-content" hidden>
 
+          <!-- ══ ART Register ══════════════════════════════════════════════ -->
+          <div id="art-register-content">
     <!-- ========== PATIENT FORM ========== -->
     <section class="card form-card">
       <h2 class="section-title" id="form-title">New Patient — ART Register</h2>
@@ -642,7 +854,7 @@
           <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
           <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>
-        <span>Editing: <strong id="edit-patient-name"></strong> — make your corrections below, then click <em>Update Patient</em>.</span>
+        <span>Editing: <strong id="edit-patient-name"></strong> — make your corrections below, then click <span style="display:inline-block;background:#92400e;color:#fff;font-size:0.78rem;font-weight:700;padding:2px 10px;border-radius:99px;letter-spacing:0.02em;vertical-align:middle">Update Patient</span>.</span>
       </div>
 
       <!-- No-facility banner: visible when user has no linked facility (dataSourceID = 0) -->
@@ -658,7 +870,7 @@
         </h6>
         <div style="font-size:.88rem;font-weight:400;line-height:1.6;color:#78350f">
           Your account is not linked to any health facility. Data entry and syncing are disabled.
-          Please contact your administrator to assign a facility to your account.
+          Please contact your supervisor to assign a facility to your account.
         </div>
       </div>
 
@@ -667,12 +879,12 @@
         <!-- ── SECTION A: Patient Registration ─────────────────────── -->
         <details class="form-section" open>
           <summary class="form-section-title">A — Patient Registration</summary>
-          <div class="form-section-body">
+          <div class="form-section-body" style="background-color:#D2F7F0">
 
             <div class="field-row">
               <div class="field-group">
                 <label for="artNo">ART Number <span class="required">*</span></label>
-                <input type="text" id="artNo" name="artNo" maxlength="50" placeholder="e.g. ART/001/2024" />
+                <input type="text" id="artNo" name="artNo" maxlength="50" placeholder="e.g. ART/001/2026" />
                 <span class="field-error" id="artNo-error"></span>
               </div>
               <div class="field-group">
@@ -706,7 +918,7 @@
               <div class="field-group">
                 <label for="dateOfBirth">Date of Birth (if known)</label>
                 <input type="date" id="dateOfBirth" name="dateOfBirth" />
-                <small class="field-hint">Auto-fills &amp; locks age fields — clear to edit manually</small>
+                <small class="field-hint">Auto-fills and locks age fields — clear to edit manually</small>
                 <span class="field-error" id="dateOfBirth-error"></span>
               </div>
               <div class="field-group">
@@ -800,20 +1012,20 @@
         <!-- ── SECTION B: Clinical Baseline ────────────────────────── -->
         <details class="form-section">
           <summary class="form-section-title">B — Clinical Baseline</summary>
-          <div class="form-section-body">
+          <div class="form-section-body" style="background-color:#D2F7F0">
 
             <div class="field-row">
               <div class="field-group">
                 <label for="weightKg">Weight (kg)</label>
-                <input type="number" id="weightKg" name="weightKg" step="0.1" min="0" max="100" placeholder="e.g. 65"/>
+                <input type="number" id="weightKg" name="weightKg" step="0.1" min="1" max="250" placeholder="1–250"/>
               </div>
               <div class="field-group">
                 <label for="heightCm">Height (cm)</label>
-                <input type="number" id="heightCm" name="heightCm" step="0.1" min="0" max="250" placeholder="e.g. 170"/>
+                <input type="number" id="heightCm" name="heightCm" step="0.1" min="30" max="250" placeholder="30–250"/>
               </div>
               <div class="field-group">
                 <label for="muacCm">MUAC (cm)</label>
-                <input type="number" id="muacCm" name="muacCm" step="0.1" min="0" max="50" placeholder="e.g. 25" />
+                <input type="number" id="muacCm" name="muacCm" step="0.1" min="5" max="60" placeholder="5–60" />
               </div>
               <div class="field-group">
                 <label for="bmi">BMI (kg/m²) <small class="field-hint">auto</small></label>
@@ -873,7 +1085,7 @@
         <!-- ── SECTION C: PMTCT (female only) ──────────────────────── -->
         <details class="form-section" id="pmtct-section" hidden>
           <summary class="form-section-title">C — PMTCT <small>(females on ART)</small></summary>
-          <div class="form-section-body">
+          <div class="form-section-body" style="background-color:#D2F7F0">
 
             <div class="field-group">
               <label for="breastfeedingId">Breastfeeding Status</label>
@@ -894,7 +1106,7 @@
         <!-- ── SECTION D: Regimen ───────────────────────────────────── -->
         <details class="form-section">
           <summary class="form-section-title">D — Regimen</summary>
-          <div class="form-section-body">
+          <div class="form-section-body" style="background-color:#D2F7F0">
 
             <div class="regimen-block">
               <h4>1st Line — Original Regimen</h4>
@@ -1018,7 +1230,7 @@
         <!-- ── SECTION E: INH Prophylaxis ──────────────────────────── -->
         <details class="form-section">
           <summary class="form-section-title">E — INH Prophylaxis Dates</summary>
-          <div class="form-section-body">
+          <div class="form-section-body" style="background-color:#D2F7F0">
             <div id="inh-rows"></div>
             <button type="button" id="add-inh-btn" class="btn btn-secondary btn-sm">+ Add INH Date</button>
             <small class="field-hint">Maximum 6 dates per registration.</small>
@@ -1026,23 +1238,23 @@
         </details>
 
         <!-- Submit -->
-        <div class="form-actions">
-          <button type="button" id="cancel-edit-btn" class="btn btn-secondary" hidden>Cancel Edit</button>
-          <button type="submit" id="submit-btn" class="btn btn-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v14a2 2 0 01-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/>
-              <polyline points="7 3 7 8 15 8"/>
-            </svg>
-            Save Patient
-          </button>
+        <div class="row g-2 align-items-stretch form-actions">
+          <div class="col-3 form-actions-cancel"><button type="button" id="cancel-edit-btn" class="btn btn-info w-100 h-100" hidden>Cancel Edit</button>
+          </div>
+          <div class="col form-actions-main">
+            <button type="submit" id="submit-btn" class="btn btn-primary w-100 h-100">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v14a2 2 0 01-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Save Patient
+            </button>
+          </div>
         </div>
 
       </form>
     </section>
-
-    <!-- ========== TOAST NOTIFICATION ========== -->
-    <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
     <!-- ========== PATIENT LIST ========== -->
     <section class="card list-card">
@@ -1050,13 +1262,20 @@
         <h2 class="section-title">Saved Patients</h2>
         <div class="list-header-actions">
           <span id="patient-count" class="count-badge">0 records</span>
-          <button id="export-btn" class="btn btn-secondary" type="button">
+          <button id="export-btn" class="btn btn-secondary" type="button" hidden>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
             Export .sqlite
+          </button>
+          <button id="export-excel-btn" class="btn btn-secondary" type="button" title="Export current list to Excel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M3 15h18M9 3v18"/>
+            </svg>
+            Export to Excel
           </button>
           <!--
             Sync Data button.
@@ -1092,23 +1311,26 @@
         <input
           type="search"
           id="search-input"
-          placeholder="Search by name, ART number or phone…"
+          placeholder="Search by patient name, ART number or phone…"
           aria-label="Search patients"
         />
       </div>
 
       <!-- Table container (scrolls horizontally on small screens) -->
-      <div class="table-wrap">
+      <div class="table-wrap table-wrap--tb-scroll">
         <table id="patients-table" aria-label="Patient records">
           <thead>
             <tr>
               <th>#</th>
               <th>ART No</th>
               <th>Full Name</th>
+              <th style="width:36px"><input type="checkbox" id="art-select-all" title="Select / deselect all" aria-label="Select all patients"></th>
               <th>Age</th>
               <th>Sex</th>
-              <th>ART Start</th>
+              <th>Started ART</th>
+              <th>Facility</th>
               <th>Follow-Up Visits</th>
+              <th>Sync</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -1142,7 +1364,7 @@
 
       <details class="form-section">
         <summary class="form-section-title" id="visit-form-title">+ Add / Record a Visit</summary>
-        <div class="form-section-body">
+        <div class="form-section-body" style="background-color:#D2F7F0">
           <div class="field-row">
             <div class="field-group">
               <label for="visitDate">Visit Date <span class="required">*</span></label>
@@ -1169,7 +1391,7 @@
             </div>
             <div class="field-group">
               <label for="visitWeeksInterrupted">Weeks interrupted</label>
-              <input type="number" id="visitWeeksInterrupted" min="0" />
+              <input type="number" id="visitWeeksInterrupted" min="0" max="104" />
             </div>
           </div>
           <div class="field-row">
@@ -1185,11 +1407,11 @@
           <div class="field-row">
             <div class="field-group">
               <label for="visitWeight">Weight (kg)</label>
-              <input type="number" id="visitWeight" step="0.1" min="0" max="300" />
+              <input type="number" id="visitWeight" step="0.1" min="1" max="250" />
             </div>
             <div class="field-group">
               <label for="visitHeight">Height (cm)</label>
-              <input type="number" id="visitHeight" step="0.1" min="0" max="250" />
+              <input type="number" id="visitHeight" step="0.1" min="30" max="250" />
             </div>
             <div class="field-group">
               <label for="visitBMI">BMI <small class="field-hint">auto</small></label>
@@ -1207,8 +1429,8 @@
               </label>
             </div>
             <div class="field-group">
-              <label for="visitViralLoad">Viral Load</label>
-              <input type="text" id="visitViralLoad" maxlength="20" placeholder="e.g. &lt;20 or 1450" />
+              <label for="visitViralLoad">Viral Load (copies/ml)</label>
+              <input type="text" id="visitViralLoad" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="e.g. 1450" />
             </div>
           </div>
           <div class="field-group">
@@ -1220,10 +1442,853 @@
       </details>
     </section>
 
+          </div><!-- /#art-register-content -->
+
+          <!-- ══ TB Register ═══════════════════════════════════════ -->
+          <div id="tb-register-content" hidden>
+
+    <!-- ========== TB PATIENT FORM ========== -->
+    <section class="card form-card">
+      <h2 class="section-title" id="tb-form-title">New Patient — Unit TB Register</h2>
+
+      <div id="tb-edit-mode-banner" class="edit-mode-banner" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        <span>Editing: <strong id="tb-edit-patient-name"></strong> — make your corrections below, then click <span style="display:inline-block;background:#92400e;color:#fff;font-size:0.78rem;font-weight:700;padding:2px 10px;border-radius:99px;letter-spacing:0.02em;vertical-align:middle">Update Patient</span>.</span>
+      </div>
+
+      <form id="tb-patient-form" novalidate>
+
+        <!-- ── SECTION A: Patient Registration ───────────────────────────────────── -->
+        <details class="form-section" open>
+          <summary class="form-section-title">A — Patient Registration</summary>
+          <div class="form-section-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-regDate">Date of Registration <span class="required">*</span></label>
+                <input type="date" id="tb-regDate" />
+                <span class="field-error" id="tb-regDate-error"></span>
+              </div>
+              <div class="field-group">
+                <label for="tb-unitTBNo">Unit TB Number <span class="required">*</span></label>
+                <input type="text" id="tb-unitTBNo" maxlength="50" placeholder="e.g. 001/2026" />
+                <span class="field-error" id="tb-unitTBNo-error"></span>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group field-group--wide">
+                <label for="tb-ptName">Patient Full Name <span class="required">*</span></label>
+                <input type="text" id="tb-ptName" maxlength="200" placeholder="Full name" />
+                <span class="field-error" id="tb-ptName-error"></span>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-dob">Date of Birth</label>
+                <input type="date" id="tb-dob" />
+                <small class="field-hint">Auto-fills and locks age fields — clear to edit manually</small>
+              </div>
+              <div class="field-group">
+                <label for="tb-age">Age (years)</label>
+                <input type="number" id="tb-age" min="0" max="99" placeholder="0–99" />
+                <span class="field-error" id="tb-age-error"></span>
+              </div>
+              <div class="field-group" id="tb-ageMonths-wrap">
+                <label for="tb-ageMonths">Or age in months (Optional)</label>
+                <input type="number" id="tb-ageMonths" min="0" max="1188" placeholder="e.g. 18" />
+                <small class="field-hint">For infants and toddlers under 2 years</small>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-sexID">Sex <span class="required">*</span></label>
+                <select id="tb-sexID"><option value="0">Select One</option></select>
+                <span class="field-error" id="tb-sexID-error"></span>
+              </div>
+              <div class="field-group">
+                <label for="tb-referredByID">Referred By</label>
+                <select id="tb-referredByID"><option value="0">Select One</option></select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-village">Village</label>
+                <input type="text" id="tb-village" maxlength="100" placeholder="e.g. Gumbo"/>
+              </div>
+              <div class="field-group">
+                <label for="tb-boma">Boma</label>
+                <input type="text" id="tb-boma" maxlength="100" placeholder="e.g. Kator"/>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-payam">Payam</label>
+                <input type="text" id="tb-payam" maxlength="100" placeholder="e.g. Rejaf"/>
+              </div>
+              <div class="field-group">
+                <label for="tb-county">County</label>
+                <input type="text" id="tb-county" maxlength="100" placeholder="e.g. Juba"/>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-ptPhone">Phone Number</label>
+                <input type="tel" id="tb-ptPhone" maxlength="10" placeholder="10 digits starting with 0" />
+                <span class="field-error" id="tb-ptPhone-error"></span>
+              </div>
+              <div class="field-group"> 
+
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- ── SECTION B: Diagnosis and Treatment ───────────────────────────────── -->
+        <details class="form-section">
+          <summary class="form-section-title">B — Diagnosis and Treatment</summary>
+          <div class="form-section-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-tbTypeID">TB Site <span class="required">*</span></label>
+                <select id="tb-tbTypeID"><option value="0">Select One</option></select>
+                <span class="field-error" id="tb-tbTypeID-error"></span>
+              </div>
+              <div class="field-group">
+                <label for="tb-ptTypeID">Type of Patient <span class="required">*</span></label>
+                <select id="tb-ptTypeID"><option value="0">Select One</option></select>
+                <span class="field-error" id="tb-ptTypeID-error"></span>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-dateRxStarted">Date Treatment Started</label>
+                <input type="date" id="tb-dateRxStarted" />
+                <span class="field-error" id="tb-dateRxStarted-error"></span>
+              </div>
+              <div class="field-group">
+                <label for="tb-regimenID">TB Treatment Regimen</label>
+                <select id="tb-regimenID"><option value="0">Select One</option></select>
+              </div>
+            </div>
+            <div class="field-row" id="tb-ti-wrap" hidden>
+              <div class="field-group">
+                <label for="tb-tihf">Transferred In From (HF)</label>
+                <input type="text" id="tb-tihf" maxlength="200" />
+              </div>
+              <div class="field-group">
+                <label for="tb-tiCounty">Transfer-in County</label>
+                <input type="text" id="tb-tiCounty" maxlength="100" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-mon0LabResultID">Smear (Month 0) Result</label>
+                <select id="tb-mon0LabResultID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group" id="tb-mon0Date-wrap">
+                <label for="tb-mon0Date">Date of Test</label>
+                <input type="date" id="tb-mon0Date"
+                 />
+              </div>
+              <div class="field-group" id="tb-mon0LabNo-wrap">
+                <label for="tb-mon0LabNo">Lab Number</label>
+                <input type="text" id="tb-mon0LabNo" maxlength="50" placeholder="e.g. LAB001" />
+              </div>
+            </div>
+            
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-xpertResultID">GeneXpert Result</label>
+                <select id="tb-xpertResultID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group" id="tb-xpertResultDate-wrap">
+                <label for="tb-xpertResultDate">GeneXpert Date</label>
+                <input type="date" id="tb-xpertResultDate" />
+              </div>
+              <div class="field-group">
+                <label for="tb-dstResult">DST Result</label>
+                <input type="text" id="tb-dstResult" maxlength="100" placeholder="DST result"/>
+              </div>
+            </div>
+
+
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-diagMethodID">Method Used To Diagnose TB <span class="required">*</span></label>
+                <select id="tb-diagMethodID"><option value="0">Select One</option></select>
+                <span class="field-error" id="tb-diagMethodID-error"></span>
+              </div>
+              <div class="field-group">
+                
+              </div>
+              <div class="field-group">
+                
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- ── SECTION C: Follow-up Sputum Smears ──────────────────────────── -->
+        <details class="form-section">
+          <summary class="form-section-title">C — Follow-up Sputum Smears</summary>
+          <div class="form-section-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-mon2LabResultID">End of Month 2 Result</label>
+                <select id="tb-mon2LabResultID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group" id="tb-mon2Date-wrap">
+                <label for="tb-mon2Date">Date of Test</label>
+                <input type="date" id="tb-mon2Date" />
+              </div>
+              <div class="field-group" id="tb-mon2LabNo-wrap">
+                <label for="tb-mon2LabNo">Lab Number</label>
+                <input type="text" id="tb-mon2LabNo" maxlength="50" placeholder="e.g. LAB001" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-mon3LabResultID">End of Month 3 Result</label>
+                <select id="tb-mon3LabResultID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group" id="tb-mon3Date-wrap">
+                <label for="tb-mon3Date">Date of Test</label>
+                <input type="date" id="tb-mon3Date" />
+              </div>
+              <div class="field-group" id="tb-mon3LabNo-wrap">
+                <label for="tb-mon3LabNo">Lab Number</label>
+                <input type="text" id="tb-mon3LabNo" maxlength="50" placeholder="e.g. LAB001" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-mon5LabResultID">End of Month 5 Result</label>
+                <select id="tb-mon5LabResultID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group" id="tb-mon5Date-wrap">
+                <label for="tb-mon5Date">Date of Test</label>
+                <input type="date" id="tb-mon5Date" />
+              </div>
+              <div class="field-group" id="tb-mon5LabNo-wrap">
+                <label for="tb-mon5LabNo">Lab Number</label>
+                <input type="text" id="tb-mon5LabNo" maxlength="50" placeholder="e.g. LAB001" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-mon6LabResultID">End of Month 6 Result</label>
+                <select id="tb-mon6LabResultID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group" id="tb-mon6Date-wrap">
+                <label for="tb-mon6Date">Date of Test</label>
+                <input type="date" id="tb-mon6Date" />
+              </div>
+              <div class="field-group" id="tb-mon6LabNo-wrap">
+                <label for="tb-mon6LabNo">Lab Number</label>
+                <input type="text" id="tb-mon6LabNo" maxlength="50" placeholder="e.g. LAB001" />
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- ── SECTION D: TB/HIV Activities ───────────────────────────────────── -->
+        <details class="form-section">
+          <summary class="form-section-title">D — TB/HIV Activities</summary>
+          <div class="form-section-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-hivTestDate">Date of HIV Test</label>
+                <input type="date" id="tb-hivTestDate" />
+              </div>
+              <div class="field-group">
+                <label for="tb-hivTestResultID">HIV Test Result</label>
+                <select id="tb-hivTestResultID"><option value="0">Select One</option></select>
+                <span class="field-error" id="tb-hivTestResultID-error"></span>
+              </div>
+            </div>
+            <div class="field-row" id="tb-artcpt-wrap">
+              <div class="field-group">
+                <label>Was the patient started on ART?</label>
+                <div class="radio-group">
+                  <label><input type="radio" name="tb-onART" value="0" checked> No</label>
+                  <label><input type="radio" name="tb-onART" value="1"> Yes</label>
+                </div>
+              </div>
+              <div class="field-group">
+                <label for="tb-artDate">ART Start Date</label>
+                <input type="date" id="tb-artDate" />
+              </div>
+            </div>
+            <div class="field-row" id="tb-artcpt-wrap-rev">
+              <div class="field-group">
+                <label>Was the patient started on CPT?</label>
+                <div class="radio-group">
+                  <label><input type="radio" name="tb-onCPT" value="0" checked> No</label>
+                  <label><input type="radio" name="tb-onCPT" value="1"> Yes</label>
+                </div>
+              </div>
+              <div class="field-group">
+                <label for="tb-cptDate">CPT Start Date</label>
+                <input type="date" id="tb-cptDate" />
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- ── SECTION E: Treatment Outcome ────────────────────────────────────── -->
+        <details class="form-section">
+          <summary class="form-section-title">E — Treatment Outcome</summary>
+          <div class="form-section-body">
+            <div class="field-row">
+              <div class="field-group">
+                <label for="tb-outcomeID">Treatment Outcome</label>
+                <select id="tb-outcomeID"><option value="0">Select One</option></select>
+              </div>
+              <div class="field-group">
+                <label for="tb-outcomeDate">Treatment Outcome Date</label>
+                <input type="date" id="tb-outcomeDate" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label>Was the patient moved to 2nd line regimen?</label>
+                <div class="radio-group">
+                  <label><input type="radio" name="tb-movedTo2ndLine" value="0" checked> No</label>
+                  <label><input type="radio" name="tb-movedTo2ndLine" value="1"> Yes</label>
+                </div>
+              </div>
+            </div>
+            <div class="field-row" id="tb-to-wrap" hidden>
+              <div class="field-group">
+                <label for="tb-tohf">Transferred Out To (HF)</label>
+                <input type="text" id="tb-tohf" maxlength="200" />
+              </div>
+              <div class="field-group">
+                <label for="tb-toCounty">Transfer-out County</label>
+                <input type="text" id="tb-toCounty" maxlength="100" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field-group field-group--wide">
+                <label for="tb-remarks">Remarks</label>
+                <textarea id="tb-remarks" rows="2" maxlength="500" placeholder="Enter any additional remarks about the patient..."></textarea>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="row g-2 align-items-stretch form-actions">
+          <div class="col-3 form-actions-cancel">
+            <button type="button" id="tb-cancel-edit-btn" class="btn btn-info w-100 h-100" hidden>Cancel Edit</button>
+          </div>
+          <div class="col form-actions-main">
+            <button type="button" id="tb-save-btn" class="btn btn-primary w-100 h-100">Save Patient</button>
+          </div>
+          <div class="col-3 form-actions-back">
+            <button type="button" id="tb-back-to-monitoring-btn" class="btn btn-info w-100 h-100" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Back to Monitoring
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- ========== TB PATIENT LIST ========== -->
+    <section class="card list-card">
+      <div class="list-header">
+        <h2 class="section-title">Saved Patients</h2>
+        <div class="list-header-actions">
+          <span id="tb-patient-count" class="count-badge">0 records</span>
+          <button id="tb-export-btn" class="btn btn-secondary" type="button" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export .sqlite
+          </button>
+          <button id="tb-export-excel-btn" class="btn btn-secondary" type="button" title="Export current TB list to Excel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M3 15h18M9 3v18"/>
+            </svg>
+            Export to Excel
+          </button>
+          <button id="tb-sync-btn" class="btn btn-sync" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+              <path d="M23 4v6h-6"/>
+              <path d="M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+            Sync Data
+          </button>
+          <button id="tb-sync-log-btn" class="btn btn-secondary btn-sm" type="button"
+                  title="View sync diagnostic log" style="padding:.35rem .7rem;font-size:.78rem"
+                  data-bs-toggle="modal" data-bs-target="#sync-log-modal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:4px">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            Sync Log
+          </button>
+        </div>
+      </div>
+      <div class="search-wrap">
+        <input type="search" id="tb-search" placeholder="Search name or TB No.…" aria-label="Search TB patients" />
+      </div>
+
+
+      <div class="table-wrap table-wrap--tb-scroll">
+        <table class="data-table" id="tb-patient-table">
+          <thead>
+            <tr>
+              <th>Reg. Date</th>
+              <th>TB No</th>
+              <th>Patient Name</th>
+              <th style="width:36px"><input type="checkbox" id="tb-select-all" title="Select / deselect all" aria-label="Select all TB patients"></th>
+              <th>Age</th>
+              <th>Sex</th>
+              <th>TB Site</th>
+              <th>Type</th>
+              <th>Facility</th>
+              <th>Sync</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tb-patient-tbody">
+            <tr><td colspan="9" class="text-muted text-center py-3">No patients found.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+
+      
+    </section>
+
+          </div><!-- /#tb-register-content -->
+
           </div><!-- /#register-content -->
         </div><!-- /.register-main -->
       </div><!-- /.register-layout -->
     </div><!-- /#art-register-screen -->
+
+    <!-- ========== DATA QUALITY CHECK SCREEN ========== -->
+    <div id="tb-quality-screen" hidden>
+      <div class="mon-layout" id="dq-layout">
+
+        <!-- LEFT SIDEBAR: facility filter -->
+        <aside class="mon-sidebar" id="dq-sidebar" aria-label="Facility filter">
+          <div class="mon-sidebar-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Facility Filter</span>
+            <button id="dq-sidebar-collapse-btn" class="sidebar-collapse-btn" type="button" aria-label="Collapse filter">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <button id="dq-sidebar-close-btn" class="mon-sidebar-close" type="button" aria-label="Close filter panel">&times;</button>
+          </div>
+          <div class="mon-filter-body" id="dq-filter-body">
+            <div id="dq-tree-summary" class="rpt-tree-summary" style="font-size:.8rem;color:#64748b;">All facilities selected</div>
+            <div class="rpt-tree-scroll" id="dq-tree" style="max-height:calc(100vh - 150px)">
+              <div class="tree-loading">Loading facilities…</div>
+            </div>
+          </div>
+          <!-- Shown only when sidebar is collapsed; click anywhere on the strip to expand -->
+          <div class="mon-sidebar-expand-hint" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Facility Filter
+          </div>
+        </aside><!-- /.mon-sidebar -->
+
+        <!-- RIGHT MAIN AREA -->
+        <div class="mon-main" id="dq-main">
+
+          <!-- Back navigation -->
+          <nav class="register-nav" aria-label="Data quality navigation">
+            <button id="dq-back-btn" class="btn-back-dash" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            Dashboard
+          </button>
+          <span class="register-nav-sep">/</span>
+          <span class="register-nav-title">Data Quality Check &mdash; DS-TB Register</span>
+        </nav>
+
+          <!-- Mobile sidebar toggle -->
+          <div class="register-topbar">
+            <button id="dq-sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" aria-expanded="false" aria-controls="dq-sidebar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              Filter Facilities
+            </button>
+          </div>
+
+          <!-- Context bar -->
+          <div class="dq-context-bar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            Data Quality Check
+            <span id="dq-showing-label" class="dq-showing-label" style="margin-left:auto;font-style:italic;font-size:.82rem;font-weight:400">All Facilities</span>
+            <button id="dq-filter-bar-btn" class="mon-filter-bar-btn" type="button" aria-label="Open facility filter">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            </button>
+          </div>
+
+          <!-- Category panel + patient list -->
+          <div class="row g-2 align-items-start">
+
+            <!-- Col ~1/4: Category / stats panel -->
+            <div class="col-md-3 col-12">
+            <div class="mon-stats-panel" id="dq-stats-panel" aria-label="Data quality categories">
+
+              <!-- Group 1: Patient list & registration -->
+              <div class="mon-stats-group">
+                <div class="dq-stats-group-hd">Patient List andRegistration</div>
+                <div class="dq-stat-row dq-stat-row--active" id="dq-cat-all" data-dqcat="all" role="button" tabindex="0" aria-pressed="true">
+                  <span class="mon-stat-label">All Patients In The eTBr</span>
+                  <span class="dq-stat-count" id="dq-count-all">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-missingreg" data-dqcat="missingreg" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Missing Registration Info</span>
+                  <span class="dq-stat-count" id="dq-count-missingreg">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-diagmethod" data-dqcat="diagmethod" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Diagnostic Method Missing</span>
+                  <span class="dq-stat-count" id="dq-count-diagmethod">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-norxstart" data-dqcat="norxstart" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">No Treatment Start Date</span>
+                  <span class="dq-stat-count" id="dq-count-norxstart">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-futuredates" data-dqcat="futuredates" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Registered In The Future</span>
+                  <span class="dq-stat-count" id="dq-count-futuredates">00</span>
+                </div>
+              </div>
+
+              <!-- Group 2: Inconsistencies -->
+              <div class="mon-stats-group">
+                <div class="dq-stats-group-hd">Data Inconsistencies</div>
+                <div class="dq-stat-row" id="dq-cat-duplicates" data-dqcat="duplicates" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Entered Twice (Duplicates)</span>
+                  <span class="dq-stat-count" id="dq-count-duplicates">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-skipped" data-dqcat="skipped" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Skipped During Data Entry</span>
+                  <span class="dq-stat-count" id="dq-count-skipped">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-sametbno" data-dqcat="sametbno" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Same Unit TB Number</span>
+                  <span class="dq-stat-count" id="dq-count-sametbno">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-smearcured" data-dqcat="smearcured" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Smear Negative But Cured</span>
+                  <span class="dq-stat-count" id="dq-count-smearcured">00</span>
+                </div>
+              </div>
+
+              <!-- Group 3: Incomplete cases -->
+              <div class="mon-stats-group">
+                <div class="dq-stats-group-hd">Incomplete Cases</div>
+                <div class="dq-stat-row" id="dq-cat-nooutcome" data-dqcat="nooutcome" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">No DOTS Outcome</span>
+                  <span class="dq-stat-count" id="dq-count-nooutcome">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-notevaluated" data-dqcat="notevaluated" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Not Evaluated</span>
+                  <span class="dq-stat-count" id="dq-count-notevaluated">00</span>
+                </div>
+                <div class="dq-stat-row" id="dq-cat-deleted" data-dqcat="deleted" role="button" tabindex="0" aria-pressed="false">
+                  <span class="mon-stat-label">Deleted Patients (Restore)</span>
+                  <span class="dq-stat-count" id="dq-count-deleted">00</span>
+                </div>
+              </div>
+
+            </div><!-- /#dq-stats-panel -->
+            </div><!-- /col-md-4: categories -->
+
+            <!-- Col ~2/3: Patient list -->
+            <div class="col-md-9 col-12">
+            <div class="mon-list-area" id="dq-list-area">
+              <div id="dq-list-title" class="dq-list-title">All Patients In The eTBr</div>
+              <div id="dq-list-subtitle" class="dq-list-subtitle">No TB Patients Found</div>
+              <div id="dq-list-hint" class="mon-list-hint"></div>
+              <div class="table-wrap table-wrap--dq-scroll">
+                <table class="data-table" id="dq-patient-table">
+                  <thead>
+                    <tr id="dq-thead-normal">
+                      <th>TB No</th>
+                      <th>Registered</th>
+                      <th>Patient Name</th>
+                      <th style="width:36px"><input type="checkbox" id="dq-select-all" title="Select / deselect all" aria-label="Select all patients"></th>
+                      <th>Age</th>
+                      <th>Sex</th>
+                      <th>TB Site</th>
+                      <th>Type</th>
+                      <th id="dq-notes-col-hd">Issue</th>
+                      <th>Diag Method</th>
+                      <th>Phone</th>
+                      <th>Facility</th>
+                    </tr>
+                    <tr id="dq-thead-skipped" hidden>
+                      <th>Unit TB Number</th>
+                      <th colspan="11">Health Facility</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dq-patient-tbody">
+                    <tr><td colspan="12" class="text-muted text-center py-3">Select a category on the left to view patients.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="mon-list-actions">
+                <button id="dq-print-btn" class="btn btn-secondary btn-sm" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                  Print List
+                </button>
+                <button id="dq-export-excel-btn" class="btn btn-secondary btn-sm" type="button" title="Export list to Excel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                  Export to Excel
+                </button>
+              </div>
+              </div><!-- /#dq-list-area -->
+            </div><!-- /col-md-8: patient list -->
+
+          </div><!-- /.row -->
+        </div><!-- /#dq-main -->
+      </div><!-- /.mon-layout -->
+    </div><!-- /#tb-quality-screen -->
+
+    <div id="tb-monitoring-screen" hidden>
+      <div class="mon-layout">
+
+        <!-- LEFT SIDEBAR: facility filter (collapsible tree, same pattern as reports) -->
+        <aside class="mon-sidebar" id="mon-sidebar" aria-label="Facility filter">
+          <div class="mon-sidebar-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Facility Filter</span>
+            <button id="mon-sidebar-collapse-btn" class="sidebar-collapse-btn" type="button" aria-label="Collapse filter">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <button id="mon-sidebar-close-btn" class="mon-sidebar-close" type="button" aria-label="Close filter panel">&times;</button>
+          </div>
+          <div class="mon-filter-body" id="mon-filter-body">
+            <div id="mon-tree-summary" class="rpt-tree-summary" style="font-size:.8rem;color:#64748b;">All facilities selected</div>
+            <div class="rpt-tree-scroll" id="mon-tree" style="max-height:calc(100vh - 150px)">
+              <div class="tree-loading">Loading facilities…</div>
+            </div>
+          </div>
+          <!-- Shown only when sidebar is collapsed; click anywhere on the strip to expand -->
+          <div class="mon-sidebar-expand-hint" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Facility Filter
+          </div>
+        </aside><!-- /.mon-sidebar -->
+
+        <!-- RIGHT MAIN AREA -->
+        <div class="mon-main" id="mon-main">
+
+          <!-- Back navigation -->
+          <nav class="register-nav" aria-label="Monitoring navigation">
+            <button id="mon-back-btn" class="btn-back-dash" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Dashboard
+            </button>
+            <span class="register-nav-sep">/</span>
+            <span class="register-nav-title">Monitor TB Patients on Treatment</span>
+          </nav>
+
+          <!-- Mobile sidebar toggle -->
+          <div class="register-topbar">
+            <button id="mon-sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" aria-expanded="false" aria-controls="mon-sidebar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              Filter Facilities
+            </button>
+          </div>
+
+          <!-- Mode toggle + context label -->
+          <div class="mon-mode-bar">
+            <div class="mon-mode-toggle">
+              <label class="mon-mode-label">
+                <input type="checkbox" id="mon-missed-chk" checked />
+                <span class="mon-mode-text mon-mode-missed">Missed</span>
+              </label>
+              <label class="mon-mode-label">
+                <input type="checkbox" id="mon-due-chk" />
+                <span class="mon-mode-text mon-mode-due">Due</span>
+              </label>
+            </div>
+            <span id="mon-showing-label" class="mon-showing-label">Displaying All Facilities</span>
+            <button id="mon-filter-bar-btn" class="mon-filter-bar-btn" type="button" aria-label="Open facility filter">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            </button>
+          </div>
+
+          <!-- Content grid: stats panel (left) + patient list (right) -->
+          <div class="mon-content-grid">
+
+            <!-- Stats / category panel (left) -->
+            <div class="mon-stats-panel" id="mon-stats-panel" aria-label="Monitoring categories">
+              <div class="mon-stats-group">
+                <div class="mon-stats-group-hd" id="mon-sputum-hd">TB Patients Who Missed Sputum Examination</div>
+                <div class="mon-stat-row mon-stat-row--active" id="mon-cat-2month" data-cat="2month" role="button" tabindex="0" aria-pressed="true">
+                  <span class="mon-stat-label">After 2 Months Of DOTS</span>
+                  <span class="mon-stat-count" id="mon-count-2month">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-3month" data-cat="3month" role="button" tabindex="0">
+                  <span class="mon-stat-label">After 3 Months Of DOTS</span>
+                  <span class="mon-stat-count" id="mon-count-3month">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-5month" data-cat="5month" role="button" tabindex="0">
+                  <span class="mon-stat-label">After 5 Months Of DOTS</span>
+                  <span class="mon-stat-count" id="mon-count-5month">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-6month" data-cat="6month" role="button" tabindex="0">
+                  <span class="mon-stat-label">After 6 Months Of DOTS</span>
+                  <span class="mon-stat-count" id="mon-count-6month">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-8month" data-cat="8month" role="button" tabindex="0">
+                  <span class="mon-stat-label">After 8 Months Of DOTS</span>
+                  <span class="mon-stat-count" id="mon-count-8month">00</span>
+                </div>
+              </div><!-- /.mon-stats-group (sputum) -->
+              <div class="mon-stats-group">
+                <div class="mon-stats-group-hd">TB Patients Due For Other Follow Up Services</div>
+                <div class="mon-stat-row" id="mon-cat-hiv" data-cat="hiv" role="button" tabindex="0">
+                  <span class="mon-stat-label">Due For HIV Testing</span>
+                  <span class="mon-stat-count" id="mon-count-hiv">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-cpt" data-cat="cpt" role="button" tabindex="0">
+                  <span class="mon-stat-label">Due For CPT Prophylaxis</span>
+                  <span class="mon-stat-count" id="mon-count-cpt">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-art" data-cat="art" role="button" tabindex="0">
+                  <span class="mon-stat-label">Due To Start ART</span>
+                  <span class="mon-stat-count" id="mon-count-art">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-hhp" data-cat="hhp" role="button" tabindex="0">
+                  <span class="mon-stat-label">With No HHP For Support</span>
+                  <span class="mon-stat-count" id="mon-count-hhp">00</span>
+                </div>
+                <div class="mon-stat-row" id="mon-cat-outcome" data-cat="outcome" role="button" tabindex="0">
+                  <span class="mon-stat-label">DOTS Outcome Missing</span>
+                  <span class="mon-stat-count" id="mon-count-outcome">00</span>
+                </div>
+              </div><!-- /.mon-stats-group (services) -->
+            </div><!-- /.mon-stats-panel -->
+
+            <!-- Patient list area (right) -->
+            <div class="mon-list-area">
+              <div id="mon-list-title" class="mon-list-title">MISSED Sputum Examination After 2 Months Of DOTS</div>
+              <div id="mon-list-subtitle" class="mon-list-subtitle">No TB Patients Found</div>
+              <div id="mon-list-hint" class="mon-list-hint"></div>
+              <div class="table-wrap table-wrap--mon-scroll">
+                <table class="data-table" id="mon-patient-table">
+                  <thead>
+                    <tr>
+                      <th>TB No</th>
+                      <th>Registered</th>
+                      <th>Patient Name</th>
+                      <th style="width:36px"><input type="checkbox" id="mon-select-all" title="Select / deselect all" aria-label="Select all patients"></th>
+                      <th>Age</th>
+                      <th>Sex</th>
+                      <th>Village</th>
+                      <th>Phone</th>
+                      <th>Facility</th>
+                      <th>Type</th>
+                      <th id="mon-late-col-hd">Days Late</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mon-patient-tbody">
+                    <tr><td colspan="11" class="text-muted text-center py-3">Select a category on the left to view patients.</td></tr>
+                  </tbody>
+                </table>
+              </div><!-- /.table-wrap -->
+              <div class="mon-list-actions">
+                <button id="mon-print-btn" class="btn btn-secondary btn-sm" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                  Print List
+                </button>
+                <button id="mon-export-excel-btn" class="btn btn-secondary btn-sm" type="button" title="Export list to Excel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                  Export to Excel
+                </button>
+              </div>
+            </div><!-- /.mon-list-area -->
+
+          </div><!-- /.mon-content-grid -->
+        </div><!-- /.mon-main -->
+      </div><!-- /.mon-layout -->
+    </div><!-- /#tb-monitoring-screen -->
+
+    <!-- ========== PATIENT SEARCH SCREEN ========== -->
+    <div id="patient-search-screen" hidden>
+      <div class="psearch-layout">
+
+        <!-- Back nav -->
+        <nav class="register-nav" aria-label="Patient search navigation">
+          <button id="psearch-back-btn" class="btn-back-dash" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            Dashboard
+          </button>
+          <span class="register-nav-sep">/</span>
+          <span class="register-nav-title" id="psearch-nav-title">Search Patients</span>
+        </nav>
+
+        <!-- Search bar + filter chips -->
+        <div class="psearch-bar">
+          <div class="psearch-input-wrap">
+            <svg class="psearch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="psearch-input" type="search" class="psearch-input"
+              placeholder="Enter Name, ART No, TB No or phone…"
+              autocomplete="off" spellcheck="false" aria-label="Search patients" />
+            <button id="psearch-clear-btn" class="psearch-clear-btn" type="button" aria-label="Clear search" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="psearch-chips" role="group" aria-label="Filter by register">
+            <button class="psearch-chip psearch-chip--active" data-reg="" type="button">All</button>
+            <button class="psearch-chip" data-reg="ART" type="button">ART</button>
+            <button class="psearch-chip" data-reg="TB"  type="button">TB</button>
+          </div>
+        </div>
+
+        <!-- Result count -->
+        <div id="psearch-count" class="psearch-count" hidden></div>
+
+        <!-- Hint text (shown when results are visible) -->
+        <div id="psearch-hint" class="psearch-hint" hidden>
+          Click any row to open that patient's record and edit their details.
+        </div>
+
+        <!-- Results table -->
+        <div class="psearch-table-wrap" id="psearch-table-wrap">
+          <div id="psearch-empty" class="psearch-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="1.5" width="40" height="40" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <p>Type to search across ART and TB registers.</p>
+          </div>
+          <table class="table table-hover psearch-table" id="psearch-table" hidden>
+            <thead>
+              <tr>
+                <th>Register</th>
+                <th>Name</th>
+                <th>ID / No</th>
+                <th>Age</th>
+                <th>Sex</th>
+                <th>Phone</th>
+                <th>Facility</th>
+              </tr>
+            </thead>
+            <tbody id="psearch-tbody"></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div><!-- /#patient-search-screen -->
+
+  <!-- ========== TOAST NOTIFICATION ========== -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
   </main>
 
@@ -1248,22 +2313,55 @@
 
         <div class="modal-body" style="padding:1rem 1.5rem 0.5rem">
           <p class="mb-0" style="color:#6b7280;font-size:.93rem;line-height:1.6">
-            You are about to sign out of <strong>ART Patient Register</strong>.
-            <br><br>
-            <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.45rem .75rem;font-size:.85rem;color:#166534">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              Your local patient data stays on this device.
-            </span>
+            You are about to sign out of <strong>electronic TB Register</strong>.
           </p>
         </div>
 
         <div class="modal-footer border-0" style="padding:1.25rem 1.5rem 1.5rem;gap:.75rem">
-          <button type="button" class="btn btn-light fw-600" data-bs-dismiss="modal"
+          <button type="button" class="btn btn-primary fw-600" data-bs-dismiss="modal"
                   style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">Cancel</button>
-          <button type="button" id="logout-confirm-btn" class="btn btn-danger fw-600"
+          <button type="button" id="logout-confirm-btn" class="btn btn-primary fw-600"
                   data-bs-dismiss="modal"
                   style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">
             Sign Out
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== QUIT CONFIRM MODAL ========== -->
+  <div class="modal fade" id="quit-confirm-modal" tabindex="-1" aria-labelledby="quit-confirm-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:360px">
+      <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+
+        <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
+          <div class="d-flex align-items-center gap-3">
+            <div style="width:44px;height:44px;border-radius:12px;background:#fef3c7;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" width="22" height="22" aria-hidden="true">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <h5 class="modal-title mb-0" id="quit-confirm-modal-label" style="font-weight:700;font-size:1.1rem">Exit the eTBr?</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="margin-left:auto"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1rem 1.5rem 0.5rem">
+          <p class="mb-0" style="color:#6b7280;font-size:.93rem;line-height:1.6">
+            Are you sure you want to close the eTBr?
+          </p>
+        </div>
+
+        <div class="modal-footer border-0" style="padding:1.25rem 1.5rem 1.5rem;gap:.75rem">
+          <button type="button" class="btn btn-outline-secondary fw-600" data-bs-dismiss="modal"
+                  style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1">Stay</button>
+          <button type="button" id="quit-confirm-btn" class="btn btn-warning fw-600"
+                  style="border-radius:10px;padding:.55rem 1.25rem;font-weight:600;flex:1;color:#fff">
+            Exit
           </button>
         </div>
 
@@ -1361,11 +2459,655 @@
     </div>
   </div>
 
+  <!-- Hidden trigger for the baseline modal (avoids window.bootstrap dependency) -->
+  <button id="bl-modal-trigger" data-bs-toggle="modal" data-bs-target="#baseline-modal"
+          hidden aria-hidden="true"></button>
+
+  <!-- ── ART Baseline Data modal ──────────────────────────────────── -->
+  <div class="modal fade" id="baseline-modal" tabindex="-1"
+       aria-labelledby="baseline-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:855px">
+      <div class="modal-content">
+
+        <div class="modal-header" style="background:#7c4b00;color:#fff;border-radius:.5rem .5rem 0 0">
+          <h5 class="modal-title" id="baseline-modal-label" style="font-weight:700;font-size:1.05rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"
+                 aria-hidden="true" style="margin-right:6px;vertical-align:-3px">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="3" y1="15" x2="21" y2="15"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+            </svg>
+            ART Facility Baseline Data
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1.25rem 1.5rem">
+
+          <!-- Info text -->
+          <p class="text-muted" style="font-size:.85rem;margin-bottom:1rem">
+            Enter the <strong>cumulative number of patients ever started on ART at this facility</strong>
+            as of the end of the selected month. The system will use this as the opening balance when
+            generating reports for periods after this date, without requiring you to enter all historical records.
+          </p>
+
+          <!-- Facility selector -->
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold" style="font-size:.82rem" for="bl-facility-select">HEALTH FACILITY</label>
+              <select id="bl-facility-select" class="form-select" style="font-size:.88rem;height:2.5rem">
+                <option value="">— Loading facilities… —</option>
+              </select>
+              <input type="hidden" id="bl-facility-id" value="">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold" style="font-size:.82rem" for="bl-date">
+                BASELINE MONTH (counts are as of the END of this month)
+              </label>
+              <input type="month" id="bl-date" class="form-control" style="font-size:.88rem;height:2.5rem"
+                     min="2000-01" max="2099-12">
+            </div>
+          </div>
+
+          <!-- Age-group grid -->
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered align-middle mb-0" id="bl-counts-table"
+                   style="font-size:.82rem">
+              <thead style="background:#f3e9d2">
+                <tr>
+                  <th style="width:110px">Age Group</th>
+                  <th class="text-center">Male</th>
+                  <th class="text-center">Female</th>
+                  <th class="text-center" style="background:#e9f0fb">Row Total</th>
+                </tr>
+              </thead>
+              <tbody id="bl-age-rows">
+                <!-- Rows injected by JS -->
+              </tbody>
+              <tfoot style="background:#f3e9d2;font-weight:600">
+                <tr>
+                  <td>Grand Total</td>
+                  <td class="text-center" id="bl-total-m">0</td>
+                  <td class="text-center" id="bl-total-f">0</td>
+                  <td class="text-center" style="background:#d4e3fc" id="bl-total-all">0</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- CTX / Dapsone -->
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered align-middle mb-0"
+                   style="font-size:.82rem">
+              <colgroup>
+                <col style="width:40%">
+                <col style="width:20%">
+                <col style="width:20%">
+                <col style="width:20%">
+              </colgroup>
+              <thead style="background:#f3e9d2">
+                <tr>
+                  <th>Drug (cumulative)</th>
+                  <th class="text-center">Male</th>
+                  <th class="text-center">Female</th>
+                  <th class="text-center" style="background:#e9f0fb">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="fw-semibold" style="padding:.2rem .4rem">Total Number of Clients Taking CTX</td>
+                  <td class="text-center" style="padding:.15rem .25rem">
+                    <input type="number" id="bl-ctx-m"
+                           class="form-control form-control-sm text-center"
+                           min="0" value="0"
+                           style="width:80px;margin:auto;padding:.15rem .4rem;height:auto">
+                  </td>
+                  <td class="text-center" style="padding:.15rem .25rem">
+                    <input type="number" id="bl-ctx-f"
+                           class="form-control form-control-sm text-center"
+                           min="0" value="0"
+                           style="width:80px;margin:auto;padding:.15rem .4rem;height:auto">
+                  </td>
+                  <td class="text-center fw-semibold" id="bl-ctx-total"
+                      style="background:#e9f0fb;padding:.2rem .4rem">0</td>
+                </tr>
+                <tr>
+                  <td class="fw-semibold" style="padding:.2rem .4rem">Total Number of Clients Taking Dapsone</td>
+                  <td class="text-center" style="padding:.15rem .25rem">
+                    <input type="number" id="bl-dapsone-m"
+                           class="form-control form-control-sm text-center"
+                           min="0" value="0"
+                           style="width:80px;margin:auto;padding:.15rem .4rem;height:auto">
+                  </td>
+                  <td class="text-center" style="padding:.15rem .25rem">
+                    <input type="number" id="bl-dapsone-f"
+                           class="form-control form-control-sm text-center"
+                           min="0" value="0"
+                           style="width:80px;margin:auto;padding:.15rem .4rem;height:auto">
+                  </td>
+                  <td class="text-center fw-semibold" id="bl-dapsone-total"
+                      style="background:#e9f0fb;padding:.2rem .4rem">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Started from zero -->
+          <div class="mb-3 px-3 py-2 rounded d-flex align-items-start gap-2"
+               style="background:#fef9f0;border:1px solid #d4aa70">
+            <input class="form-check-input flex-shrink-0" type="checkbox" id="bl-started-zero"
+                   style="border:1.5px solid #7c4b00;width:1.15em;height:1.15em;cursor:pointer;margin-top:.18em">
+            <label class="form-check-label" for="bl-started-zero" style="font-size:.88rem">
+              <strong>This facility started from zero</strong> — they had no ART patients before the
+              baseline date above. (Suppresses repeated “missing baseline” reminders.)
+            </label>
+          </div>
+
+          <!-- Notes -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.82rem" for="bl-notes">
+              NOTES <span class="fw-normal text-muted">(optional)</span>
+            </label>
+            <textarea id="bl-notes" class="form-control" rows="2" maxlength="500"
+                      style="font-size:.88rem"
+                      placeholder="e.g. Verified by facility manager, confirmed with paper registers"></textarea>
+          </div>
+
+          <!-- Inline status / error -->
+          <div id="bl-status" class="alert d-none mb-0" role="alert" style="font-size:.85rem"></div>
+
+        </div><!-- /modal-body -->
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning btn-sm" id="bl-save-btn" style="color:#fff;font-weight:600">
+            <span id="bl-save-spinner" class="spinner-border spinner-border-sm d-none me-1" role="status" aria-hidden="true"></span>
+            Save Baseline Data
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <!-- /ART Baseline Data modal -->
+
+  <!-- ── ART Report modal ──────────────────────────────────── -->
+  <div class="modal fade" id="art-report-modal" tabindex="-1"
+       aria-labelledby="art-report-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+
+        <div id="rpt-modal-header" class="modal-header" style="background:#084298;color:#fff;border-radius:1rem 1rem 0 0;padding:.6rem 1rem">
+          <h5 class="modal-title" id="art-report-modal-label" style="font-weight:700;font-size:1.05rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"
+                 aria-hidden="true" style="margin-right:6px;vertical-align:-3px">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            <span id="rpt-modal-title-text">Reports</span>
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body" style="padding:.75rem;background:#cce0cc">
+
+          <div style="background:#fff;border-radius:10px;padding:.85rem 1rem;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+
+            <!-- Row 0: Data Source -->
+            <div class="row g-2 mb-2">
+              <div class="col-12">
+                <label class="form-label fw-semibold" for="rpt-data-source">Data Source <span style="color:#e03">*</span></label>
+                <select id="rpt-data-source" class="form-select">
+                  <option value="this-computer">This Computer</option>
+                  <option value="etbr-server" selected>eTBr Server</option>
+                  <option value="dhis2">DHIS2</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Row 1: Programme + Report (cascading) -->
+            <div class="row g-2 mb-2">
+              <div class="col-sm-6">
+                <label class="form-label fw-semibold" for="rpt-programme">Programme <span style="color:#e03">*</span></label>
+                <select id="rpt-programme" class="form-select">
+                  <option value="art">HIV</option>
+                  <option value="tb">TB</option>
+                </select>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label fw-semibold" for="rpt-sub-type">Report Type <span style="color:#e03">*</span></label>
+                <select id="rpt-sub-type" class="form-select">
+                  <!-- Populated by JS based on Programme selection -->
+                </select>
+              </div>
+            </div>
+
+            <!-- Standard period section (hidden for DHIS2 sub-types) -->
+            <div id="rpt-period-section">
+              <div class="row g-2 mb-1">
+                <div class="col-sm-4">
+                  <label class="form-label fw-semibold" for="rpt-period-type">Period Type <span style="color:#e03">*</span></label>
+                  <select id="rpt-period-type" class="form-select">
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="semiannually">Semiannually</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </div>
+                <div class="col-sm-4" id="rpt-period-wrap">
+                  <label class="form-label fw-semibold" for="rpt-period">Period <span style="color:#e03">*</span></label>
+                  <select id="rpt-period" class="form-select">
+                    <!-- Populated by JS cascade -->
+                  </select>
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label fw-semibold" for="rpt-year">Year <span style="color:#e03">*</span></label>
+                  <select id="rpt-year" class="form-select">
+                    <!-- Populated by JS -->
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- DHIS2 period section (shown only for DHIS2 sub-types) -->
+            <div id="rpt-dhis2-config" style="display:none">
+              <div class="row g-2 mb-2">
+                <div class="col-sm-6">
+                  <label class="form-label fw-semibold" for="rpt-cf-quarter">Select Quarter <span style="color:#e03">*</span></label>
+                  <select id="rpt-cf-quarter" class="form-select">
+                    <option value="1">Quarter 1</option>
+                    <option value="2">Quarter 2</option>
+                    <option value="3">Quarter 3</option>
+                    <option value="4">Quarter 4</option>
+                  </select>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label fw-semibold" for="rpt-cf-year">Select Year <span style="color:#e03">*</span></label>
+                  <select id="rpt-cf-year" class="form-select"></select>
+                </div>
+              </div>
+
+              <!-- DHIS2 prepare progress -->
+              <div id="rpt-dhis2-progress-wrap" style="display:none" class="mb-2">
+                <div class="d-flex justify-content-between mb-1">
+                  <small class="text-muted">Computing report data for all facilities…</small>
+                </div>
+                <div class="progress" style="height:8px" role="progressbar" aria-label="Preparing DHIS2 data">
+                  <div id="rpt-dhis2-progress-bar"
+                       class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                       style="width:100%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Geography checkbox tree (shown for non-DHIS2 reports) -->
+            <div class="mb-2" id="rpt-geo-tree" style="display:none">
+              <label class="form-label fw-semibold">Report Organisation Unit</label>
+              <div id="rpt-tree" class="rpt-tree-scroll border rounded"></div>
+              <div id="rpt-tree-summary" class="mt-1"></div>
+            </div>
+
+            <!-- Shared status message -->
+            <div id="rpt-status" class="alert" role="alert" style="display:none"></div>
+
+            <!-- ART/TB Excel generation progress bar -->
+            <div id="rpt-progress-wrap" style="display:none" class="mb-2">
+              <div class="d-flex justify-content-between mb-1">
+                <small id="rpt-progress-label" class="text-muted"></small>
+                <small id="rpt-progress-pct" class="text-muted fw-semibold"></small>
+              </div>
+              <div class="progress" style="height: 8px" role="progressbar"
+                   aria-label="Report generation progress"
+                   aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                <div id="rpt-progress-bar"
+                     class="progress-bar progress-bar-striped progress-bar-animated"
+                     style="width:0%"></div>
+              </div>
+            </div>
+
+          </div>
+        </div><!-- /modal-body -->
+
+        <div class="modal-footer" style="flex-wrap:wrap;gap:.35rem">          
+          <!-- Non-DHIS2: generate Excel report -->
+          <button type="button" id="rpt-generate-btn" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"
+                 aria-hidden="true" style="margin-right:5px;vertical-align:-2px">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Generate Report
+          </button>
+          <!-- DHIS2: prepare data -->
+          <button type="button" class="btn btn-success" id="rpt-dhis2-prepare-btn" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"
+                 aria-hidden="true" style="margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Prepare Report Data
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <!-- ── end Unified Reports & DHIS2 modal ──────────────────────── -->
+
+  <!-- Hidden trigger for DHIS2 Step 2 modal -->
+  <button id="dhis2-step2-trigger" data-bs-toggle="modal" data-bs-target="#dhis2-step2-modal"
+          hidden aria-hidden="true"></button>
+  <!-- Hidden trigger to reopen Step 1 (report config) from Step 2 close -->
+  <button id="dhis2-step1-trigger" data-bs-toggle="modal" data-bs-target="#art-report-modal"
+          hidden aria-hidden="true"></button>
+
+  <!-- ── DHIS2 Step 2 stacked modal (non-dismissable) ───────────────────── -->
+  <div class="modal fade" id="dhis2-step2-modal" tabindex="-1"
+       data-bs-backdrop="static" data-bs-keyboard="false"
+       aria-labelledby="dhis2-step2-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content" style="border-radius:1rem;overflow:hidden">
+
+        <div class="modal-header" style="background:#1b5e42;color:#fff;border-radius:1rem 1rem 0 0;padding:.6rem 1rem">
+          <h5 class="modal-title" id="dhis2-step2-label" style="font-weight:700;font-size:1.05rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"
+                 aria-hidden="true" style="margin-right:6px;vertical-align:-3px">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+            Step 2 — Send TB Reports to DHIS2
+          </h5>
+          <button type="button" class="btn-close btn-close-white" id="rpt-dhis2-step2-close-btn"
+                  data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body" style="padding:.75rem;background:#cce0cc">
+          <div style="background:#fff;border-radius:10px;padding:.85rem 1rem;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+
+            <!-- Step 2: Facility selection -->
+            <div id="rpt-dhis2-step-table">
+              <h6 class="fw-semibold mb-2" style="color:#1d6a2e">Step 2 — Select Quarterly TB Reports To Send To DHIS2</h6>
+              <div class="small mb-3" style="background:#f8f9fa;padding:.5rem .75rem;border-radius:6px">
+                <strong>HINT:</strong><br>
+                1. Select one or more facility reports by checking the box next to the report.<br>
+                2. Click <strong>Preview</strong> to verify the report, or click <strong>Send to DHIS2</strong> to submit directly.
+              </div>
+              <div class="table-responsive" style="border:1.5px solid #94a3b8;border-radius:8px;overflow:hidden">
+                <table class="table table-sm table-bordered table-hover align-middle mb-0" id="rpt-dhis2-facility-table">
+                  <thead class="table-dark">
+                    <tr>
+                      <th>#</th><th>Facility</th>
+                      <th style="width:44px;text-align:center;vertical-align:middle">
+                        <input type="checkbox" id="rpt-dhis2-select-all" title="Select all"
+                               style="width:18px;height:18px;cursor:pointer;display:block;margin:0 auto">
+                      </th>
+                      <th>County</th><th>State</th><th>Period</th>
+                      <th style="text-align:center">Preview Report</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rpt-dhis2-facility-tbody"></tbody>
+                </table>
+              </div>
+              <div id="rpt-dhis2-send-status" class="alert" role="alert" style="display:none"></div>
+            </div>
+
+            <!-- Step 2.5: Sending progress -->
+            <div id="rpt-dhis2-step-progress" style="display:none">
+              <h6 class="fw-semibold mb-3" style="color:#1d6a2e">Sending to DHIS2&hellip;</h6>
+              <p id="rpt-dhis2-progress-label" class="small mb-2 text-muted">Preparing&hellip;</p>
+              <div class="progress mb-1" style="height:20px;border-radius:8px;background:#d1e7d1">
+                <div id="rpt-dhis2-send-bar"
+                     class="progress-bar bg-success"
+                     role="progressbar" style="width:0%"
+                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+              </div>
+              <p id="rpt-dhis2-progress-count" class="small text-end text-muted mb-0">0 / 0</p>
+            </div>
+
+            <!-- Step 3: Submission results -->
+            <div id="rpt-dhis2-step-results" style="display:none">
+              <h6 class="fw-semibold mb-2" style="color:#1d6a2e">Submission Results</h6>
+              <div id="rpt-dhis2-results-body"></div>
+            </div>
+
+          </div>
+        </div><!-- /modal-body -->
+
+        <div class="modal-footer" style="flex-wrap:wrap;gap:.35rem">
+          <!-- Send to DHIS2 -->
+          <button type="button" class="btn btn-success btn-sm" id="rpt-dhis2-send-btn" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"
+                 aria-hidden="true" style="margin-right:4px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send to DHIS2
+          </button>
+          <!-- Done (shown after submission results) -->
+          <button type="button" class="btn btn-primary" id="rpt-dhis2-done-btn"
+                  style="display:none">Done</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <!-- ── end DHIS2 Step 2 modal ───────────────────────────────────────── -->
+
+  <!-- ── DHIS2 send-confirmation modal ────────────────────────────────────── -->
+  <!-- ── Offline report confirmation modal ──────────────────────────────────── -->
+  <div class="modal fade" id="offline-confirm-modal" tabindex="-1"
+       aria-labelledby="offline-confirm-label" aria-hidden="true" >
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+      <div class="modal-content" style="border-radius:0.5rem;overflow:hidden">
+        <div class="modal-header" style="background:#92400e;color:#fff;padding:.65rem 1rem">
+          <h5 class="modal-title" id="offline-confirm-label" style="font-weight:700;font-size:1rem">
+            &#9888;&#65039;&nbsp; Offline Mode — Preliminary Data Only
+          </h5>
+        </div>
+        <div class="modal-body bg-light" style="padding:.9rem 1.1rem;font-size:.875rem">
+          <p class="mb-2">You are currently <strong>offline</strong>. This report will be generated from data stored locally on this device only.</p>
+          <ul class="mb-2" style="padding-left:1.3rem">
+            <li>Data entered on other devices that has not yet been synced to this device will <strong>NOT</strong> be included.</li>
+            <li>Figures may differ from the eTBr server-generated report.</li>
+          </ul>
+          <p class="mb-0 fw-semibold" style="color:#b91c1c">Do NOT submit this offline report as final. Go online, sync all data, then regenerate from the eTBr server before submitting.</p>
+        </div>
+        <div class="modal-footer" style="padding:.6rem 1rem;gap:.5rem;background:#e9f0fb">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="offline-confirm-cancel">Cancel</button>
+          <button type="button" class="btn btn-success btn-sm fw-semibold" id="offline-confirm-ok">Generate Offline Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ── end offline confirm modal ──────────────────────────────────────────── -->
+
+  <div class="modal fade" id="dhis2-confirm-modal" tabindex="-1"
+       aria-labelledby="dhis2-confirm-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:420px">
+      <div class="modal-content" style="border-radius:0.5rem;overflow:hidden">
+        <div class="modal-header" style="background:#1b5e42;color:#fff;padding:.6rem 1rem">
+          <h5 class="modal-title" id="dhis2-confirm-label" style="font-weight:700;font-size:1rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
+                 aria-hidden="true" style="margin-right:6px;vertical-align:-3px">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+            Confirm Submission
+          </h5>
+        </div>
+        <div class="modal-body" style="padding:.85rem 1.1rem;font-size:.875rem">
+          <p id="dhis2-confirm-msg" class="mb-2"></p>
+          <p class="mb-0"><b>CONTINUE?</b></p>
+        </div>
+        <div class="modal-footer" style="padding:.6rem 1rem;gap:.5rem">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="dhis2-confirm-cancel">Cancel</button>
+          <button type="button" class="btn btn-success btn-sm" id="dhis2-confirm-ok">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"
+                 aria-hidden="true" style="margin-right:4px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send to DHIS2
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ── end DHIS2 confirm modal ──────────────────────────────────────────── -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Pre-Report Data Quality Check Modal                                   -->
+  <!-- Shown automatically before a TB quarterly report is generated.        -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <div class="modal fade" id="pre-report-dq-modal" tabindex="-1"
+       aria-labelledby="pre-report-dq-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:760px">
+      <div class="modal-content" style="border-radius:1rem;overflow:hidden">
+
+        <!-- Header -->
+        <div class="modal-header pre-rpt-dq-header">
+          <h5 class="modal-title" id="pre-report-dq-label" style="font-size:1rem;font-weight:700;display:flex;align-items:center;gap:.5rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"
+                 aria-hidden="true">
+              <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+            </svg>
+            Data Quality Check — Before You Generate Reports
+          </h5>
+          <button type="button" class="btn-close btn-close-white" id="pre-dq-header-close-btn" aria-label="Close"></button>
+        </div>
+
+        <!-- Body -->
+        <div class="modal-body" style="padding:.75rem;background:#f0f4f8">
+          <div style="background:#fff;border-radius:10px;padding:.85rem 1rem;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+
+            <!-- Period context banner -->
+            <div id="pre-dq-period-info" class="pre-dq-period-info mb-3"></div>
+
+            <!-- Summary (loading / all-pass / has-issues) -->
+            <div id="pre-dq-summary" class="pre-dq-summary mb-2" style="display:none"></div>
+
+            <!-- Checklist -->
+            <div id="pre-dq-checklist" class="pre-dq-checklist">
+              <!-- Rows injected by JS -->
+              <div class="pre-dq-loading">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status" aria-hidden="true"></div>
+                Checking data quality…
+              </div>
+            </div>
+
+            <!-- Auto-close preference pill (shown below table after checks complete) -->
+            <label id="pre-dq-autoclose-pill" class="pre-dq-autoclose-pill" style="display:none">
+              <input type="checkbox" id="dq-auto-close-cb" style="accent-color:var(--primary);width:13px;height:13px;cursor:pointer">
+              In future, auto-close and generate immediately when no issues are found
+            </label>
+
+            <!-- Detail panel: patient list for the selected DQ category -->
+            <div id="pre-dq-detail" style="display:none" class="mt-3">
+              <div id="pre-dq-detail-title" class="pre-dq-detail-title mb-1"></div>
+              <div class="table-responsive pre-dq-detail-table-wrap">
+                <table class="table table-sm table-bordered table-hover align-middle mb-0" id="pre-dq-detail-table">
+                  <thead>
+                    <tr>
+                      <th>TB No</th>
+                      <th>Reg Date</th>
+                      <th>Patient Name</th>
+                      <th>Age</th>
+                      <th>Sex</th>
+                      <th>Facility</th>
+                      <th>Issue / Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pre-dq-detail-tbody"></tbody>
+                </table>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm mt-1" id="pre-dq-close-detail-btn">
+                ↑ Close Detail
+              </button>
+            </div>
+
+          </div>
+        </div><!-- /modal-body -->
+
+        <!-- Footer -->
+        <div class="modal-footer" style="flex-wrap:wrap;gap:.4rem;padding:.6rem 1rem">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="pre-dq-cancel-btn">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-warning btn-sm fw-semibold" id="pre-dq-fix-btn" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"
+                 aria-hidden="true" style="margin-right:4px"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Fix Issues
+          </button>
+          <button type="button" class="btn btn-primary btn-sm fw-semibold" id="pre-dq-proceed-btn" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"
+                 aria-hidden="true" style="margin-right:4px">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span id="pre-dq-proceed-label">Generate Report</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <!-- ── end pre-report DQ modal ──────────────────────────────────────────── -->
+
+  <!-- ── General-purpose confirm modal ──────────────────────────────────────── -->
+  <div class="modal fade" id="generic-confirm-modal" tabindex="-1"
+       aria-labelledby="generic-confirm-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:440px">
+      <div class="modal-content" style="border-radius:0.5rem;overflow:hidden">
+        <div class="modal-header" style="background:#1e3a5f;color:#fff;padding:.65rem 1rem">
+          <h5 class="modal-title" id="generic-confirm-label" style="font-weight:700;font-size:1rem"></h5>
+        </div>
+        <div class="modal-body" style="padding:.9rem 1.1rem;font-size:.875rem">
+          <p id="generic-confirm-msg" class="mb-0" style="white-space:pre-line"></p>
+        </div>
+        <div class="modal-footer" style="padding:.6rem 1rem;gap:.5rem">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="generic-confirm-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm fw-semibold" id="generic-confirm-ok">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ── end generic confirm modal ──────────────────────────────────────────── -->
+
+  <!-- Hidden trigger for the user facility assignment modal -->
+  <button id="umf-modal-trigger" data-bs-toggle="modal" data-bs-target="#usermgmt-facilities-modal"
+          hidden aria-hidden="true"></button>
+
+  <!-- ========== USER FACILITY ASSIGNMENT MODAL ========== -->
+  <div class="modal fade" id="usermgmt-facilities-modal" tabindex="-1"
+       aria-labelledby="usermgmt-facilities-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" style="max-width:680px">
+      <div class="modal-content" style="border-radius:0.5rem;overflow:hidden">
+        <div class="modal-header" style="background:#1e3a5f;color:#fff;padding:.65rem 1rem">
+          <h5 class="modal-title" id="usermgmt-facilities-label" style="font-weight:700;font-size:1rem">
+            Facility Access &mdash; <span id="umf-user-name"></span>
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                  aria-label="Close" style="margin-left:auto"></button>
+        </div>
+        <div class="modal-body" style="padding:0.75rem 1rem;max-height:60vh;overflow-y:auto">
+          <p style="font-size:0.82rem;color:#374151;margin-bottom:0.5rem">
+            Select which facilities this user can access. Leave all unchecked to use their
+            default scope (county&nbsp;/&nbsp;state) with no explicit restriction.
+          </p>
+          <div id="umf-tree-summary"
+               style="font-size:0.82rem;color:#374151;margin-bottom:0.6rem;min-height:1.2em"></div>
+          <div id="umf-tree" style="font-size:0.875rem"></div>
+        </div>
+        <div class="modal-footer" style="padding:.6rem 1rem;gap:.5rem">
+          <button type="button" class="btn btn-outline-secondary btn-sm"
+                  data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm fw-semibold"
+                  id="umf-save-btn">Save Assignments</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ── end user facility assignment modal ─────────────────────────────────── -->
+
   <!-- Bootstrap 5.3.3 JS bundle (includes Popper) -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 
   <!-- ========== SCRIPTS ========== -->
   <!-- db.js must load before app.js because app.js calls DB functions -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="db.js"></script>
   <script src="app.js"></script>
 

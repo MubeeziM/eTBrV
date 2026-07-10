@@ -1,5 +1,5 @@
--- =============================================================================
---  Migration: Add TBStatusID column to PtDetailsT
+﻿-- =============================================================================
+--  Migration: Add TBStatusID column to PtDetailsARTT
 --
 --  Run once on the live database in SSMS.
 --
@@ -14,16 +14,16 @@ GO
 IF NOT EXISTS (
     SELECT 1
     FROM   sys.columns
-    WHERE  object_id = OBJECT_ID('PtDetailsT')
+    WHERE  object_id = OBJECT_ID('PtDetailsARTT')
       AND  name      = 'TBStatusID'
 )
 BEGIN
-    ALTER TABLE PtDetailsT
+    ALTER TABLE PtDetailsARTT
         ADD TBStatusID INTEGER NOT NULL
-            CONSTRAINT DF_PtDetailsT_TBStatusID DEFAULT 0
-            CONSTRAINT FK_PtDetailsT_TBStatus   REFERENCES TBStatusT(TBStatusID);
+            CONSTRAINT DF_PtDetailsARTT_TBStatusID DEFAULT 0
+            CONSTRAINT FK_PtDetailsARTT_TBStatus   REFERENCES TBStatusT(TBStatusID);
 
-    PRINT 'TBStatusID column added to PtDetailsT.';
+    PRINT 'TBStatusID column added to PtDetailsARTT.';
 END
 ELSE
 BEGIN

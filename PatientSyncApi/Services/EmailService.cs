@@ -139,4 +139,67 @@ public sealed class EmailService
             return false;
         }
     }
+
+    public async Task<bool> SendAccountApprovedAsync(string toEmail, string fullName)
+    {
+        var htmlBody = $"""
+            <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;">
+              <h2 style="color:#2c7a4b;">eTBr Account Approved</h2>
+              <p>Dear {System.Net.WebUtility.HtmlEncode(fullName)},</p>
+              <p>Your eTBr account has been <strong>approved</strong>. You can now sign in at:</p>
+              <p style="margin:12px 0;">
+                <a href="https://art.etbr.org" style="background:#2c7a4b;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none;font-weight:bold;">
+                  Sign In to eTBr
+                </a>
+              </p>
+              <p>If you have any questions, please contact your supervisor.</p>
+              <br/>
+              <p style="color:#666;font-size:0.85em;">eTBr Team</p>
+            </div>
+            """;
+
+        try
+        {
+            return await SendViaMxRouteAsync(toEmail, "eTBr - Your Account Has Been Approved", htmlBody);
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogError("MXroute request timed out sending account-approved email to {Email}.", toEmail);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "MXroute error sending account-approved email to {Email}.", toEmail);
+            return false;
+        }
+    }
+
+    public async Task<bool> SendAccountRejectedAsync(string toEmail, string fullName)
+    {
+        var htmlBody = $"""
+            <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;">
+              <h2 style="color:#b91c1c;">eTBr Account Registration</h2>
+              <p>Dear {System.Net.WebUtility.HtmlEncode(fullName)},</p>
+              <p>We regret to inform you that your eTBr account registration could not be approved at this time.</p>
+              <p>If you believe this is an error or require further assistance, please contact your programme administrator.</p>
+              <br/>
+              <p style="color:#666;font-size:0.85em;">eTBr Team</p>
+            </div>
+            """;
+
+        try
+        {
+            return await SendViaMxRouteAsync(toEmail, "eTBr - Account Registration Update", htmlBody);
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogError("MXroute request timed out sending account-rejected email to {Email}.", toEmail);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "MXroute error sending account-rejected email to {Email}.", toEmail);
+            return false;
+        }
+    }
 }

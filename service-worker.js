@@ -27,7 +27,14 @@ const APP_SHELL = [
   './icons/icon-512.png',
   // sql.js files (CDN) — cached so the app works fully offline
   'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm'
+  'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm',
+  // ExcelJS — needed for offline Excel report generation (preserves template formatting)
+  'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',
+  // Excel report templates — cached for offline generation
+  './templates/Template_DSTB_NTP_Report.xlsx',
+  './templates/Template_LFA_Verification_Report.xlsx',
+  './templates/ART_Monthly_Report_Form_Rev.xlsx',
+  './templates/Template_ExportedData.xlsx'
 ];
 
 // ─── Install: pre-cache the app shell ────────────────────────────────────
