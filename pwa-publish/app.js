@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v110720261744';
+const APP_VERSION = 'v110720261815';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -4104,9 +4104,9 @@ function updateDashboardStats() {
     const elSync  = document.getElementById('db-stat-lastsync');
 
     // Show local counts immediately as a fallback while the server responds
-    if (elPts)   elPts.textContent   = getAllPtDetails().length;
-    if (elTbPts) elTbPts.textContent = getAllPtDetailsTB().length;
-    if (elPend)  elPend.textContent  = pending;
+    if (elPts)   elPts.textContent   = getAllPtDetails().length.toLocaleString();
+    if (elTbPts) elTbPts.textContent = getAllPtDetailsTB().length.toLocaleString();
+    if (elPend)  elPend.textContent  = pending.toLocaleString();
     if (elSync) {
       if (lastSync) {
         const diff = Math.round((Date.now() - new Date(lastSync)) / 60000); // minutes
@@ -4131,8 +4131,8 @@ function updateDashboardStats() {
         if (!data) return;
         const elPts   = document.getElementById('db-stat-patients');
         const elTbPts = document.getElementById('db-stat-tb-patients');
-        if (elPts)   elPts.textContent   = data.artCount ?? elPts.textContent;
-        if (elTbPts) elTbPts.textContent = data.tbCount  ?? elTbPts.textContent;
+        if (data.artCount != null && elPts)   elPts.textContent   = Number(data.artCount).toLocaleString();
+        if (data.tbCount  != null && elTbPts) elTbPts.textContent = Number(data.tbCount).toLocaleString();
       })
       .catch(() => { /* offline or error — keep local counts */ });
   }
@@ -9466,6 +9466,9 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
     if (tbQualityScreen)    tbQualityScreen.hidden    = true;
     searchScreen.hidden = false;
     _fromSearch = false;
+    // Always hide the sync bar when entering normal patient search
+    const syncBar = document.getElementById('psearch-sync-bar');
+    if (syncBar) syncBar.hidden = true;
 
     if (restoreQuery) {
       // Coming back from a patient record
@@ -9498,6 +9501,8 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
   function hidePatientSearch() {
     searchScreen.hidden = true;
     _fromSearch = false;
+    const syncBar = document.getElementById('psearch-sync-bar');
+    if (syncBar) syncBar.hidden = true;
     showDashboard();
   }
 
@@ -9748,6 +9753,32 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
 
   document.getElementById('psearch-back-btn')?.addEventListener('click', hidePatientSearch);
 
+  // ── Pending Sync: "Sync Now" button ───────────────────────────────────────
+  document.getElementById('psearch-sync-btn')?.addEventListener('click', async () => {
+    const statusEl = document.getElementById('psearch-sync-status');
+    const btn = document.getElementById('psearch-sync-btn');
+    if (!navigator.onLine) {
+      if (statusEl) statusEl.textContent = 'You are offline — sync unavailable.';
+      return;
+    }
+    if (btn) btn.disabled = true;
+    if (statusEl) statusEl.textContent = 'Syncing…';
+    try {
+      await triggerSync(false, false, 'pending-sync-btn');
+      await triggerTBSync(true, false, 'pending-sync-btn-tb');
+      await autoRestoreFromServer(true);
+      await autoRestoreFromServerTB(true);
+      updateDashboardStats();
+      if (statusEl) statusEl.textContent = 'Sync complete.';
+      // Refresh the list
+      _showPendingAll();
+    } catch {
+      if (statusEl) statusEl.textContent = 'Sync failed — try again.';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   // ── Keyboard shortcut: '/' on dashboard focuses search ───────────────────
   document.addEventListener('keydown', e => {
     if (e.key !== '/' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
@@ -9984,6 +10015,11 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
     if (navTitle) navTitle.textContent = 'Pending Sync';
     const thead = tableEl?.querySelector('thead tr');
     if (thead && _origTheadHTML) thead.innerHTML = _origTheadHTML;
+    // Show the sync bar
+    const syncBar = document.getElementById('psearch-sync-bar');
+    if (syncBar) syncBar.hidden = false;
+    const syncStatus = document.getElementById('psearch-sync-status');
+    if (syncStatus) syncStatus.textContent = '';
     window.scrollTo({ top: 0, behavior: 'instant' });
     _showPendingAll();
   };
@@ -10010,22 +10046,6 @@ document.getElementById('db-stat-tb-tile')?.addEventListener('click', () => {
 });
 document.getElementById('db-stat-pending-tile')?.addEventListener('click', () => {
   window._openPendingBrowser?.();
-});
-
-/** Sync Data card — triggers sync (if online) and stays on dashboard */
-document.getElementById('dash-goto-sync')?.addEventListener('click', async () => {
-  if (!navigator.onLine) {
-    showToast('You are offline. Sync is not available.', 'error');
-    return;
-  }
-  await triggerSync(false, false, 'sync-card');
-  await triggerTBSync(true, false, 'sync-card-tb');
-  await autoRestoreFromServer(true); // also pull records from other devices
-  await autoRestoreFromServerTB(true);
-  updateDashboardStats();
-});
-document.getElementById('dash-goto-sync')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }
 });
 
 /** Export Database card — delegates to the existing export button */

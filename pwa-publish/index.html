@@ -472,26 +472,11 @@
             </div>
           </div>
 
-          <!-- Sync Data (active) -->
-          <div class="db-card db-card--active" id="dash-goto-sync" role="button" tabindex="0" aria-label="Sync data to the eTBr server">
-            <div class="db-card-ico" style="background:#ede9fe">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-            </div>
-            <div class="db-card-body mt-3">
-              <h4>Sync Data</h4>
-              <p>Send all pending local records to the eTBr server. Requires an internet connection.</p>
-            </div>
-            <div class="db-card-foot">
-              <button class="db-open-btn" style="background:#7c3aed;border-color:#059669;color:#fff" tabindex="-1">Sync Now
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-              </button>
-            </div>
-          </div>
 
           <!-- Data Quality Check -->
           <div class="db-card db-card--active" id="dash-goto-tb-quality" role="button" tabindex="0" aria-label="Check data quality in the TB register">
-            <div class="db-card-ico" style="background:#fef3c7">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.8" width="32" height="32" aria-hidden="true">
+            <div class="db-card-ico" style="background:#ede9fe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.8" width="32" height="32" aria-hidden="true">
                 <path d="M9 11l3 3L22 4"/>
                 <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
               </svg>
@@ -501,7 +486,24 @@
               <p>Find duplicates, missing registration info, inconsistent outcomes, and other data quality issues in the DS-TB register.</p>
             </div>
             <div class="db-card-foot">
-              <button class="db-open-btn" style="background:#d97706;border-color:#059669;color:#fff" tabindex="-1">Check Quality
+              <button class="db-open-btn" style="background:#7c3aed;border-color:#7c3aed;color:#fff" tabindex="-1">Check Quality
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Legacy Data Migration -->
+          <div class="db-card db-card--active" id="umgmt-card-migration" role="button" tabindex="0" aria-label="Migrate legacy patient data">
+            <div class="db-card-ico" style="background:#fef3c7">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.8" width="32" height="32" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+            </div>
+            <div class="db-card-body mt-3">
+              <h4>Legacy Data Migration</h4>
+              <p>Import historical patient records from the legacy system, one facility at a time.</p>
+              <span id="migration-summary-badge" style="font-size:0.82rem;color:#6b7280;margin-top:0.3rem;display:block"></span>
+            </div>
+            <div class="db-card-foot">
+              <button class="db-open-btn" style="background:#d97706;border-color:#d97706;color:#fff" tabindex="-1">Manage
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
               </button>
             </div>
@@ -546,6 +548,42 @@
           </div>
 
         </div>
+
+        <!-- ── Panel: Legacy Data Migration ──────────────────────────────── -->
+        <div id="migration-panel" class="umgmt-panel" hidden>
+          <div class="umgmt-panel-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+            Legacy Data Migration
+            <button type="button" id="migration-refresh-btn" title="Refresh list" style="background:none;border:none;cursor:pointer;padding:0 6px;color:#6b7280;vertical-align:middle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </button>
+            <button type="button" class="umgmt-panel-close" data-panel="migration-panel" aria-label="Close">×</button>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:1rem 1.25rem">
+            <p style="font-size:0.82rem;color:#6b7280;margin:0 0 0.75rem">
+              Import all eTBr patient data from the old eTBr into the new eTBr.
+              Once migrated, all your facility's patient records will permanently be in the new eTBr system.
+            </p>
+            <div id="migration-loading" style="color:#6b7280;font-size:0.9rem;padding:0.5rem 0" hidden>Loading facilities…</div>
+            <p id="migration-empty" class="text-muted" style="font-size:0.9rem;margin:0.5rem 0" hidden>No facilities found.</p>
+            <div id="migration-tree-section" hidden>
+              <div class="tree-search-wrap" style="padding:0 0 0.65rem">
+                <input type="search" id="migration-tree-search" class="tree-search-input"
+                  placeholder="Search facilities…" autocomplete="off" aria-label="Search migration facilities" />
+              </div>
+              <div style="display:flex;align-items:center;gap:0.45rem;padding:0 calc(0.5rem + 17px) 0.4rem 0.5rem;border-bottom:1px solid #e5e7eb;margin-bottom:0.35rem">
+                <span style="flex:1"></span>
+                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:60px;text-align:center"># Patients</span>
+                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:82px;text-align:center">Migrate</span>
+                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:110px;text-align:center">Sync Changes</span>
+                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:80px;text-align:center">Undo Sync</span>
+                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:160px;text-align:center">Migration Status</span>
+              </div>
+              <div id="migration-tree" style="max-height:62vh;overflow-y:auto;padding:0 0 0.5rem"></div>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- ── Section 5: System ──────────────────────────────────────────── -->
@@ -635,23 +673,6 @@
             </div>
             <div class="db-card-foot">
               <button class="db-open-btn" style="background:#2563eb;border-color:#059669;color:#fff" tabindex="-1">View
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-              </button>
-            </div>
-          </div>
-
-          <!-- Card: Legacy Data Migration -->
-          <div class="db-card db-card--active" id="umgmt-card-migration" role="button" tabindex="0" aria-label="Migrate legacy patient data">
-            <div class="db-card-ico" style="background:#fef3c7">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.8" width="32" height="32" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
-            </div>
-            <div class="db-card-body mt-3">
-              <h4>Legacy Data Migration</h4>
-              <p>Import historical patient records from the legacy system, one facility at a time.</p>
-              <span id="migration-summary-badge" style="font-size:0.82rem;color:#6b7280;margin-top:0.3rem;display:block"></span>
-            </div>
-            <div class="db-card-foot">
-              <button class="db-open-btn" style="background:#d97706;border-color:#d97706;color:#fff" tabindex="-1">Manage
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
               </button>
             </div>
@@ -755,41 +776,6 @@
                   <tbody id="sessions-tbody"></tbody>
                 </table>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Panel: Legacy Data Migration ──────────────────────────────── -->
-        <div id="migration-panel" class="umgmt-panel" hidden>
-          <div class="umgmt-panel-hd">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
-            Legacy Data Migration
-            <button type="button" id="migration-refresh-btn" title="Refresh list" style="background:none;border:none;cursor:pointer;padding:0 6px;color:#6b7280;vertical-align:middle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-            </button>
-            <button type="button" class="umgmt-panel-close" data-panel="migration-panel" aria-label="Close">×</button>
-          </div>
-          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:1rem 1.25rem">
-            <p style="font-size:0.82rem;color:#6b7280;margin:0 0 0.75rem">
-              Import all eTBr patient data from the old eTBr into the new eTBr.
-              Once migrated, all your facility's patient records will permanently be in the new eTBr system.
-            </p>
-            <div id="migration-loading" style="color:#6b7280;font-size:0.9rem;padding:0.5rem 0" hidden>Loading facilities…</div>
-            <p id="migration-empty" class="text-muted" style="font-size:0.9rem;margin:0.5rem 0" hidden>No facilities found.</p>
-            <div id="migration-tree-section" hidden>
-              <div class="tree-search-wrap" style="padding:0 0 0.65rem">
-                <input type="search" id="migration-tree-search" class="tree-search-input"
-                  placeholder="Search facilities…" autocomplete="off" aria-label="Search migration facilities" />
-              </div>
-              <div style="display:flex;align-items:center;gap:0.45rem;padding:0 calc(0.5rem + 17px) 0.4rem 0.5rem;border-bottom:1px solid #e5e7eb;margin-bottom:0.35rem">
-                <span style="flex:1"></span>
-                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:60px;text-align:center"># Patients</span>
-                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:82px;text-align:center">Migrate</span>
-                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:110px;text-align:center">Sync Changes</span>
-                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:80px;text-align:center">Undo Sync</span>
-                <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:160px;text-align:center">Migration Status</span>
-              </div>
-              <div id="migration-tree" style="max-height:62vh;overflow-y:auto;padding:0 0 0.5rem"></div>
             </div>
           </div>
         </div>
@@ -2304,6 +2290,16 @@
             <button class="psearch-chip" data-reg="ART" type="button">ART</button>
             <button class="psearch-chip" data-reg="TB"  type="button">TB</button>
           </div>
+        </div>
+
+        <!-- Sync Now bar — shown only in pending-sync mode -->
+        <div id="psearch-sync-bar" hidden style="padding:0.5rem 0 0.25rem;display:flex;align-items:center;gap:0.75rem">
+          <button id="psearch-sync-btn" type="button"
+            style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:0.4rem 1rem;font-size:0.86rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:0.4rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Sync Now
+          </button>
+          <span id="psearch-sync-status" style="font-size:0.83rem;color:#6b7280"></span>
         </div>
 
         <!-- Result count -->
