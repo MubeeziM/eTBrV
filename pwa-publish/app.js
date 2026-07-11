@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v110720262055';
+const APP_VERSION = 'v110720262102';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -9682,9 +9682,35 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
 
     if (!tid) return;
 
-    // ── If the result came from a server search, the patient may not be in
-    //    local IndexedDB. Fetch the full record from the API and upsert it
-    //    first so the existing load functions find the data locally.
+    // ── Immediately navigate away from the search screen ─────────────────
+    _fromSearch = true;
+    _searchQuery = inputEl?.value || '';
+    searchScreen.hidden = true;
+
+    const facInfo = getMonitoringFacilityInfo(hfid);
+    if (artRegisterScreen) artRegisterScreen.hidden = false;
+
+    _saveSelectedFacility({
+      id:       hfid,
+      name:     hfname,
+      county:   facInfo ? (facInfo.County   || '') : '',
+      state:    facInfo ? (facInfo.State    || '') : '',
+      countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
+      stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
+    });
+    _selectedRegister = reg === 'TB' ? 'tb' : 'art';
+    updateFacilityBanner();
+    applyFacilityGate();
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    loadAndRenderGeoTree();
+
+    const backBtn = document.getElementById('back-to-dashboard-btn');
+    if (backBtn) backBtn.innerHTML =
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Search Results`;
+
+    // ── If the result came from a server search, fetch and upsert locally ─
+    // This runs after the screen has already transitioned so the user sees
+    // an immediate response. The form-population call below waits for this.
     if (fromSvr) {
       const token = getToken();
       if (token) {
@@ -9706,40 +9732,12 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
           }
         } catch (e) {
           console.warn('[Search] Could not pre-fetch patient record from server:', e);
-          // Fall through — if the patient is already locally cached this still works.
         }
       }
     }
 
-    _fromSearch = true;
-    _searchQuery = inputEl?.value || '';
-    searchScreen.hidden = true;
-
     if (reg === 'TB') {
-      // ── Open TB patient (same pattern as monitoring / DQ screens) ──────────
-      const facInfo = getMonitoringFacilityInfo(hfid);
-
-      if (artRegisterScreen) artRegisterScreen.hidden = false;
-
-      _saveSelectedFacility({
-        id:       hfid,
-        name:     hfname,
-        county:   facInfo ? (facInfo.County   || '') : '',
-        state:    facInfo ? (facInfo.State    || '') : '',
-        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
-        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
-      });
-      _selectedRegister = 'tb';
-      updateFacilityBanner();
-      applyFacilityGate();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      loadAndRenderGeoTree();
-
-      // Relabel back button so user knows where they'll land
-      const backBtn = document.getElementById('back-to-dashboard-btn');
-      if (backBtn) backBtn.innerHTML =
-        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Search Results`;
-
+      // ── Open TB patient ──────────────────────────────────────────────────
       const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
       if (bottomBackBtn) {
         bottomBackBtn.hidden = false;
@@ -9754,40 +9752,16 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
       }
 
     } else {
-      // ── Open ART patient ──────────────────────────────────────────────────
-      const facInfo = getMonitoringFacilityInfo(hfid);
-
-      if (artRegisterScreen) artRegisterScreen.hidden = false;
-
-      _saveSelectedFacility({
-        id:       hfid,
-        name:     hfname,
-        county:   facInfo ? (facInfo.County   || '') : '',
-        state:    facInfo ? (facInfo.State    || '') : '',
-        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
-        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
-      });
-      _selectedRegister = 'art';
-      updateFacilityBanner();
-      applyFacilityGate();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      loadAndRenderGeoTree();
-
-      // applyFacilityGate → applyReadOnlyMode hides the form card for read-only users,
-      // but we need it visible to show the patient's data. Reveal it explicitly.
+      // ── Open ART patient ─────────────────────────────────────────────────
+      // applyFacilityGate → applyReadOnlyMode hides the form card for read-only
+      // users, but we need it visible to show the patient's data.
       const _artFormCard = document.getElementById('patient-form')?.closest('.card');
       if (_artFormCard) _artFormCard.hidden = false;
-      // Populate the patient list so the register isn't blank
       renderPatients();
-
-      const backBtn = document.getElementById('back-to-dashboard-btn');
-      if (backBtn) backBtn.innerHTML =
-        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Search Results`;
 
       if (canWrite) {
         loadPatientIntoForm(tid, false);
       } else {
-        // read-only: load form then disable everything
         loadPatientIntoForm(tid, false);
         document.getElementById('patient-form')?.querySelectorAll('input,select,textarea').forEach(el => { el.disabled = true; });
         const subBtn = document.getElementById('submit-btn');
