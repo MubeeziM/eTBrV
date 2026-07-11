@@ -9689,15 +9689,12 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
     const canWrite = tr.dataset.canwrite === 'true';
     const fromSvr  = tr.dataset.fromsrv === 'true';
 
-    console.log('[OpenPt] start', { tid, reg, hfid, canWrite, fromSvr });
-
-    if (!tid) { console.warn('[OpenPt] no tid, aborting'); return; }
+    if (!tid) return;
 
     // ── Immediately navigate away from the search screen ─────────────────
     _fromSearch = true;
     _searchQuery = inputEl?.value || '';
     searchScreen.hidden = true;
-    console.log('[OpenPt] search screen hidden');
 
     const facInfo = getMonitoringFacilityInfo(hfid);
     if (artRegisterScreen) artRegisterScreen.hidden = false;
@@ -9721,40 +9718,34 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Search Results`;
 
     // ── If the result came from a server search, fetch and upsert locally ─
+    // Runs after the screen has already transitioned so the user sees
+    // an immediate response. The form-population call below waits for this.
     if (fromSvr) {
       const token = getToken();
-      console.log('[OpenPt] server result — fetching full record, token present:', !!token);
       if (token) {
         try {
           const endpoint = reg === 'TB'
             ? `${API_BASE}/tb-patients/${encodeURIComponent(tid)}`
             : `${API_BASE}/patients/${encodeURIComponent(tid)}`;
-          console.log('[OpenPt] fetching', endpoint);
           const resp = await fetch(endpoint, {
             headers: { Authorization: `Bearer ${token}` },
             signal: AbortSignal.timeout(15000),
           });
-          console.log('[OpenPt] fetch response status:', resp.status);
           if (resp.ok) {
             const payload = await resp.json();
-            console.log('[OpenPt] payload patients count:', payload.patients?.length);
             if (reg === 'TB') {
               await importTBPayloadFromServer(payload);
             } else {
               await importFullPayloadFromServer(payload);
             }
-            console.log('[OpenPt] upsert complete');
           } else {
-            const errText = await resp.text().catch(() => '');
-            console.warn('[OpenPt] fetch not ok:', resp.status, errText);
+            console.warn('[Search] Pre-fetch returned', resp.status, 'for', tid);
           }
         } catch (e) {
-          console.warn('[OpenPt] fetch/upsert error:', e);
+          console.warn('[Search] Could not pre-fetch patient record from server:', e);
         }
       }
     }
-
-    console.log('[OpenPt] opening form, reg:', reg, 'canWrite:', canWrite);
 
     if (reg === 'TB') {
       // ── Open TB patient ──────────────────────────────────────────────────
@@ -9766,24 +9757,22 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
       }
 
       if (canWrite) {
-        console.log('[OpenPt] calling startEditTBPatient');
         startEditTBPatient(tid);
       } else {
-        console.log('[OpenPt] calling startViewTBPatient');
         startViewTBPatient(tid);
       }
 
     } else {
       // ── Open ART patient ─────────────────────────────────────────────────
+      // applyFacilityGate → applyReadOnlyMode hides the form card for read-only
+      // users, but we need it visible to show the patient's data.
       const _artFormCard = document.getElementById('patient-form')?.closest('.card');
       if (_artFormCard) _artFormCard.hidden = false;
       renderPatients();
 
       if (canWrite) {
-        console.log('[OpenPt] calling loadPatientIntoForm');
         loadPatientIntoForm(tid, false);
       } else {
-        console.log('[OpenPt] calling loadPatientIntoForm (read-only)');
         loadPatientIntoForm(tid, false);
         document.getElementById('patient-form')?.querySelectorAll('input,select,textarea').forEach(el => { el.disabled = true; });
         const subBtn = document.getElementById('submit-btn');
@@ -9792,7 +9781,6 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
         if (cancelBtn) cancelBtn.textContent = 'Close';
       }
     }
-    console.log('[OpenPt] done');
   }
 
   // ── Hook back-to-dashboard-btn to return to search when opened from here ──
