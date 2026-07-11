@@ -8092,6 +8092,7 @@ let _monMode        = 'missed';   // 'missed' | 'due'
 let _monCategory    = '2month';   // active category key
 let _monFacilityIDs = [];         // [] = all facilities (no filter)
 let _fromMonitoring = false;      // true when patient record was opened from monitoring
+let _monUseServer   = false;      // true when local DB has no patients → use server API
 
 /**
  * Returns true when the viewport looks like a phone held in landscape
@@ -8150,7 +8151,7 @@ function hideTBMonitoring() {
  * but filters to only facilities that have TB patients in the local DB.
  * Works fully offline — all data comes from local SQLite.
  */
-function _monBuildTree() {
+async function _monBuildTree() {
   const treeEl    = document.getElementById('mon-tree');
   const summaryEl = document.getElementById('mon-tree-summary');
   if (!treeEl) return;
@@ -8159,7 +8160,30 @@ function _monBuildTree() {
 
   try {
     // Get only facilities that have TB patients (local DB, works offline)
-    const activeFacs = getMonitoringFacilities(null, null);
+    let activeFacs = getMonitoringFacilities(null, null);
+    _monUseServer = false;
+
+    // No local data — try to get facility list from server
+    if (!activeFacs.length) {
+      const token = getToken();
+      if (token && _reallyOnline) {
+        try {
+          const resp = await fetch(`${API_BASE}/tb-patients/monitor-facilities`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (resp.ok) {
+            const serverFacs = await resp.json();
+            if (Array.isArray(serverFacs) && serverFacs.length) {
+              // Use server facility IDs; build geo tree from local vwGeogAreaQ
+              activeFacs = serverFacs.map(f => ({ HealthFacilityID: f.HealthFacilityID }));
+              _monUseServer = true;
+            }
+          }
+        } catch (_) { /* stay offline */ }
+      }
+    }
+
     if (!activeFacs.length) {
       treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
       _monFacilityIDs = [];
@@ -8432,9 +8456,27 @@ function _monSetSidebarCollapsed(collapsed) {
 }
 
 /** Recompute all category counts and re-render the active list. */
-function _monRefreshAll() {
+async function _monRefreshAll() {
   try {
-    const counts = getTBMonCounts(_monFacilityIDs, _monMode);
+    let counts;
+    if (_monUseServer) {
+      const token = getToken();
+      if (token && _reallyOnline) {
+        try {
+          const qs = new URLSearchParams({ mode: _monMode });
+          _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
+          const resp = await fetch(`${API_BASE}/tb-patients/monitor-counts?${qs}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (resp.ok) counts = await resp.json();
+        } catch (_) {}
+      }
+      if (!counts) counts = { sputum2:0, sputum3:0, sputum5:0, sputum6:0, sputum8:0, hiv:0, cpt:0, art:0, hhp:0, outcome:0 };
+    } else {
+      counts = getTBMonCounts(_monFacilityIDs, _monMode);
+    }
+
     const fmt    = n => String(n).padStart(2, '0');
     const el     = id => document.getElementById(id);
 
@@ -8463,14 +8505,34 @@ function _monRefreshAll() {
 }
 
 /** Highlight the chosen category row and render its patient list. */
-function _monSelectCategory(cat) {
+async function _monSelectCategory(cat) {
   _monCategory = cat;
   document.querySelectorAll('.mon-stat-row').forEach(r => {
     r.classList.toggle('mon-stat-row--active', r.dataset.cat === cat);
     r.setAttribute('aria-pressed', r.dataset.cat === cat ? 'true' : 'false');
   });
   try {
-    _monRenderList(cat, getTBMonList(cat, _monMode, _monFacilityIDs));
+    let rows;
+    if (_monUseServer) {
+      const tbody = document.getElementById('mon-patient-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from server…</td></tr>';
+      rows = [];
+      const token = getToken();
+      if (token && _reallyOnline) {
+        try {
+          const qs = new URLSearchParams({ mode: _monMode, category: cat });
+          _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
+          const resp = await fetch(`${API_BASE}/tb-patients/monitor-patients?${qs}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (resp.ok) rows = await resp.json();
+        } catch (_) {}
+      }
+    } else {
+      rows = getTBMonList(cat, _monMode, _monFacilityIDs);
+    }
+    _monRenderList(cat, rows);
   } catch (err) {
     const tbody = document.getElementById('mon-patient-tbody');
     if (tbody) tbody.innerHTML =
@@ -8572,7 +8634,7 @@ function _monRenderList(cat, rows) {
 
   // Row click: open patient record in edit mode; track origin so back-btn can return here
   tbody.querySelectorAll('tr[data-tid]').forEach(tr => {
-    tr.addEventListener('click', (e) => {
+    tr.addEventListener('click', async (e) => {
       if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
       const tid    = tr.dataset.tid;
       const hfid   = Number(tr.dataset.hfid);
@@ -8606,6 +8668,7 @@ function _monRenderList(cat, rows) {
       const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
       if (bottomBackBtn) bottomBackBtn.hidden = false;
       _pendingMonCategory = _monCategory;
+      await _fetchAndUpsertTBPatientIfNeeded(tid);
       startEditTBPatient(tid);  // editable — not read-only
     });
   });
@@ -8757,6 +8820,7 @@ document.getElementById('dash-goto-tb-monitoring')?.addEventListener('keydown', 
 /** Current quality screen state */
 let _dqCategory    = 'all';
 let _dqFacilityIDs = [];   // [] = all facilities (no filter)
+let _dqUseServer   = false; // true when local DB has no patients → use server API
 let _fromDQScreen       = false; // true when patient record opened from DQ Quality screen
 let _fromPreReportDQ    = false; // true when patient record opened from pre-report DQ modal
 let _preReportDQReshowFn = null; // set by pre-report DQ row click; called by back-btn to restore modal
@@ -8802,7 +8866,7 @@ function hideTBQuality() {
 
 // ── Facility tree ──────────────────────────────────────────────────────────
 
-function _dqBuildTree() {
+async function _dqBuildTree() {
   const treeEl    = document.getElementById('dq-tree');
   const summaryEl = document.getElementById('dq-tree-summary');
   if (!treeEl) return;
@@ -8810,7 +8874,28 @@ function _dqBuildTree() {
   treeEl.innerHTML = '<div class="tree-loading">Loading facilities…</div>';
 
   try {
-    const activeFacs = getMonitoringFacilities(null, null);
+    let activeFacs = getMonitoringFacilities(null, null);
+    _dqUseServer = false;
+
+    if (!activeFacs.length) {
+      const token = getToken();
+      if (token && _reallyOnline) {
+        try {
+          const resp = await fetch(`${API_BASE}/tb-patients/monitor-facilities`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (resp.ok) {
+            const serverFacs = await resp.json();
+            if (Array.isArray(serverFacs) && serverFacs.length) {
+              activeFacs = serverFacs.map(f => ({ HealthFacilityID: f.HealthFacilityID }));
+              _dqUseServer = true;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     if (!activeFacs.length) {
       treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
       _dqFacilityIDs = [];
@@ -9058,9 +9143,27 @@ function _dqSetSidebarCollapsed(collapsed) {
 
 // ── Counts and list rendering ──────────────────────────────────────────────
 
-function _dqRefreshAll() {
+async function _dqRefreshAll() {
   try {
-    const counts = getDQCounts(_dqFacilityIDs);
+    let counts;
+    if (_dqUseServer) {
+      const token = getToken();
+      if (token && _reallyOnline) {
+        try {
+          const qs = new URLSearchParams();
+          _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
+          const resp = await fetch(`${API_BASE}/tb-patients/quality-counts?${qs}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (resp.ok) counts = await resp.json();
+        } catch (_) {}
+      }
+      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, futuredates:0, deleted:0 };
+    } else {
+      counts = getDQCounts(_dqFacilityIDs);
+    }
+
     const fmt    = n => String(n).padStart(2, '0');
     const setCount = (id, n, isIssue) => {
       const el = document.getElementById(id);
@@ -9088,7 +9191,7 @@ function _dqRefreshAll() {
   }
 }
 
-function _dqSelectCategory(cat) {
+async function _dqSelectCategory(cat) {
   _dqCategory = cat;
   document.querySelectorAll('.dq-stat-row').forEach(r => {
     const active = r.dataset.dqcat === cat;
@@ -9096,7 +9199,27 @@ function _dqSelectCategory(cat) {
     r.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
   try {
-    _dqRenderList(cat, getDQList(cat, _dqFacilityIDs));
+    let rows;
+    if (_dqUseServer) {
+      const tbody = document.getElementById('dq-patient-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from server…</td></tr>';
+      rows = [];
+      const token = getToken();
+      if (token && _reallyOnline) {
+        try {
+          const qs = new URLSearchParams({ category: cat });
+          _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
+          const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (resp.ok) rows = await resp.json();
+        } catch (_) {}
+      }
+    } else {
+      rows = getDQList(cat, _dqFacilityIDs);
+    }
+    _dqRenderList(cat, rows);
   } catch (err) {
     const tbody = document.getElementById('dq-patient-tbody');
     if (tbody) tbody.innerHTML =
@@ -9258,7 +9381,7 @@ function _dqRenderList(cat, rows) {
 
   // Row click: open patient record (edit for writers, view-only for read-only users)
   document.getElementById('dq-patient-table')?.querySelectorAll('tr[data-tid]').forEach(tr => {
-    tr.addEventListener('click', (e) => {
+    tr.addEventListener('click', async (e) => {
       if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
       const tid    = tr.dataset.tid;
       const hfid   = Number(tr.dataset.hfid);
@@ -9295,8 +9418,10 @@ function _dqRenderList(cat, rows) {
       }
       if (userCanWrite()) {
         _pendingDQCategory = cat;
+        await _fetchAndUpsertTBPatientIfNeeded(tid);
         startEditTBPatient(tid);
       } else {
+        await _fetchAndUpsertTBPatientIfNeeded(tid);
         startViewTBPatient(tid);
       }
     });
@@ -9685,6 +9810,27 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
         if (tr) { e.preventDefault(); _openPatient(tr); }
       }
     };
+  }
+
+  // ── Fetch a TB patient from the server and upsert locally if needed ──────────
+  // Returns true if the patient is now available in the local DB (either already
+  // was, or was successfully fetched and imported).  Never throws.
+  async function _fetchAndUpsertTBPatientIfNeeded(tid) {
+    if (!tid) return false;
+    const norm = tid.toLowerCase();
+    try { if (getPtDetailsTB(norm)) return true; } catch (_) {}   // already local
+    const token = getToken();
+    if (!token) return false;
+    try {
+      const resp = await fetch(`${API_BASE}/tb-patients/${encodeURIComponent(norm)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      await importTBPayloadFromServer(data);
+      return true;
+    } catch { return false; }
   }
 
   // ── Open a patient record from search results ──────────────────────────────
@@ -11583,7 +11729,7 @@ function resolveGeoScope(user, geo) {
                   };
                   _fromPreReportDQ = true;
 
-                  const doOpen = () => {
+                  const doOpen = async () => {
                     const facInfo = (typeof getMonitoringFacilityInfo === 'function')
                       ? getMonitoringFacilityInfo(hfid) : null;
                     _saveSelectedFacility({
@@ -11609,6 +11755,7 @@ function resolveGeoScope(user, geo) {
                         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Back to DQ Check`;
                     }
                     _pendingDQCategory = savedCat;
+                    await _fetchAndUpsertTBPatientIfNeeded(tid);
                     startEditTBPatient(tid);
                   };
 

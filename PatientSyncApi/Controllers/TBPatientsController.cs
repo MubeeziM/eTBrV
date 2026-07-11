@@ -1201,4 +1201,680 @@ public sealed class TBPatientsController : ControllerBase
             return StatusCode(500, new { error = "Could not retrieve TB patient record." });
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  Private helpers shared by the monitoring/quality endpoints below.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a parameterised NearestHFID IN (…) clause for p-alias.
+    /// Returns empty string when <paramref name="cleanIds"/> is empty (= no filter).
+    /// </summary>
+    private static (string Clause, List<(string Name, int Value)> Prms)
+        FacFilter(int[] cleanIds, string alias = "p")
+    {
+        if (cleanIds.Length == 0) return (string.Empty, []);
+        var names = cleanIds.Select((_, i) => $"@FId{i}").ToArray();
+        var inSql = string.Join(", ", names);
+        var prms  = cleanIds.Select((v, i) => ($"@FId{i}", v)).ToList();
+        return ($"AND {alias}.NearestHFID IN ({inSql})", prms);
+    }
+
+    /// <summary>
+    /// Adds each (name, value) pair in <paramref name="prms"/> to <paramref name="cmd"/>.
+    /// </summary>
+    private static void AddFacParams(SqlCommand cmd, List<(string Name, int Value)> prms)
+    {
+        foreach (var (n, v) in prms) cmd.Parameters.AddWithValue(n, v);
+    }
+
+    /// <summary>
+    /// Reads all rows from <paramref name="rdr"/> into a list of dictionaries.
+    /// GUIDs are lowercased to match the PWA's convention.
+    /// </summary>
+    private static async Task<List<Dictionary<string, object?>>> ReadRowsAsync(SqlDataReader rdr)
+    {
+        var rows = new List<Dictionary<string, object?>>();
+        while (await rdr.ReadAsync())
+        {
+            var row = new Dictionary<string, object?>();
+            for (int i = 0; i < rdr.FieldCount; i++)
+                row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+            rows.Add(row);
+        }
+        return rows;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/monitor-facilities
+    //  Returns health facilities that have active TB patients on treatment.
+    //  Used to populate the monitoring tree when the user has no local data.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("monitor-facilities")]
+    public async Task<IActionResult> GetMonitorFacilities()
+    {
+        int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
+        int.TryParse(User.FindFirstValue("county_id"),   out var userCountyId);
+        int.TryParse(User.FindFirstValue("state_id"),    out var userStateId);
+
+        // Build scope filter from JWT — never trust client for geo scope
+        string scopeWhere = string.Empty;
+        int    scopeId    = 0;
+        if      (userFacilityId > 0) { scopeWhere = "AND p.NearestHFID = @ScopeId";  scopeId = userFacilityId; }
+        else if (userCountyId   > 0) { scopeWhere = "AND hf.CountyID   = @ScopeId";  scopeId = userCountyId; }
+        else if (userStateId    > 0) { scopeWhere = "AND hf.StateID    = @ScopeId";   scopeId = userStateId; }
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            var sql = $"""
+                SELECT DISTINCT hf.HealthFacilityID, hf.HealthFacility
+                FROM PtDetailsT p
+                INNER JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
+                WHERE p.Deleted = 0
+                  AND p.DateRxStarted IS NOT NULL
+                  AND hf.HealthFacilityID > 0
+                  {scopeWhere}
+                ORDER BY hf.HealthFacility
+                """;
+
+            await using var cmd = new SqlCommand(sql, conn);
+            if (scopeId > 0) cmd.Parameters.AddWithValue("@ScopeId", scopeId);
+            await using var rdr = await cmd.ExecuteReaderAsync();
+            var rows = await ReadRowsAsync(rdr);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetMonitorFacilities error (user {User})", User.Identity?.Name);
+            return StatusCode(500, new { error = "Could not retrieve monitoring facilities." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/monitor-counts
+    //  Returns the patient count for every monitoring category.
+    //
+    //  Query params:
+    //    facilityIds[]  — facility IDs to filter (overridden for facility users)
+    //    mode           — 'missed' (default) | 'due'
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("monitor-counts")]
+    public async Task<IActionResult> GetMonitorCounts(
+        [FromQuery] int[]?  facilityIds = null,
+        [FromQuery] string  mode        = "missed")
+    {
+        int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
+        if (userFacilityId > 0) facilityIds = [userFacilityId];
+
+        var cleanIds  = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
+        var (facP, facPrms) = FacFilter(cleanIds);
+        bool missed = mode != "due";
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            async Task<int> MonCount(string extraWhere, int offset, int grace, bool sputum)
+            {
+                string modeFilter = sputum
+                    ? (missed
+                        ? $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} > 0 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= {grace}"
+                        : $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= 0")
+                    : string.Empty;
+
+                string sputumBase = sputum
+                    ? "AND (COALESCE(fu.Mon0LabResultID,0) IN (1,4,5,6) OR COALESCE(fu.Mon0XpertResultID,0) IN (3,4,5))"
+                    : string.Empty;
+
+                var sql = $"""
+                    SELECT COUNT(*)
+                    FROM PtDetailsT p
+                    LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0
+                    LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      {sputumBase}
+                      {extraWhere}
+                      {facP}
+                      {modeFilter}
+                    """;
+                await using var cmd = new SqlCommand(sql, conn);
+                AddFacParams(cmd, facPrms);
+                var r = await cmd.ExecuteScalarAsync();
+                return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
+            }
+
+            async Task<int> MonCountInner(string extraWhere)
+            {
+                var sql = $"""
+                    SELECT COUNT(*)
+                    FROM PtDetailsT p
+                    INNER JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0
+                    LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND COALESCE(fu.OutcomeID,0) = 0
+                      {extraWhere}
+                      {facP}
+                    """;
+                await using var cmd = new SqlCommand(sql, conn);
+                AddFacParams(cmd, facPrms);
+                var r = await cmd.ExecuteScalarAsync();
+                return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
+            }
+
+            int sputum2  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL)",                            56, 28, sputum: true);
+            int sputum3  = await MonCount("AND COALESCE(fu.Mon2LabResultID,0) IN (1,4,5,6) AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL)", 84, 56, sputum: true);
+            int sputum5  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon5Date IS NULL)",                           140, 28, sputum: true);
+            int sputum6  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)",                           168, 56, sputum: true);
+            int sputum8  = await MonCount("AND p.PtTypeID IN (2,3,4) AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)", 224, 56, sputum: true);
+            int hiv      = await MonCount("AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.HIVTestResultID,0) IN (0,4) OR fu.HIVTestDate IS NULL)", 0, 0, sputum: false);
+            int cpt      = await MonCountInner("AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
+            int art      = await MonCountInner("AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
+            int outcome;
+            {
+                var sql = $"""
+                    SELECT COUNT(*)
+                    FROM PtDetailsT p
+                    LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0
+                    LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      AND ((p.PtTypeID NOT IN (2,3,4) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 168)
+                        OR (p.PtTypeID IN (2,3,4)     AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 252))
+                      {facP}
+                    """;
+                await using var cmd = new SqlCommand(sql, conn);
+                AddFacParams(cmd, facPrms);
+                var r = await cmd.ExecuteScalarAsync();
+                outcome = r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
+            }
+
+            return Ok(new { sputum2, sputum3, sputum5, sputum6, sputum8, hiv, cpt, art, hhp = 0, outcome });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetMonitorCounts error (user {User})", User.Identity?.Name);
+            return StatusCode(500, new { error = "Could not retrieve monitoring counts." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/monitor-patients
+    //  Returns the patient list for a single monitoring category.
+    //
+    //  Query params:
+    //    facilityIds[]  — overridden for facility users
+    //    mode           — 'missed' | 'due'
+    //    category       — '2month'|'3month'|'5month'|'6month'|'8month'|
+    //                     'hiv'|'cpt'|'art'|'outcome'
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("monitor-patients")]
+    public async Task<IActionResult> GetMonitorPatients(
+        [FromQuery] int[]?  facilityIds = null,
+        [FromQuery] string  mode        = "missed",
+        [FromQuery] string  category    = "2month")
+    {
+        int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
+        if (userFacilityId > 0) facilityIds = [userFacilityId];
+
+        var cleanIds        = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
+        var (facP, facPrms) = FacFilter(cleanIds);
+        bool missed         = mode != "due";
+
+        // Base SELECT columns (sputum categories add DaysLate)
+        const string baseColsSputum = """
+            LOWER(CONVERT(nvarchar(36), p.PtDetailsTID)) AS PtDetailsTID,
+            p.UnitTBNo,
+            CONVERT(nvarchar(10), p.RegDate, 23) AS RegDate,
+            p.PtName, p.Age, p.Village, p.Payam, p.PtPhone, p.PtTypeID, p.NearestHFID,
+            ISNULL(s.Sex,'') AS Sex, ISNULL(pt.PtTypeShort,'') AS PtTypeShort,
+            ISNULL(hf.HealthFacility,'') AS HealthFacility
+            """;
+
+        const string leftJoins = """
+            FROM PtDetailsT p
+            LEFT JOIN PtFollowUpT    fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0
+            LEFT JOIN SexT            s ON p.SexID        = s.SexID
+            LEFT JOIN PtTypeT        pt ON p.PtTypeID     = pt.PtTypeID
+            LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
+            """;
+
+        const string innerJoins = """
+            FROM PtDetailsT p
+            INNER JOIN PtFollowUpT   fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0
+            LEFT JOIN SexT            s ON p.SexID        = s.SexID
+            LEFT JOIN PtTypeT        pt ON p.PtTypeID     = pt.PtTypeID
+            LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
+            """;
+
+        string querySql;
+        switch (category)
+        {
+            case "2month": case "3month": case "5month": case "6month": case "8month":
+            {
+                (int offset, int grace, string extra) = category switch {
+                    "2month" => (56,  28, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL)"),
+                    "3month" => (84,  56, "AND COALESCE(fu.Mon2LabResultID,0) IN (1,4,5,6) AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL)"),
+                    "5month" => (140, 28, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon5Date IS NULL)"),
+                    "6month" => (168, 56, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)"),
+                    _        => (224, 56, "AND p.PtTypeID IN (2,3,4) AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)"),
+                };
+                string modeFilter = missed
+                    ? $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} > 0 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= {grace}"
+                    : $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= 0";
+                querySql = $"""
+                    SELECT {baseColsSputum},
+                           DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} AS DaysLate
+                    {leftJoins}
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      AND (COALESCE(fu.Mon0LabResultID,0) IN (1,4,5,6) OR COALESCE(fu.Mon0XpertResultID,0) IN (3,4,5))
+                      {extra}
+                      {facP}
+                      {modeFilter}
+                    ORDER BY DaysLate DESC, p.PtName
+                    """;
+                break;
+            }
+            case "hiv":
+                querySql = $"""
+                    SELECT {baseColsSputum}
+                    {leftJoins}
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.HIVTestResultID,0) IN (0,4) OR fu.HIVTestDate IS NULL)
+                      {facP}
+                    ORDER BY p.PtName
+                    """;
+                break;
+            case "cpt":
+                querySql = $"""
+                    SELECT {baseColsSputum}
+                    {innerJoins}
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND COALESCE(fu.OutcomeID,0) = 0
+                      AND fu.HIVTestResultID = 2
+                      AND COALESCE(fu.OnCPT,0) = 0
+                      {facP}
+                    ORDER BY p.PtName
+                    """;
+                break;
+            case "art":
+                querySql = $"""
+                    SELECT {baseColsSputum}
+                    {innerJoins}
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND COALESCE(fu.OutcomeID,0) = 0
+                      AND fu.HIVTestResultID = 2
+                      AND COALESCE(fu.OnART,0) = 0
+                      {facP}
+                    ORDER BY p.PtName
+                    """;
+                break;
+            case "outcome":
+                querySql = $"""
+                    SELECT {baseColsSputum},
+                           DATEDIFF(DAY,p.DateRxStarted,GETDATE()) AS DaysSinceStart
+                    {leftJoins}
+                    WHERE p.Deleted = 0
+                      AND p.DateRxStarted IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      AND ((p.PtTypeID NOT IN (2,3,4) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 168)
+                        OR (p.PtTypeID IN (2,3,4)     AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 252))
+                      {facP}
+                    ORDER BY DaysSinceStart DESC, p.PtName
+                    """;
+                break;
+            default:
+                return BadRequest(new { error = $"Unknown category '{category}'." });
+        }
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cmd = new SqlCommand(querySql, conn);
+            AddFacParams(cmd, facPrms);
+            await using var rdr = await cmd.ExecuteReaderAsync();
+            var rows = await ReadRowsAsync(rdr);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetMonitorPatients error cat={Cat} (user {User})", category, User.Identity?.Name);
+            return StatusCode(500, new { error = "Could not retrieve monitoring patients." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/quality-counts
+    //  Standalone (no date-range) DQ counts for all categories.
+    //  Used by the "Check Data Quality" screen when the user has no local data.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("quality-counts")]
+    public async Task<IActionResult> GetQualityCounts([FromQuery] int[]? facilityIds = null)
+    {
+        int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
+        if (userFacilityId > 0) facilityIds = [userFacilityId];
+
+        var cleanIds        = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
+        var (facP, facPrms) = FacFilter(cleanIds);
+        var (facD, facDPrms) = FacFilter(cleanIds, "d");
+        int minYear = DateTime.Today.Year - 1;
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            async Task<int> Cnt(string sql)
+            {
+                await using var cmd = new SqlCommand(sql, conn);
+                AddFacParams(cmd, facPrms);
+                cmd.Parameters.AddWithValue("@MinYear", minYear);
+                var r = await cmd.ExecuteScalarAsync();
+                return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
+            }
+
+            int all         = await Cnt($"SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID WHERE p.Deleted=0 {facP}");
+            int duplicates  = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
+                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 {facP} AND p.PtName!=''
+                AND EXISTS (SELECT 1 FROM PtDetailsT d LEFT JOIN HealthFacilityT hfd ON d.NearestHFID=hfd.HealthFacilityID
+                            WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
+                            AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
+                            AND COALESCE(d.Age,-1)=COALESCE(p.Age,-1) AND COALESCE(d.SexID,-1)=COALESCE(p.SexID,-1)
+                            AND COALESCE(d.UnitTBNo,'')=COALESCE(p.UnitTBNo,'')
+                            AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
+                """);
+            int sametbno = await Cnt($"""
+                WITH norm AS (
+                    SELECT p.PtDetailsTID, p.NearestHFID, YEAR(p.RegDate) AS RegYear,
+                           TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
+                    FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                    WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL {facP}
+                ),
+                dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
+                SELECT COUNT(*) FROM norm n JOIN dupes dk ON dk.NearestHFID=n.NearestHFID AND dk.RegYear=n.RegYear AND dk.TBNoB=n.TBNoB WHERE n.TBNoB>0
+                """);
+            int missingreg = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 {facP}
+                AND (p.PtName IS NULL OR p.PtName='' OR p.Age=0 OR p.Age IS NULL OR p.SexID=0 OR p.TbTypeID=0
+                     OR p.PtTypeID=0 OR p.RegDate IS NULL OR p.DateRxStarted IS NULL OR p.DiagMethodID=0)
+                """);
+            int smearcured = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
+                LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
+                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
+                AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
+                AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
+                """);
+            int nooutcome = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
+                LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
+                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtTypeID NOT IN (0,5,7)
+                AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
+                AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>168)
+                  OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>224)) {facP}
+                """);
+            int notevaluated = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
+                JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
+                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 AND fu.OutcomeID=6 {facP}
+                """);
+            int diagmethod = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
+                """);
+            int norxstart = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
+                AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
+                """);
+            int futuredates = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP}
+                """);
+            int skipped = await Cnt($"""
+                WITH norm AS (
+                    SELECT p.NearestHFID, YEAR(p.RegDate) AS RegYear,
+                           TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
+                    FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                    WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL AND YEAR(p.RegDate)>=@MinYear {facP}
+                ),
+                valid AS (SELECT NearestHFID, RegYear, TBNoB FROM norm WHERE TBNoB>0 AND TBNoB<2000),
+                ranges AS (SELECT NearestHFID, RegYear, MIN(TBNoB) AS MinNo, MAX(TBNoB) AS MaxNo FROM valid GROUP BY NearestHFID, RegYear),
+                seq AS (SELECT TOP 2000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL))-1 AS n FROM sys.objects CROSS JOIN sys.objects s2),
+                expected AS (SELECT r.NearestHFID, r.RegYear, r.MinNo+s.n AS TBNoB FROM ranges r CROSS JOIN seq s WHERE r.MinNo+s.n<=r.MaxNo),
+                gaps AS (SELECT e.NearestHFID, e.RegYear, e.TBNoB FROM expected e WHERE NOT EXISTS (SELECT 1 FROM valid v WHERE v.NearestHFID=e.NearestHFID AND v.RegYear=e.RegYear AND v.TBNoB=e.TBNoB))
+                SELECT COUNT(*) FROM gaps
+                """);
+            int deleted = await Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                WHERE p.Deleted=1 {facP}
+                """);
+
+            return Ok(new { all, duplicates, skipped, sametbno, smearcured, missingreg, nooutcome, notevaluated, diagmethod, norxstart, futuredates, deleted });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetQualityCounts error (user {User})", User.Identity?.Name);
+            return StatusCode(500, new { error = "Could not retrieve quality counts." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/quality-patients
+    //  Returns the patient list for a standalone DQ category (no date filter).
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("quality-patients")]
+    public async Task<IActionResult> GetQualityPatients(
+        [FromQuery] int[]?  facilityIds = null,
+        [FromQuery] string  category    = "all")
+    {
+        int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
+        if (userFacilityId > 0) facilityIds = [userFacilityId];
+
+        var cleanIds        = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
+        var (facP, facPrms) = FacFilter(cleanIds);
+        var (facD, facDPrms) = FacFilter(cleanIds, "d");
+        int minYear = DateTime.Today.Year - 1;
+
+        const string dqCols = """
+            LOWER(CONVERT(nvarchar(36), p.PtDetailsTID)) AS PtDetailsTID,
+            p.UnitTBNo,
+            CONVERT(nvarchar(10), p.RegDate, 23) AS RegDate,
+            p.PtName, p.Age, p.AgeMonths, p.Village, p.Payam, p.PtPhone,
+            p.SexID, p.TbTypeID, p.PtTypeID, p.DiagMethodID,
+            CONVERT(nvarchar(10), p.DateRxStarted, 23) AS DateRxStarted,
+            p.NearestHFID,
+            ISNULL(s.Sex,'') AS Sex, ISNULL(pt.PtTypeShort,'') AS PtTypeShort,
+            ISNULL(tt.TbType,'') AS TbType, ISNULL(dm.DiagMethod,'') AS DiagMethod,
+            ISNULL(hf.HealthFacility,'') AS HealthFacility
+            """;
+
+        const string dqJoins = """
+            FROM PtDetailsT p
+            LEFT JOIN SexT            s  ON p.SexID        = s.SexID
+            LEFT JOIN PtTypeT        pt  ON p.PtTypeID     = pt.PtTypeID
+            LEFT JOIN TbTypeT        tt  ON p.TbTypeID     = tt.TbTypeID
+            LEFT JOIN DiagMethodT    dm  ON p.DiagMethodID = dm.DiagMethodID
+            LEFT JOIN HealthFacilityT hf ON p.NearestHFID  = hf.HealthFacilityID
+            """;
+
+        string querySql;
+        switch (category)
+        {
+            case "all":
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 {facP} ORDER BY p.PtName";
+                break;
+            case "duplicates":
+                querySql = $"""
+                    SELECT {dqCols} {dqJoins}
+                    WHERE p.Deleted=0 {facP} AND p.PtName!=''
+                    AND EXISTS (SELECT 1 FROM PtDetailsT d LEFT JOIN HealthFacilityT hfd ON d.NearestHFID=hfd.HealthFacilityID
+                                WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
+                                AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
+                                AND COALESCE(d.Age,-1)=COALESCE(p.Age,-1) AND COALESCE(d.SexID,-1)=COALESCE(p.SexID,-1)
+                                AND COALESCE(d.UnitTBNo,'')=COALESCE(p.UnitTBNo,'')
+                                AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
+                    ORDER BY p.PtName, p.RegDate
+                    """;
+                break;
+            case "sametbno":
+                querySql = $"""
+                    WITH norm AS (
+                        SELECT p.PtDetailsTID, p.NearestHFID, YEAR(p.RegDate) AS RegYear,
+                               TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
+                        FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                        WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL {facP}
+                    ),
+                    dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
+                    SELECT {dqCols} {dqJoins}
+                    JOIN norm n  ON n.PtDetailsTID = p.PtDetailsTID
+                    JOIN dupes dk ON dk.NearestHFID=n.NearestHFID AND dk.RegYear=n.RegYear AND dk.TBNoB=n.TBNoB
+                    WHERE p.Deleted=0 {facP} AND n.TBNoB>0
+                    ORDER BY n.RegYear DESC, n.TBNoB, p.RegDate
+                    """;
+                break;
+            case "smearcured":
+                querySql = $"""
+                    SELECT {dqCols}, ISNULL(o.Outcome,'') AS Outcome
+                    {dqJoins}
+                    LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
+                    LEFT JOIN OutcomeT     o ON fu.OutcomeID=o.OutcomeID
+                    WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
+                    AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
+                    AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
+                    ORDER BY p.PtName
+                    """;
+                break;
+            case "missingreg":
+                querySql = $"""
+                    SELECT {dqCols},
+                    LTRIM(
+                      CASE WHEN p.PtName IS NULL OR p.PtName='' THEN 'Patient Name, ' ELSE '' END +
+                      CASE WHEN p.Age=0 OR p.Age IS NULL THEN 'Age, ' ELSE '' END +
+                      CASE WHEN p.SexID=0 THEN 'Sex, ' ELSE '' END +
+                      CASE WHEN p.TbTypeID=0 THEN 'TB Site, ' ELSE '' END +
+                      CASE WHEN p.PtTypeID=0 THEN 'Patient Type, ' ELSE '' END +
+                      CASE WHEN p.RegDate IS NULL THEN 'Reg Date, ' ELSE '' END +
+                      CASE WHEN p.DateRxStarted IS NULL THEN 'Rx Start Date, ' ELSE '' END +
+                      CASE WHEN p.DiagMethodID=0 THEN 'Diag Method, ' ELSE '' END
+                    ) AS MissingFields
+                    {dqJoins}
+                    WHERE p.Deleted=0 {facP}
+                    AND (p.PtName IS NULL OR p.PtName='' OR p.Age=0 OR p.Age IS NULL OR p.SexID=0
+                         OR p.TbTypeID=0 OR p.PtTypeID=0 OR p.RegDate IS NULL OR p.DateRxStarted IS NULL
+                         OR p.DiagMethodID=0)
+                    ORDER BY p.PtName
+                    """;
+                break;
+            case "nooutcome":
+                querySql = $"""
+                    SELECT {dqCols}, ISNULL(o.Outcome,'') AS Outcome,
+                           DATEDIFF(DAY,p.DateRxStarted,GETDATE()) AS DaysSinceStart
+                    {dqJoins}
+                    LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
+                    LEFT JOIN OutcomeT     o ON fu.OutcomeID=o.OutcomeID
+                    WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtTypeID NOT IN (0,5,7)
+                    AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
+                    AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>168)
+                      OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>224)) {facP}
+                    ORDER BY p.DateRxStarted
+                    """;
+                break;
+            case "notevaluated":
+                querySql = $"""
+                    SELECT {dqCols}, ISNULL(o.Outcome,'') AS Outcome,
+                           DATEDIFF(DAY,p.DateRxStarted,GETDATE()) AS DaysSinceStart
+                    {dqJoins}
+                    JOIN  PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
+                    LEFT JOIN OutcomeT  o ON fu.OutcomeID=o.OutcomeID
+                    WHERE p.Deleted=0 AND fu.OutcomeID=6 {facP}
+                    ORDER BY p.DateRxStarted
+                    """;
+                break;
+            case "diagmethod":
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} ORDER BY p.PtName";
+                break;
+            case "norxstart":
+                querySql = $"""
+                    SELECT {dqCols}, DATEDIFF(DAY,p.RegDate,GETDATE()) AS DaysSinceReg
+                    {dqJoins}
+                    WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
+                    AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
+                    ORDER BY p.RegDate
+                    """;
+                break;
+            case "futuredates":
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP} ORDER BY p.RegDate DESC";
+                break;
+            case "deleted":
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=1 {facP} ORDER BY p.PtName";
+                break;
+            case "skipped":
+                querySql = $"""
+                    WITH norm AS (
+                        SELECT p.NearestHFID, YEAR(p.RegDate) AS RegYear,
+                               TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB,
+                               hf.HealthFacility
+                        FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                        WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL AND YEAR(p.RegDate)>=@MinYear {facP}
+                    ),
+                    valid AS (SELECT NearestHFID,RegYear,TBNoB,HealthFacility FROM norm WHERE TBNoB>0 AND TBNoB<2000),
+                    ranges AS (SELECT NearestHFID,RegYear,HealthFacility,MIN(TBNoB) AS MinNo,MAX(TBNoB) AS MaxNo FROM valid GROUP BY NearestHFID,RegYear,HealthFacility),
+                    seq AS (SELECT TOP 2000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL))-1 AS n FROM sys.objects CROSS JOIN sys.objects s2),
+                    expected AS (SELECT r.NearestHFID,r.RegYear,r.HealthFacility,r.MinNo+s.n AS TBNoB FROM ranges r CROSS JOIN seq s WHERE r.MinNo+s.n<=r.MaxNo),
+                    gaps AS (SELECT e.NearestHFID,e.RegYear,e.HealthFacility,e.TBNoB FROM expected e
+                             WHERE NOT EXISTS (SELECT 1 FROM valid v WHERE v.NearestHFID=e.NearestHFID AND v.RegYear=e.RegYear AND v.TBNoB=e.TBNoB))
+                    SELECT NULL AS PtDetailsTID, CAST(TBNoB AS nvarchar(10)) AS UnitTBNo,
+                           CAST(RegYear AS nvarchar(4))+'-01-01' AS RegDate,
+                           'Missing TB#'+CAST(TBNoB AS nvarchar(10))+'/'+CAST(RegYear AS nvarchar(4)) AS PtName,
+                           NULL AS Age, NULL AS AgeMonths, NULL AS Village, NULL AS Payam, NULL AS PtPhone,
+                           0 AS SexID, 0 AS TbTypeID, 0 AS PtTypeID, 0 AS DiagMethodID,
+                           NULL AS DateRxStarted, NearestHFID,
+                           '' AS Sex, '' AS PtTypeShort, '' AS TbType, '' AS DiagMethod, HealthFacility
+                    FROM gaps ORDER BY RegYear DESC, NearestHFID, TBNoB
+                    """;
+                break;
+            default:
+                return BadRequest(new { error = $"Unknown category '{category}'." });
+        }
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cmd = new SqlCommand(querySql, conn);
+            AddFacParams(cmd, facPrms);
+            // Also add facD params for duplicates (same param names, single conn)
+            if (category == "duplicates") AddFacParams(cmd, facDPrms);
+            cmd.Parameters.AddWithValue("@MinYear", minYear);
+            await using var rdr = await cmd.ExecuteReaderAsync();
+            var rows = await ReadRowsAsync(rdr);
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetQualityPatients error cat={Cat} (user {User})", category, User.Identity?.Name);
+            return StatusCode(500, new { error = "Could not retrieve quality patients." });
+        }
+    }
 }
