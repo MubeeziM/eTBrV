@@ -1088,4 +1088,165 @@ public sealed class PatientsController : ControllerBase
         }
         return errors;
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  GET /api/patients/search?q=john&register=ART|TB
+    //
+    //  Full-text patient search scoped to the caller's geo area.
+    //  Used by read-only supervisory users (national/state/county/NTP) who
+    //  do not pull patient records locally, so they must search the server.
+    //  Data-entry users also call this as a fallback when the local DB is
+    //  empty (e.g. first login on a new device).
+    //
+    //  SECURITY:
+    //   - geoWhere is built entirely from controlled boolean logic; the only
+    //     user-supplied value is `q`, bound as @Q (parameterised).
+    //   - Results are capped at 200 rows per register to prevent data dumping.
+    //   - [Authorize] ensures unauthenticated callers receive 401.
+    // ─────────────────────────────────────────────────────────────────────
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(
+        [FromQuery] string q        = "",
+        [FromQuery] string register = "all")
+    {
+        q = (q ?? "").Trim();
+        if (q.Length < 1)   return BadRequest(new { error = "Search term is required." });
+        if (q.Length > 200) q = q[..200];
+
+        bool searchArt = register != "TB";
+        bool searchTb  = register != "ART";
+
+        bool isNgo   = User.IsInRole("NGO");
+        bool isZonal = User.IsInRole("StateCoordinator");
+        bool isDtls  = User.IsInRole("CountySupervisor");
+
+        int.TryParse(User.FindFirstValue("facility_id"), out var facilityId);
+        int.TryParse(User.FindFirstValue("state_id"),    out var stateId);
+        int.TryParse(User.FindFirstValue("county_id"),   out var countyId);
+        int.TryParse(User.FindFirstValue("sub_rec_id"),  out var subRecId);
+        int.TryParse(User.FindFirstValue("location_id"), out var locationId);
+
+        var callerTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                     ?? string.Empty;
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            // ── Explicit facility assignments override all scope rules ────────
+            var explicitIds = new List<int>();
+            await using (var aCmd = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn))
+            {
+                aCmd.Parameters.AddWithValue("@UserTID", callerTID);
+                await using var ar = await aCmd.ExecuteReaderAsync();
+                while (await ar.ReadAsync()) explicitIds.Add(ar.GetInt32(0));
+            }
+
+            // ── Build geo WHERE clause (column names only — no user input) ───
+            string geoWhere;
+            var geoParams = new Dictionary<string, object>();
+
+            if (explicitIds.Count > 0)
+            {
+                var pNames = explicitIds.Select((_, i) => $"@F{i}").ToList();
+                geoWhere = $"hf.HealthFacilityID IN ({string.Join(", ", pNames)})";
+                for (int i = 0; i < explicitIds.Count; i++) geoParams[$"@F{i}"] = explicitIds[i];
+            }
+            else if (facilityId > 0)
+            {
+                geoWhere = "hf.HealthFacilityID = @FacId";
+                geoParams["@FacId"] = facilityId;
+            }
+            else if ((isZonal || isDtls) && isNgo)
+            {
+                geoWhere = "hf.SubRecID = @SubRecId AND hf.LocationID = @LocId";
+                geoParams["@SubRecId"] = subRecId;
+                geoParams["@LocId"]    = locationId;
+            }
+            else if (isDtls)
+            {
+                geoWhere = "hf.CountyID = @CountyId";
+                geoParams["@CountyId"] = countyId;
+            }
+            else if (isZonal)
+            {
+                geoWhere = "hf.StateID = @StateId";
+                geoParams["@StateId"] = stateId;
+            }
+            else if (isNgo)
+            {
+                geoWhere = "hf.SubRecID = @SubRecId";
+                geoParams["@SubRecId"] = subRecId;
+            }
+            else
+            {
+                geoWhere = "1=1"; // National MoH — no additional geo filter
+            }
+
+            async Task<List<object>> QueryTable(string tableName, string patientNoCol, string phoneCol)
+            {
+                // SECURITY: tableName/patientNoCol/phoneCol are only ever passed
+                // as hardcoded literals from the two call-sites below.
+                var sql = $"""
+                    SELECT TOP 200
+                        CASE WHEN '{tableName}' = 'PtDetailsARTT' THEN 'ART' ELSE 'TB' END AS Register,
+                        CAST(p.PtDetailsTID  AS nvarchar(36)) AS PtDetailsTID,
+                        COALESCE(p.PtName, '')                AS PtName,
+                        COALESCE(p.{patientNoCol}, '')        AS PatientNo,
+                        p.Age,
+                        COALESCE(s.Sex, '')                   AS Sex,
+                        COALESCE(p.{phoneCol}, '')            AS Phone,
+                        COALESCE(hf.HealthFacility, '')       AS HealthFacility,
+                        COALESCE(p.NearestHFID, 0)            AS NearestHFID
+                    FROM   {tableName} p
+                    JOIN   HealthFacilityT hf ON hf.HealthFacilityID = p.NearestHFID
+                    LEFT JOIN SexT         s  ON s.SexID = p.SexID
+                    WHERE  ISNULL(p.Deleted, 0) = 0
+                      AND  ({geoWhere})
+                      AND  (p.PtName LIKE @Q OR p.{patientNoCol} LIKE @Q
+                            OR p.{phoneCol} LIKE @Q OR hf.HealthFacility LIKE @Q)
+                    ORDER BY p.PtName ASC
+                    """;
+
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText    = sql;
+                cmd.CommandTimeout = 30;
+                cmd.Parameters.AddWithValue("@Q", $"%{q}%");
+                foreach (var (k, v) in geoParams) cmd.Parameters.AddWithValue(k, v);
+
+                var rows = new List<object>();
+                await using var rdr = await cmd.ExecuteReaderAsync();
+                while (await rdr.ReadAsync())
+                {
+                    rows.Add(new
+                    {
+                        register       = rdr.GetString(0),
+                        ptDetailsTID   = rdr.GetString(1),
+                        ptName         = rdr.GetString(2),
+                        patientNo      = rdr.GetString(3),
+                        age            = rdr.IsDBNull(4)  ? (int?)null : rdr.GetInt32(4),
+                        sex            = rdr.GetString(5),
+                        phone          = rdr.GetString(6),
+                        healthFacility = rdr.GetString(7),
+                        nearestHFID    = rdr.GetInt32(8),
+                    });
+                }
+                return rows;
+            }
+
+            var results = new List<object>();
+            if (searchArt) results.AddRange(await QueryTable("PtDetailsARTT", "ARTNo",    "Phone1"));
+            if (searchTb)  results.AddRange(await QueryTable("PtDetailsT",    "UnitTBNo", "PtPhone"));
+
+            return Ok(results);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Patient search error for {UserTID}.", callerTID);
+            return StatusCode(500, new { error = "Search failed." });
+        }
+    }
 }

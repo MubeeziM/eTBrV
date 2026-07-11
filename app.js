@@ -9564,33 +9564,86 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
     if (emptyEl) { emptyEl.hidden = false; emptyEl.querySelector('p').textContent = msg; }
   }
 
-  function _runSearch() {
+  // Maps server camelCase response → same PascalCase shape as searchAllPatients()
+  const _fromServerResult = r => ({
+    Register:       r.register,
+    PtDetailsTID:   r.ptDetailsTID,
+    PtName:         r.ptName,
+    PatientNo:      r.patientNo,
+    Age:            r.age,
+    Sex:            r.sex,
+    Phone:          r.phone,
+    HealthFacility: r.healthFacility,
+    NearestHFID:    r.nearestHFID,
+  });
+
+  // Calls GET /api/patients/search and returns normalised results, or null on failure.
+  async function _serverSearch(term, register) {
+    const token = getToken();
+    if (!token || !navigator.onLine) return null;
+    try {
+      const regParam = register ? `&register=${encodeURIComponent(register)}` : '';
+      const resp = await fetch(
+        `${API_BASE}/patients/search?q=${encodeURIComponent(term)}${regParam}`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) }
+      );
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return Array.isArray(data) ? data.map(_fromServerResult) : null;
+    } catch { return null; }
+  }
+
+  async function _runSearch() {
     const term = (_searchQuery || '').trim();
     if (term.length < 1) {
       _showEmpty('Type to search across ART and TB registers.');
       return;
     }
 
+    const register = _searchRegister || null;
+    const canWrite = userCanWrite();
     let results;
-    try {
-      results = searchAllPatients(term, _searchRegister || null);
-    } catch (e) {
-      console.error('[Search] searchAllPatients error:', e);
-      _showEmpty('Search error. Please try again.');
-      return;
+    let fromServer = false;
+
+    if (canWrite) {
+      // ── Data-entry users: local DB is primary ──────────────────────────
+      try { results = searchAllPatients(term, register); }
+      catch (e) { console.error('[Search] local error:', e); results = []; }
+
+      if (results.length === 0 && navigator.onLine) {
+        // Local DB is empty (new device?) — fall back to server
+        if (emptyEl) { emptyEl.hidden = false; emptyEl.querySelector('p').textContent = 'Searching server…'; }
+        const svr = await _serverSearch(term, register);
+        if (svr && svr.length > 0) { results = svr; fromServer = true; }
+      }
+    } else {
+      // ── Read-only users (national/state/county/NTP): no local data ─────
+      // Go straight to server; use whatever might be in the local DB offline.
+      if (navigator.onLine) {
+        if (emptyEl) { emptyEl.hidden = false; emptyEl.querySelector('p').textContent = 'Searching…'; }
+        const svr = await _serverSearch(term, register);
+        if (svr !== null) { results = svr; fromServer = true; }
+        else {
+          try { results = searchAllPatients(term, register); }
+          catch (e) { console.error('[Search] offline fallback error:', e); results = []; }
+        }
+      } else {
+        // Offline — use local fallback (may be empty)
+        try { results = searchAllPatients(term, register); }
+        catch (e) { console.error('[Search] offline error:', e); results = []; }
+      }
     }
 
-    if (!results.length) {
-      _showEmpty(`No patients found for "${term}".`);
+    if (!results || !results.length) {
+      _showEmpty(`No patients found for "${escHtml(term)}".`);
       return;
     }
 
     if (emptyEl)  emptyEl.hidden  = true;
     if (tableEl)  tableEl.hidden  = false;
     if (hintEl)   hintEl.hidden   = false;
-    if (countEl) { countEl.hidden = false; countEl.textContent = `${results.length} result${results.length !== 1 ? 's' : ''}`; }
-
-    const canWrite = userCanWrite();
+    const countLabel = `${results.length} result${results.length !== 1 ? 's' : ''}${fromServer ? ' (server)' : ''}`;
+    if (countEl) { countEl.hidden = false; countEl.textContent = countLabel; }
 
     tbodyEl.innerHTML = results.map(p => {
       const regBadge = p.Register === 'ART'
