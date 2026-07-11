@@ -9557,6 +9557,31 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
 //  Full-screen cross-register search (ART + TB). Opens inline like the
 //  monitoring / quality screens — no modal.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch a single TB patient from the server and upsert into the local SQLite DB
+ * if the patient is not already present.  Returns true when the patient is
+ * available locally after the call (either was already there or was imported).
+ * Never throws — network/API failures return false silently.
+ */
+async function _fetchAndUpsertTBPatientIfNeeded(tid) {
+  if (!tid) return false;
+  const norm = tid.toLowerCase();
+  try { if (getPtDetailsTB(norm)) return true; } catch (_) {}   // already local
+  const token = getToken();
+  if (!token) return false;
+  try {
+    const resp = await fetch(`${API_BASE}/tb-patients/${encodeURIComponent(norm)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    await importTBPayloadFromServer(data);
+    return true;
+  } catch { return false; }
+}
+
 (function initPatientSearchModule() {
   const searchScreen = document.getElementById('patient-search-screen');
   if (!searchScreen) return;
@@ -9810,27 +9835,6 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
         if (tr) { e.preventDefault(); _openPatient(tr); }
       }
     };
-  }
-
-  // ── Fetch a TB patient from the server and upsert locally if needed ──────────
-  // Returns true if the patient is now available in the local DB (either already
-  // was, or was successfully fetched and imported).  Never throws.
-  async function _fetchAndUpsertTBPatientIfNeeded(tid) {
-    if (!tid) return false;
-    const norm = tid.toLowerCase();
-    try { if (getPtDetailsTB(norm)) return true; } catch (_) {}   // already local
-    const token = getToken();
-    if (!token) return false;
-    try {
-      const resp = await fetch(`${API_BASE}/tb-patients/${encodeURIComponent(norm)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(12000),
-      });
-      if (!resp.ok) return false;
-      const data = await resp.json();
-      await importTBPayloadFromServer(data);
-      return true;
-    } catch { return false; }
   }
 
   // ── Open a patient record from search results ──────────────────────────────
