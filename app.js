@@ -1301,6 +1301,8 @@ function _resetTBForm() {
   _tbEditingTID = null;
   const banner = document.getElementById('tb-edit-mode-banner');
   if (banner) banner.hidden = true;
+  const noAccessBanner = document.getElementById('tb-no-access-banner');
+  if (noAccessBanner) noAccessBanner.hidden = true;
   const cancelBtn = document.getElementById('tb-cancel-edit-btn');
   if (cancelBtn) cancelBtn.hidden = true;
   const titleEl = document.getElementById('tb-form-title');
@@ -1567,6 +1569,11 @@ function startViewTBPatient(ptDetailsTID) {
   if (saveBtn) saveBtn.hidden = true;
   const cancelBtn = document.getElementById('tb-cancel-edit-btn');
   if (cancelBtn) cancelBtn.textContent = 'Close';
+  // Hide edit banner, show view-only notice
+  const editBanner = document.getElementById('tb-edit-mode-banner');
+  if (editBanner) editBanner.hidden = true;
+  const noAccessBanner = document.getElementById('tb-no-access-banner');
+  if (noAccessBanner) noAccessBanner.hidden = false;
 }
 
 /** Soft-delete a TB patient record. */
@@ -9774,6 +9781,10 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
         loadPatientIntoForm(tid, false);
       } else {
         loadPatientIntoForm(tid, false);
+        // Switch from edit mode to view mode: hide the "Editing:" banner and retitle
+        document.getElementById('edit-mode-banner').hidden = true;
+        const formTitle = document.getElementById('form-title');
+        if (formTitle) formTitle.textContent = 'View Patient \u2014 ART Register';
         document.getElementById('patient-form')?.querySelectorAll('input,select,textarea').forEach(el => { el.disabled = true; });
         const subBtn = document.getElementById('submit-btn');
         if (subBtn) subBtn.hidden = true;

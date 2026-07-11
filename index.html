@@ -1499,6 +1499,22 @@
         <span>Editing: <strong id="tb-edit-patient-name"></strong> — make your corrections below, then click <span style="display:inline-block;background:#92400e;color:#fff;font-size:0.78rem;font-weight:700;padding:2px 10px;border-radius:99px;letter-spacing:0.02em;vertical-align:middle">Update Patient</span>.</span>
       </div>
 
+      <div id="tb-no-access-banner" class="alert alert-warning alert-dismissible fade show" role="alert" hidden
+           style="border-left:5px solid #f59e0b;background-color:#fffbeb;border-color:#fde68a;border-radius:10px;margin-bottom:1.25rem">
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <h6 style="margin-bottom:6px;font-weight:700;color:#92400e">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
+               style="vertical-align:middle;margin-right:5px" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          View Only — No Data Entry Permission
+        </h6>
+        <div style="font-size:.88rem;font-weight:400;line-height:1.6;color:#78350f">
+          Your account is not linked to any health facility. Data entry and syncing are disabled.
+          Please contact your supervisor to assign a facility to your account.
+        </div>
+      </div>
+
       <form id="tb-patient-form" novalidate>
 
         <!-- ── SECTION A: Patient Registration ───────────────────────────────────── -->
