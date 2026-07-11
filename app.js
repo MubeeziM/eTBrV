@@ -9642,7 +9642,7 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
     if (emptyEl)  emptyEl.hidden  = true;
     if (tableEl)  tableEl.hidden  = false;
     if (hintEl)   hintEl.hidden   = false;
-    const countLabel = `${results.length} result${results.length !== 1 ? 's' : ''}${fromServer ? ' (server)' : ''}`;
+    const countLabel = `${results.length} result${results.length !== 1 ? 's' : ''}${fromServer ? ' (eTBr server)' : ''}`;
     if (countEl) { countEl.hidden = false; countEl.textContent = countLabel; }
 
     tbodyEl.innerHTML = results.map(p => {
@@ -9673,7 +9673,7 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
 
   // ── Open a patient record from search results ──────────────────────────────
   async function _openPatient(tr) {
-    const tid      = tr.dataset.tid;
+    const tid      = (tr.dataset.tid || '').toLowerCase();   // SQLite stores GUIDs lowercase
     const reg      = tr.dataset.reg;       // 'ART' | 'TB'
     const hfid     = Number(tr.dataset.hfid);
     const hfname   = tr.dataset.hfname || '';
