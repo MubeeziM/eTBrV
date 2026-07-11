@@ -12,7 +12,7 @@
 
 // Bump this version string whenever you update any cached file so that
 // the old cache is discarded and users get fresh assets.
-const CACHE_VERSION = 'patient-pwa-v080720261440';
+const CACHE_VERSION = 'patient-pwa-v110720261638';
 
 // ─── App shell files to pre-cache ────────────────────────────────────────
 // These are the minimum files needed to run offline after the first visit.

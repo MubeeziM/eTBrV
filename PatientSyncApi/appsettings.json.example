@@ -46,7 +46,13 @@
      *   TrustServerCertificate=False;
      *   Connection Timeout=30;
      */
-    "DefaultConnection": "Server=YOUR_SQL_SERVER,1433;Database=YOUR_DATABASE;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;"
+    "DefaultConnection": "Server=YOUR_SQL_SERVER,1433;Database=YOUR_DATABASE;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
+
+    /*
+     * Legacy database connection — read-only, used by LegacyMigrationService.
+     * Fill in real credentials in appsettings.json (never commit that file).
+     */
+    "LegacyConnection": "Data Source=YOUR_LEGACY_SQL_SERVER;Initial Catalog=YOUR_LEGACY_DATABASE;User ID=YOUR_LEGACY_USER;Password=YOUR_LEGACY_PASSWORD;MultipleActiveResultSets=true;Encrypt=True;TrustServerCertificate=True;"
   },
 
   /*

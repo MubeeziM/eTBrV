@@ -27,6 +27,16 @@ builder.Services.AddScoped<EmailService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuditService>();
 
+// LegacyMigrationService copies historical records from the legacy
+// Access-sourced database (db_ac602a_etbrss) into the new database,
+// one DataSourceID (facility) at a time, on demand.
+builder.Services.AddScoped<LegacyMigrationService>();
+
+// MigrationProgressService holds in-memory progress state for running
+// migrations. Must be a singleton so progress survives individual HTTP
+// requests and can be polled by the PWA progress bar.
+builder.Services.AddSingleton<MigrationProgressService>();
+
 // IHttpClientFactory is used by Dhis2Controller to POST report data to DHIS2.
 // Named client "dhis2" can be configured further here if needed (e.g., timeout).
 builder.Services.AddHttpClient("dhis2", client =>
@@ -99,7 +109,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("GitHubPagesCors", policy =>
         policy
             .WithOrigins(allowedOrigins)
-            .WithMethods("GET", "POST", "PUT", "OPTIONS")
+            .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
             .WithHeaders("Content-Type", "X-Api-Key", "Authorization")
             .WithExposedHeaders("Content-Disposition")
             .DisallowCredentials());

@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v080720261440';
+const APP_VERSION = 'v110720261638';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -4687,7 +4687,15 @@ document.getElementById('umf-save-btn')?.addEventListener('click', async () => {
 // ─── User Management Card Clicks / Panel Toggle ───────────────────────────
 
 /** Opens one panel, closes the others. If already open, closes it. */
-function _toggleUmgmtPanel(panelId, loadFn) {
+async function _toggleUmgmtPanel(panelId, loadFn) {
+  // Warn if the migration panel is currently open and migrations are active.
+  if (_migrationPolls.size > 0) {
+    const migPanel = document.getElementById('migration-panel');
+    if (migPanel && !migPanel.hidden) {
+      const proceed = await _warnIfMigratingAsync();
+      if (!proceed) return;
+    }
+  }
   const panels = document.querySelectorAll('.umgmt-panel');
   const target = document.getElementById(panelId);
   if (!target) return;
@@ -4724,6 +4732,751 @@ function _wireUmgmtCard(el, panelId, loadFn) {
 _wireUmgmtCard(_umgmtCardApprovals, 'approval-panel',   loadPendingApprovals);
 _wireUmgmtCard(_umgmtCardUsers,     'usermgmt-panel',   loadActiveUsers);
 _wireUmgmtCard(_umgmtCardSessions,  'sessions-panel',   loadActiveSessions);
+_wireUmgmtCard(
+  document.getElementById('umgmt-card-migration'),
+  'migration-panel',
+  loadLegacyMigrationPanel
+);
+
+// ─── Legacy Data Migration Panel ─────────────────────────────────────────────
+
+/** Per-facility polling interval IDs. Map<dataSourceId, intervalId>. */
+const _migrationPolls = new Map();
+
+/**
+ * Loads the facility list from the API and renders the migration table.
+ * Called when the Migration card is clicked.
+ */
+async function loadLegacyMigrationPanel() {
+  const user = getUser();
+  if (!user || (user.superUserID !== 1 && user.adminID !== 1)) return;
+
+  const token = getToken();
+  if (!token || !navigator.onLine) return;
+
+  const loadingEl   = document.getElementById('migration-loading');
+  const emptyEl     = document.getElementById('migration-empty');
+  const treeSection = document.getElementById('migration-tree-section');
+  const badge       = document.getElementById('migration-summary-badge');
+
+  if (loadingEl)   loadingEl.hidden   = false;
+  if (emptyEl)     emptyEl.hidden     = true;
+  if (treeSection) treeSection.hidden = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/legacy-migration/facilities`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (res.status === 401) { clearAuth(); showAuthScreen(); return; }
+
+    if (loadingEl) loadingEl.hidden = true;
+
+    if (!res.ok) {
+      if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = 'Could not load facilities.'; }
+      return;
+    }
+
+    const rows = await res.json();
+
+    if (!rows || rows.length === 0) {
+      if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = 'No facilities found in legacy database.'; }
+      return;
+    }
+
+    // Update summary badge on the card
+    const migratedCount = rows.filter(r => r.isMigrated).length;
+    if (badge) badge.textContent = `${migratedCount} / ${rows.length} migrated`;
+
+    // Render facility tree
+    const treeEl = document.getElementById('migration-tree');
+    if (treeEl) treeEl._treeData = rows;
+    _renderMigrationTree(rows);
+    if (treeSection) treeSection.hidden = false;
+
+    // Resume polling for any that are currently running
+    rows.filter(r => r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued')
+        .forEach(r => _startMigrationPoll(r.dataSourceId));
+
+  } catch (err) {
+    if (loadingEl) loadingEl.hidden = true;
+    if (emptyEl)   { emptyEl.hidden = false; emptyEl.textContent = 'Error loading facility list.'; }
+  }
+}
+
+/** Returns HTML for one facility node inside the migration tree. */
+function _migrationFacilityNode(r) {
+  const countStr = r.legacyPatients != null && r.legacyPatients > 0
+    ? r.legacyPatients.toLocaleString()
+    : null;
+  return `<li class="tree-node tree-node--facility"
+      id="migration-row-${r.dataSourceId}"
+      data-dsid="${r.dataSourceId}"
+      data-name="${escHtml(r.facilityName)}"
+      data-count="${r.legacyPatients ?? 0}">
+    <div class="migration-fac-row">
+      <span class="migration-fac-name">${escHtml(r.facilityName)}</span>
+      <span style="flex-shrink:0;min-width:60px;display:flex;justify-content:center;align-items:center;margin-left:auto">${countStr ? `<span class="migration-count-chip">${countStr}</span>` : ''}</span>
+      <span id="migration-migrate-${r.dataSourceId}" style="min-width:82px;display:flex;justify-content:center;align-items:center">${_migrationMigrateCell(r)}</span>
+      <span id="migration-delta-${r.dataSourceId}" style="min-width:110px;display:flex;justify-content:center;align-items:center">${_migrationDeltaCell(r)}</span>
+      <span id="migration-undo-${r.dataSourceId}" style="min-width:80px;display:flex;justify-content:center;align-items:center">${_migrationUndoCell(r)}</span>
+      <span id="migration-status-${r.dataSourceId}" style="min-width:160px;display:flex;align-items:center">${_migrationStatusCell(r)}</span>
+    </div>
+  </li>`;
+}
+
+/**
+ * Builds and renders the migration facility tree inside #migration-tree.
+ * Groups by State → County → Facility, with migrated/total badges on headings.
+ */
+function _renderMigrationTree(rows, filterText = '') {
+  const container = document.getElementById('migration-tree');
+  if (!container) return;
+
+  const term = filterText.trim().toLowerCase();
+  const visible = rows.filter(r =>
+    !term ||
+    r.facilityName.toLowerCase().includes(term) ||
+    (r.county || '').toLowerCase().includes(term) ||
+    (r.state  || '').toLowerCase().includes(term)
+  );
+
+  if (visible.length === 0) {
+    container.innerHTML = term
+      ? `<p class="tree-empty">No facilities match "<em>${escHtml(filterText)}</em>".</p>`
+      : `<p class="tree-empty">No legacy records found.</p>`;
+    return;
+  }
+
+  // Group: state name → county name → facilities[]
+  const stateMap = new Map();
+  for (const r of visible) {
+    const sk = r.state || '(Unknown State)';
+    if (!stateMap.has(sk)) stateMap.set(sk, new Map());
+    const countyMap = stateMap.get(sk);
+    const ck = r.county || '(Unknown County)';
+    if (!countyMap.has(ck)) countyMap.set(ck, []);
+    countyMap.get(ck).push(r);
+  }
+
+  let html = `<ul class="tree-list tree-list--country"><li class="tree-node tree-node--country">
+  <details class="tree-details" open>
+    <summary class="tree-summary tree-summary--country">
+      <span class="tree-toggle-box"></span>
+      <span>South Sudan</span>
+    </summary>
+    <ul class="tree-list tree-list--state">`;
+
+  for (const [stateName, countyMap] of [...stateMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    let stateMigrated = 0, stateTotal = 0;
+    for (const facs of countyMap.values()) {
+      stateTotal   += facs.length;
+      stateMigrated += facs.filter(f => f.isMigrated).length;
+    }
+    const stateOpen = term ? ' open' : '';
+    html += `<li class="tree-node tree-node--state">
+      <details class="tree-details"${stateOpen}>
+        <summary class="tree-summary tree-summary--state">
+          <span class="tree-toggle-box"></span>
+          <span>${escHtml(stateName)}</span>
+          <span style="margin-left:auto;font-size:0.72rem;font-weight:400;color:#6b7280;padding-right:0.2rem">${stateMigrated}/${stateTotal}</span>
+        </summary>
+        <ul class="tree-list tree-list--county">`;
+
+    for (const [countyName, facs] of [...countyMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const countyMigrated = facs.filter(f => f.isMigrated).length;
+      const countyOpen = term ? ' open' : '';
+      html += `<li class="tree-node tree-node--county">
+          <details class="tree-details"${countyOpen}>
+            <summary class="tree-summary tree-summary--county">
+              <span class="tree-toggle-box"></span>
+              <span>${escHtml(countyName)} County</span>
+              <span style="margin-left:auto;font-size:0.71rem;font-weight:400;color:#6b7280;padding-right:0.2rem">${countyMigrated}/${facs.length}</span>
+            </summary>
+            <ul class="tree-list tree-list--facility">`;
+
+      for (const fac of facs.slice().sort((a, b) => a.facilityName.localeCompare(b.facilityName)))
+        html += _migrationFacilityNode(fac);
+
+      html += `</ul>
+          </details>
+        </li>`;
+    }
+
+    html += `</ul>
+      </details>
+    </li>`;
+  }
+
+  html += `</ul>
+  </details>
+</li></ul>`;
+  container.innerHTML = html;
+}
+
+/** Formats a Date as dd/mm/yyyy HH:MM in local time. */
+function _formatMigrationDate(dt) {
+  const day = String(dt.getDate()).padStart(2, '0');
+  const mon = String(dt.getMonth() + 1).padStart(2, '0');
+  const yr  = dt.getFullYear();
+  const hr  = String(dt.getHours()).padStart(2, '0');
+  const min = String(dt.getMinutes()).padStart(2, '0');
+  return `${day}/${mon}/${yr} ${hr}:${min}`;
+}
+
+/** Returns HTML for the status indicator in the migration tree row. */
+function _migrationStatusCell(r) {
+  if (r.progressStatus === 'running')
+    return _migrationProgressBar(r.dataSourceId, r.progressPct ?? 0, r.progressMsg || 'Importing…');
+  if (r.progressStatus === 'delta-running')
+    return _migrationProgressBar(r.dataSourceId, r.progressPct ?? 0, r.progressMsg || 'Syncing changes…');
+  if (r.progressStatus === 'queued')
+    return `<span class="migration-status-chip" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a">⌛ Queued</span>`;
+  if (r.isMigrated) {
+    const d   = r.migratedOn ? _formatMigrationDate(new Date(r.migratedOn)) : '';
+    const pts = r.importedPatients != null ? r.importedPatients.toLocaleString() : '0';
+    let html  = `<span class="migration-status-chip migration-status-migrated">&#10003; ${pts} pts${d ? ' &bull; ' + d : ''}</span>`;
+    if (r.lastDeltaSyncOn) {
+      const dSync   = _formatMigrationDate(new Date(r.lastDeltaSyncOn));
+      const syncPts = r.lastDeltaSyncPatients != null ? r.lastDeltaSyncPatients.toLocaleString() : '0';
+      html += ` <span class="migration-status-chip" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.72rem">&#8635; ${syncPts} synced &bull; ${dSync}</span>`;
+    }
+    return html;
+  }
+  if (r.progressStatus === 'error') {
+    const msg = r.progressMsg || '';
+    return `<span style="display:inline-flex;flex-direction:column;gap:1px">
+      <span class="migration-status-chip migration-status-error">&#x26A0; Error</span>
+      ${msg ? `<span style="font-size:0.68rem;color:#991b1b;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(msg)}">${escHtml(msg)}</span>` : ''}
+    </span>`;
+  }
+  return '';
+}
+
+/** Returns HTML for a compact inline progress bar (tree row). */
+function _migrationProgressBar(dataSourceId, pct, msg) {
+  return `<span id="migration-pbar-wrap-${dataSourceId}"
+      style="display:inline-flex;align-items:center;gap:0.35rem;min-width:130px;max-width:180px">
+    <span style="flex:1;background:#e5e7eb;border-radius:4px;height:7px;overflow:hidden;display:block">
+      <span id="migration-pbar-${dataSourceId}"
+        style="display:block;background:#d97706;height:100%;width:${pct}%;transition:width 0.4s ease;border-radius:4px"></span>
+    </span>
+    <span id="migration-pct-${dataSourceId}"
+      style="font-size:0.71rem;color:#6b7280;white-space:nowrap;flex-shrink:0">${pct}%</span>
+  </span>`;
+}
+
+/** Returns HTML for the Migrate column of a facility row. */
+function _migrationMigrateCell(r) {
+  if (r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued' || r.isMigrated) return '';
+  return `<button type="button"
+            class="migration-start-btn"
+            data-dsid="${r.dataSourceId}"
+            data-name="${escHtml(r.facilityName)}"
+            data-count="${r.legacyPatients ?? 0}"
+            style="flex-shrink:0;background:#d97706;color:#fff;border:none;border-radius:6px;
+                   padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+            Migrate
+          </button>`;
+}
+
+/** Returns HTML for the Sync Changes column of a facility row. */
+function _migrationDeltaCell(r) {
+  if (r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued') return '';
+  if (r.isMigrated) {
+    return `<button type="button"
+              class="migration-delta-btn"
+              data-dsid="${r.dataSourceId}"
+              data-name="${escHtml(r.facilityName)}"
+              style="flex-shrink:0;background:#1d4ed8;color:#fff;border:none;border-radius:6px;
+                     padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+              Sync Changes
+            </button>`;
+  }
+  return `<button type="button" disabled
+            style="flex-shrink:0;background:#e5e7eb;color:#9ca3af;border:1px solid #d1d5db;border-radius:6px;
+                   padding:0.22rem 0.65rem;font-size:0.78rem;cursor:not-allowed;font-weight:600;white-space:nowrap">
+            Sync Changes
+          </button>`;
+}
+
+/** Returns HTML for the Undo Sync column of a facility row. */
+function _migrationUndoCell(r) {
+  if (r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued') return '';
+  if (r.isMigrated) {
+    return `<button type="button"
+              class="migration-reset-btn"
+              data-dsid="${r.dataSourceId}"
+              data-name="${escHtml(r.facilityName)}"
+              data-pts="${r.importedPatients ?? 0}"
+              style="flex-shrink:0;background:none;border:1px solid #dc2626;color:#dc2626;border-radius:6px;
+                     padding:0.22rem 0.6rem;font-size:0.78rem;cursor:pointer;font-weight:500;white-space:nowrap">
+              Undo
+            </button>`;
+  }
+  return '';
+}
+
+/** Starts polling every 3 s for a running migration. */
+function _startMigrationPoll(dataSourceId) {
+  if (_migrationPolls.has(dataSourceId)) return; // already polling
+
+  const facRow  = document.getElementById(`migration-row-${dataSourceId}`);
+  const facName = facRow?.dataset.name || `Facility ${dataSourceId}`;
+
+  // Entry stores live metadata used by the banner and ETA calculation.
+  const entry = { intervalId: null, name: facName, pct: 0, status: 'queued', runningStart: null };
+  _migrationPolls.set(dataSourceId, entry);
+  _updateMigrationBanner();
+
+  const id = setInterval(async () => {
+    try {
+      const token = getToken();
+      if (!token) { _stopMigrationPoll(dataSourceId); return; }
+
+      const res = await fetch(
+        `${API_BASE}/legacy-migration/facility/${dataSourceId}/progress`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (!res.ok) return;
+
+      const p = await res.json();
+
+      // Update progress bar
+      const pbarEl    = document.getElementById(`migration-pbar-${dataSourceId}`);
+      const pctEl     = document.getElementById(`migration-pct-${dataSourceId}`);
+      const wrapEl    = document.getElementById(`migration-pbar-wrap-${dataSourceId}`);
+      const statusEl  = document.getElementById(`migration-status-${dataSourceId}`);
+      const migrateEl = document.getElementById(`migration-migrate-${dataSourceId}`);
+      const deltaEl   = document.getElementById(`migration-delta-${dataSourceId}`);
+      const undoEl    = document.getElementById(`migration-undo-${dataSourceId}`);
+
+      if (p.status === 'running' || p.status === 'delta-running') {
+        // Mark the moment active processing started (transition out of queued).
+        if (entry.status === 'queued' || entry.runningStart === null) entry.runningStart = Date.now();
+        entry.status = p.status;
+        entry.pct    = p.pct;
+        _updateMigrationBanner();
+        if (pbarEl) pbarEl.style.width = `${p.pct}%`;
+        if (pctEl)  pctEl.textContent = `${p.pct}%`;
+        return; // keep polling
+      }
+      if (p.status === 'queued') {
+        entry.status = 'queued';
+        _updateMigrationBanner();
+        if (pctEl) pctEl.textContent = 'Queued…';
+        return; // keep polling
+      }
+
+      // Terminal state — stop polling and refresh the row
+      _stopMigrationPoll(dataSourceId);
+
+      if (p.status === 'done') {
+        const pts = p.importedPatients.toLocaleString();
+        const d   = _formatMigrationDate(new Date());
+        if (statusEl) statusEl.innerHTML =
+          `<span class="migration-status-chip migration-status-migrated">&#10003; ${pts} pts &bull; ${d}</span>`;
+
+        // Populate Sync Changes + Undo columns; clear Migrate column
+        const facName = document.getElementById(`migration-row-${dataSourceId}`)?.dataset.name || '';
+        if (migrateEl) migrateEl.innerHTML = '';
+        if (deltaEl) deltaEl.innerHTML =
+          `<button type="button"
+             class="migration-delta-btn"
+             data-dsid="${dataSourceId}"
+             data-name="${escHtml(facName)}"
+             style="flex-shrink:0;background:#1d4ed8;color:#fff;border:none;border-radius:6px;
+                    padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+             Sync Changes
+           </button>`;
+        if (undoEl) undoEl.innerHTML =
+          `<button type="button"
+             class="migration-reset-btn"
+             data-dsid="${dataSourceId}"
+             data-name="${escHtml(facName)}"
+             data-pts="${p.importedPatients ?? 0}"
+             style="flex-shrink:0;background:none;border:1px solid #dc2626;color:#dc2626;border-radius:6px;
+                    padding:0.22rem 0.6rem;font-size:0.78rem;cursor:pointer;font-weight:500;white-space:nowrap">
+             Undo
+           </button>`;
+
+        // Update the summary badge on the card
+        const badge = document.getElementById('migration-summary-badge');
+        if (badge) {
+          const treeEl = document.getElementById('migration-tree');
+          const total = treeEl?._treeData?.length ?? 0;
+          const migratedNow = document.querySelectorAll('#migration-tree .migration-status-migrated').length;
+          badge.textContent = `${migratedNow} / ${total} migrated`;
+        }
+
+      } else if (p.status === 'delta-done') {
+        // Reload panel to show accurate delta sync stats from the database
+        await loadLegacyMigrationPanel();
+      } else if (p.status === 'error') {
+        const errorMsg = p.message || '';
+        const rowEl   = document.getElementById(`migration-row-${dataSourceId}`);
+        const facName = rowEl?.dataset.name  || '';
+        const count   = rowEl?.dataset.count || '0';
+        if (statusEl) statusEl.innerHTML =
+          `<span style="display:inline-flex;flex-direction:column;gap:1px">
+            <span class="migration-status-chip migration-status-error">&#x26A0; Error</span>
+            ${errorMsg ? `<span style="font-size:0.68rem;color:#991b1b;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(errorMsg)}">${escHtml(errorMsg)}</span>` : ''}
+          </span>`;
+        if (migrateEl) migrateEl.innerHTML =
+          `<button type="button" class="migration-start-btn"
+             data-dsid="${dataSourceId}" data-name="${escHtml(facName)}" data-count="${count}"
+             style="flex-shrink:0;background:#d97706;color:#fff;border:none;border-radius:6px;
+                    padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+             Migrate
+           </button>`;
+        if (deltaEl) deltaEl.innerHTML =
+          `<button type="button" disabled
+             style="flex-shrink:0;background:#e5e7eb;color:#9ca3af;border:1px solid #d1d5db;border-radius:6px;
+                    padding:0.22rem 0.65rem;font-size:0.78rem;cursor:not-allowed;font-weight:600;white-space:nowrap">
+             Sync Changes
+           </button>`;
+        if (undoEl) undoEl.innerHTML = '';
+      }
+    } catch (_) { /* ignore transient network errors */ }
+  }, 3000);
+
+  entry.intervalId = id;
+}
+
+function _stopMigrationPoll(dataSourceId) {
+  const entry = _migrationPolls.get(dataSourceId);
+  if (entry != null) clearInterval(entry.intervalId);
+  _migrationPolls.delete(dataSourceId);
+  _updateMigrationBanner();
+}
+
+/**
+ * Shows/updates a fixed bottom banner listing all active or queued migrations
+ * with live progress and estimated time remaining. Hides when all are done.
+ */
+function _updateMigrationBanner() {
+  // Inject pulse animation once
+  if (!document.getElementById('migration-banner-style')) {
+    const s = document.createElement('style');
+    s.id = 'migration-banner-style';
+    s.textContent = '@keyframes _migPulse{0%,100%{opacity:1}50%{opacity:.4}}';
+    document.head.appendChild(s);
+  }
+
+  let banner = document.getElementById('migration-active-banner');
+
+  if (_migrationPolls.size === 0) {
+    if (banner) banner.hidden = true;
+    return;
+  }
+
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'migration-active-banner';
+    banner.style.cssText = [
+      'position:fixed', 'bottom:0', 'left:0', 'right:0', 'z-index:9999',
+      'background:#1e293b', 'color:#f1f5f9',
+      'padding:0.65rem 1.25rem 0.75rem',
+      'box-shadow:0 -2px 14px rgba(0,0,0,.3)',
+      'border-top:2px solid #d97706',
+      'font-size:0.82rem', 'font-family:inherit'
+    ].join(';');
+    document.body.appendChild(banner);
+  }
+  banner.hidden = false;
+
+  let rows = '';
+  for (const [, e] of _migrationPolls) {
+    const isActive = e.status === 'running' || e.status === 'delta-running';
+    const dot = `<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
+      background:${isActive ? '#f97316' : '#fbbf24'};
+      animation:${isActive ? '_migPulse 1.4s ease-in-out infinite' : 'none'}"></span>`;
+
+    let rightHtml;
+    if (!isActive) {
+      rightHtml = `<span style="color:#fbbf24;white-space:nowrap">⌛ Queued</span>`;
+    } else {
+      // ETA: linear extrapolation from when active processing started
+      let etaTxt = '';
+      if (e.runningStart && e.pct > 0) {
+        const elapsed = Date.now() - e.runningStart; // ms
+        const rate    = e.pct / elapsed;             // % per ms
+        if (rate > 0) {
+          const remaining = Math.round((100 - e.pct) / rate); // ms
+          if (remaining > 0 && remaining < 7_200_000) {
+            const m = Math.floor(remaining / 60000);
+            const s = Math.floor((remaining % 60000) / 1000);
+            etaTxt = m > 0 ? ` ≈ ${m}m left` : s > 5 ? ` ≈ ${s}s left` : ' almost done';
+          }
+        }
+      }
+      rightHtml = `<span style="display:inline-flex;align-items:center;gap:0.45rem;white-space:nowrap">
+        <span style="width:72px;background:#374151;border-radius:3px;height:5px;display:inline-block;vertical-align:middle">
+          <span style="display:block;background:#f97316;height:100%;width:${e.pct}%;border-radius:3px;transition:width .4s ease"></span>
+        </span>
+        <span style="color:#d1d5db">${e.pct}%${etaTxt}</span>
+      </span>`;
+    }
+
+    rows += `<div style="display:flex;align-items:center;gap:0.55rem;padding:0.1rem 0">
+      ${dot}
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        max-width:min(220px,35vw);color:#e2e8f0">${escHtml(e.name)}</span>
+      ${rightHtml}
+    </div>`;
+  }
+
+  banner.innerHTML = `<div style="max-width:960px;margin:0 auto;display:flex;align-items:flex-start;gap:0.85rem">
+    <span style="font-size:1.1rem;flex-shrink:0;padding-top:0.05rem">⚙️</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;color:#fb923c;margin-bottom:0.3rem">
+        Data migration in progress — please do not close this window
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:0.25rem 1.5rem">${rows}</div>
+    </div>
+  </div>`;
+}
+
+// Warn before tab/window close while any migration is active.
+window.addEventListener('beforeunload', e => {
+  if (_migrationPolls.size === 0) return;
+  e.preventDefault();
+  e.returnValue = ''; // triggers browser’s built-in “Leave site?” dialog
+});
+
+/**
+ * Builds HTML listing active/queued migrations for the in-app warning modal.
+ */
+function _migrationWarningContent() {
+  const lines = [];
+  for (const [, e] of _migrationPolls) {
+    const isActive = e.status === 'running' || e.status === 'delta-running';
+    let detail = isActive ? `${e.pct}%` : 'Queued';
+    if (isActive && e.runningStart && e.pct > 0) {
+      const rate = e.pct / (Date.now() - e.runningStart);
+      if (rate > 0) {
+        const rem = Math.round((100 - e.pct) / rate);
+        if (rem > 0 && rem < 7_200_000) {
+          const m = Math.floor(rem / 60000);
+          const s = Math.floor((rem % 60000) / 1000);
+          detail += m > 0 ? ` &mdash; &asymp;${m}m left` : s > 5 ? ` &mdash; &asymp;${s}s left` : ' &mdash; almost done';
+        }
+      }
+    }
+    lines.push(
+      `<div style="display:flex;align-items:center;gap:0.4rem;padding:0.1rem 0">` +
+      `<span style="color:${isActive ? '#d97706' : '#9ca3af'}">${isActive ? '&#9679;' : '&#8987;'}</span>` +
+      `<span><strong>${escHtml(e.name)}</strong> &mdash; ${detail}</span></div>`
+    );
+  }
+  return `Migration is running in the background:<br>` +
+    `<div style="margin:0.45rem 0 0.5rem;padding-left:0.1rem">${lines.join('')}</div>` +
+    `The import will finish on its own &mdash; you can continue using the eTBr.<br>` +
+    `<strong>Do not close or refresh this browser tab until all migrations complete.</strong>`;
+}
+
+/**
+ * If any migrations are active, shows a styled confirm modal listing them.
+ * Returns true to proceed, false if the user cancels.
+ */
+async function _warnIfMigratingAsync() {
+  if (_migrationPolls.size === 0) return true;
+  return showGenericConfirmModal('Migration in Progress', _migrationWarningContent(), 'Continue Anyway');
+}
+
+// Delegated click handler for Migrate / Retry buttons in the migration table
+document.getElementById('usermgmt-section')?.addEventListener('click', async e => {
+  const btn = e.target.closest('.migration-start-btn');
+  if (!btn) return;
+
+  const dataSourceId = parseInt(btn.dataset.dsid, 10);
+  const name         = btn.dataset.name  || `Facility ${dataSourceId}`;
+  const count        = parseInt(btn.dataset.count, 10) || 0;
+
+  const confirmed = await showGenericConfirmModal(
+    'Confirm Migration',
+    `Import <strong>${count.toLocaleString()}</strong> patient records from<br><em>${escHtml(name)}</em> into the new eTBr system?<br><br>The import runs in the background — you can continue using the eTBr and check back later.`,
+    'Import Records'
+  );
+  if (!confirmed) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Starting…';
+
+  const token = getToken();
+  if (!token) return;
+
+  try {
+    const res = await fetch(
+      `${API_BASE}/legacy-migration/facility/${dataSourceId}`,
+      { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }
+    );
+
+    if (res.status === 409) {
+      const err = await res.json();
+      await showGenericInfoModal('Already Migrated', err.error || 'This facility has already been migrated or a migration is already in progress.');
+      btn.disabled = false; btn.textContent = 'Migrate';
+      return;
+    }
+    if (!res.ok) {
+      await showGenericInfoModal('Error', 'Failed to start migration. Please try again.');
+      btn.disabled = false; btn.textContent = 'Migrate';
+      return;
+    }
+
+    // Replace button with "In progress…" and show progress bar
+    const statusEl  = document.getElementById(`migration-status-${dataSourceId}`);
+    const migrateEl = document.getElementById(`migration-migrate-${dataSourceId}`);
+    const deltaEl   = document.getElementById(`migration-delta-${dataSourceId}`);
+    const undoEl    = document.getElementById(`migration-undo-${dataSourceId}`);
+    if (statusEl)  statusEl.innerHTML = _migrationProgressBar(dataSourceId, 0, 'Starting import…');
+    if (migrateEl) migrateEl.innerHTML = '';
+    if (deltaEl)   deltaEl.innerHTML = '';
+    if (undoEl)    undoEl.innerHTML = '';
+
+    _startMigrationPoll(dataSourceId);
+
+  } catch (err) {
+    await showGenericInfoModal('Network Error', 'Could not reach the server. Check your connection and try again.');
+    btn.disabled = false; btn.textContent = 'Migrate';
+  }
+});
+
+// Delegated click handler for Remove (rollback) buttons
+document.getElementById('usermgmt-section')?.addEventListener('click', async e => {
+  const btn = e.target.closest('.migration-reset-btn');
+  if (!btn) return;
+
+  const dataSourceId = parseInt(btn.dataset.dsid, 10);
+  const name         = btn.dataset.name || `Facility ${dataSourceId}`;
+  const pts          = parseInt(btn.dataset.pts, 10) || 0;
+
+  const confirmed = await showGenericConfirmModal(
+    'Undo Migration',
+    `This will permanently delete <strong>${pts.toLocaleString()}</strong> imported patients and their follow-ups for<br><em>${escHtml(name)}</em>.<br><br>The facility will return to “Not migrated” and can be re-migrated. Continue?`,
+    'Yes, Undo'
+  );
+  if (!confirmed) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Undoing…';
+
+  const token = getToken();
+  if (!token) return;
+
+  try {
+    const res = await fetch(
+      `${API_BASE}/legacy-migration/facility/${dataSourceId}/undo`,
+      { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      await showGenericInfoModal('Error', err.error || 'Failed to undo migration. Please try again.');
+      btn.disabled = false; btn.textContent = 'Undo';
+      return;
+    }
+
+    const result = await res.json();
+
+    // Reset the row — clear status chip and restore Migrate / disabled Sync Changes
+    const statusEl  = document.getElementById(`migration-status-${dataSourceId}`);
+    const migrateEl = document.getElementById(`migration-migrate-${dataSourceId}`);
+    const deltaEl   = document.getElementById(`migration-delta-${dataSourceId}`);
+    const undoEl    = document.getElementById(`migration-undo-${dataSourceId}`);
+    if (statusEl)  statusEl.innerHTML = '';
+    if (migrateEl) migrateEl.innerHTML =
+      `<button type="button" class="migration-start-btn"
+         data-dsid="${dataSourceId}" data-name="${escHtml(name)}" data-count="0"
+         style="flex-shrink:0;background:#d97706;color:#fff;border:none;border-radius:6px;
+                padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+         Migrate
+       </button>`;
+    if (deltaEl) deltaEl.innerHTML =
+      `<button type="button" disabled
+         style="flex-shrink:0;background:#e5e7eb;color:#9ca3af;border:1px solid #d1d5db;border-radius:6px;
+                padding:0.22rem 0.65rem;font-size:0.78rem;cursor:not-allowed;font-weight:600;white-space:nowrap">
+         Sync Changes
+       </button>`;
+    if (undoEl) undoEl.innerHTML = '';
+
+    // Update card badge
+    const badge  = document.getElementById('migration-summary-badge');
+    const treeEl = document.getElementById('migration-tree');
+    if (badge && treeEl) {
+      const total       = treeEl._treeData?.length ?? 0;
+      const migratedNow = document.querySelectorAll('#migration-tree .migration-status-migrated').length;
+      badge.textContent = migratedNow > 0 ? `${migratedNow} / ${total} migrated` : '';
+    }
+
+    await showGenericInfoModal('Migration Undone', `Removed ${result.deletedPatients.toLocaleString()} patients and ${result.deletedFollowUps.toLocaleString()} follow-ups. The facility can now be re-migrated.`);
+  } catch (_) {
+    await showGenericInfoModal('Network Error', 'Could not reach the server. Please try again.');
+    btn.disabled = false; btn.textContent = 'Undo';
+  }
+});
+
+// Delegated click handler for Sync Changes (delta) buttons
+document.getElementById('usermgmt-section')?.addEventListener('click', async e => {
+  const btn = e.target.closest('.migration-delta-btn');
+  if (!btn) return;
+
+  const dataSourceId = parseInt(btn.dataset.dsid, 10);
+  const name         = btn.dataset.name || `Facility ${dataSourceId}`;
+
+  const confirmed = await showGenericConfirmModal(
+    'Sync Changes',
+    `Sync records changed in the legacy system after 30 Jun 2026 for<br><em>${escHtml(name)}</em>?<br><br>Only modified or newly added patients will be processed.`,
+    'Sync Changes'
+  );
+  if (!confirmed) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Starting…';
+
+  const token = getToken();
+  if (!token) return;
+
+  try {
+    const res = await fetch(
+      `${API_BASE}/legacy-migration/facility/${dataSourceId}/delta`,
+      { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }
+    );
+
+    if (res.status === 409) {
+      const err = await res.json();
+      await showGenericInfoModal('Cannot Sync', err.error || 'A migration or sync is already in progress.');
+      btn.disabled = false; btn.textContent = 'Sync Changes';
+      return;
+    }
+    if (!res.ok) {
+      await showGenericInfoModal('Error', 'Failed to start sync. Please try again.');
+      btn.disabled = false; btn.textContent = 'Sync Changes';
+      return;
+    }
+
+    // Show progress bar while syncing
+    const statusEl = document.getElementById(`migration-status-${dataSourceId}`);
+    const deltaEl  = document.getElementById(`migration-delta-${dataSourceId}`);
+    const undoEl   = document.getElementById(`migration-undo-${dataSourceId}`);
+    if (statusEl) statusEl.innerHTML = _migrationProgressBar(dataSourceId, 0, 'Syncing changes…');
+    if (deltaEl)  deltaEl.innerHTML = '';
+    if (undoEl)   undoEl.innerHTML = '';
+
+    _startMigrationPoll(dataSourceId);
+
+  } catch (err) {
+    await showGenericInfoModal('Network Error', 'Could not reach the server. Check your connection and try again.');
+    btn.disabled = false; btn.textContent = 'Sync Changes';
+  }
+});
+
+// Refresh button for migration panel
+document.getElementById('migration-refresh-btn')?.addEventListener('click', loadLegacyMigrationPanel);
+document.getElementById('migration-tree-search')?.addEventListener('input', e => {
+  const treeEl = document.getElementById('migration-tree');
+  if (treeEl?._treeData) _renderMigrationTree(treeEl._treeData, e.target.value);
+});
 
 // ─── Active Sessions ──────────────────────────────────────────────────────
 
@@ -5101,7 +5854,7 @@ function showAppScreen() {
   // returns false for them, but they still need to enter baseline data.
   const baselineCard = document.getElementById('dash-goto-baseline');
   const _blUser = getUser();
-  if (baselineCard) baselineCard.hidden = !userCanWrite() && !_blUser?.dtls;
+  if (baselineCard) baselineCard.hidden = !userCanWrite() && !_blUser?.dtls && !_blUser?.superUserID && !_blUser?.adminID;
 
   // Start the 5-minute heartbeat and kick off a bidirectional sync on login.
   // 1. Upload any local HasChanged=1 records to the server first (1.5 s delay).
@@ -6395,6 +7148,18 @@ function showGenericConfirmModal(title, message, okLabel = 'OK') {
 }
 
 /**
+ * One-button informational modal (no Cancel). Resolves when OK is clicked.
+ */
+function showGenericInfoModal(title, message) {
+  const canBtn = document.getElementById('generic-confirm-cancel');
+  if (canBtn) canBtn.hidden = true;
+  return showGenericConfirmModal(title, message, 'OK').finally(() => {
+    const cb = document.getElementById('generic-confirm-cancel');
+    if (cb) cb.hidden = false;
+  });
+}
+
+/**
  * Called when the user taps a facility in the tree.
  * If currently editing a patient, ask for confirmation first.
  * @param {{id,name,countyId,county,stateId,state}} fac
@@ -7284,9 +8049,12 @@ document.getElementById('sync-log-copy-btn')?.addEventListener('click', () => {
 // ─── Dashboard navigation ─────────────────────────────────────────────────
 
 /** ART Register card */
-document.getElementById('dash-goto-data-entry')?.addEventListener('click', () => showARTRegister());
+document.getElementById('dash-goto-data-entry')?.addEventListener('click', async () => {
+  if (!await _warnIfMigratingAsync()) return;
+  showARTRegister();
+});
 document.getElementById('dash-goto-data-entry')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showARTRegister(); }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _warnIfMigratingAsync().then(ok => ok && showARTRegister()); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7951,9 +8719,12 @@ function _getCheckedTIDs(tbodyId) {
 }
 
 /** Dashboard card → monitoring */
-document.getElementById('dash-goto-tb-monitoring')?.addEventListener('click', () => showTBMonitoring());
+document.getElementById('dash-goto-tb-monitoring')?.addEventListener('click', async () => {
+  if (!await _warnIfMigratingAsync()) return;
+  showTBMonitoring();
+});
 document.getElementById('dash-goto-tb-monitoring')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTBMonitoring(); }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _warnIfMigratingAsync().then(ok => ok && showTBMonitoring()); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8625,9 +9396,12 @@ document.getElementById('mon-export-excel-btn')?.addEventListener('click', () =>
 })();
 
 /** Dashboard card → quality screen */
-document.getElementById('dash-goto-tb-quality')?.addEventListener('click', () => showTBQuality());
+document.getElementById('dash-goto-tb-quality')?.addEventListener('click', async () => {
+  if (!await _warnIfMigratingAsync()) return;
+  showTBQuality();
+});
 document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTBQuality(); }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _warnIfMigratingAsync().then(ok => ok && showTBQuality()); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8944,10 +9718,16 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
   };
 
   // ── Dashboard card wiring ─────────────────────────────────────────────────
-  document.getElementById('dash-goto-patient-search')?.addEventListener('click', () => showPatientSearch(false));
-  document.getElementById('db-header-search-btn')?.addEventListener('click', () => showPatientSearch(false));
+  document.getElementById('dash-goto-patient-search')?.addEventListener('click', async () => {
+    if (!await _warnIfMigratingAsync()) return;
+    showPatientSearch(false);
+  });
+  document.getElementById('db-header-search-btn')?.addEventListener('click', async () => {
+    if (!await _warnIfMigratingAsync()) return;
+    showPatientSearch(false);
+  });
   document.getElementById('dash-goto-patient-search')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showPatientSearch(false); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _warnIfMigratingAsync().then(ok => ok && showPatientSearch(false)); }
   });
 
   document.getElementById('psearch-back-btn')?.addEventListener('click', hidePatientSearch);
@@ -9708,7 +10488,7 @@ function resolveGeoScope(user, geo) {
     }
 
     applyScope(scope);
-    updateSummary();
+    updateSummary(true);
   }
 
   // ── DOM helpers ───────────────────────────────────────────────────────
@@ -9834,13 +10614,13 @@ function resolveGeoScope(user, geo) {
       .map(cb => parseInt(cb.dataset.id, 10));
   }
 
-  function updateSummary() {
+  function updateSummary(silent = false) {
     const ids = getSelectedFacilityIds();
     if (ids.length === 0) {
       const _noFacMsg = 'No facilities selected — please select at least one facility, county or state.';
       summaryEl.textContent = _noFacMsg;
       summaryEl.style.color = '#dc3545';
-      showToast(_noFacMsg, 'error');
+      if (!silent) showToast(_noFacMsg, 'error');
       // summaryEl.style.fontWeight = 'bold';
       return;
     }
@@ -13653,7 +14433,11 @@ function resolveGeoScope(user, geo) {
   // ── DOM refs ──────────────────────────────────────────────────────────────
   const modal         = document.getElementById('baseline-modal');
   if (!modal) return;
-  const facilitySelectEl = document.getElementById('bl-facility-select');
+  const treeTriggerEl  = document.getElementById('bl-tree-trigger');
+  const treeTriggerTxt = document.getElementById('bl-tree-trigger-text');
+  const treePanelEl    = document.getElementById('bl-tree-panel');
+  const treeSearchEl   = document.getElementById('bl-tree-search');
+  const treeFacTreeEl  = document.getElementById('bl-fac-tree');
   const facilityIdEl     = document.getElementById('bl-facility-id');
   const dateEl         = document.getElementById('bl-date');
   const ageRowsTbody   = document.getElementById('bl-age-rows');
@@ -13845,72 +14629,175 @@ function resolveGeoScope(user, geo) {
     }
   }
 
-  // ── Populate facility selector and pre-load baseline ────────────────────
-  async function _loadFacilitySelect(preselectedId) {
-    if (!facilitySelectEl || !facilityIdEl) return;
-    facilitySelectEl.innerHTML = '<option value="">— Loading health facilities… —</option>';
-    facilitySelectEl.disabled = true;
+  // ── Facility tree picker ─────────────────────────────────────────────────
+  let _blItems = []; // cached geo items for filtering
+
+  function _closeTree() {
+    if (!treePanelEl) return;
+    treePanelEl.hidden = true;
+    treeTriggerEl?.setAttribute('aria-expanded', 'false');
+  }
+
+  function _renderBlTree(filterText) {
+    if (!treeFacTreeEl) return;
+    const term = filterText.trim().toLowerCase();
+    const visible = term
+      ? _blItems.filter(it =>
+          it.healthFacility.toLowerCase().includes(term) ||
+          it.county.toLowerCase().includes(term) ||
+          it.state.toLowerCase().includes(term))
+      : _blItems;
+
+    if (!visible.length) {
+      treeFacTreeEl.innerHTML =
+        `<p class="tree-empty" style="padding:.4rem .6rem;font-size:.83rem;color:#6b7280;margin:0">${
+          term ? 'No facilities match that search.' : 'No facilities available.'
+        }</p>`;
+      return;
+    }
+
+    const currentId = parseInt(facilityIdEl?.value, 10) || 0;
+
+    // Group: state → county → facility
+    const stateMap = new Map();
+    for (const it of visible) {
+      if (!stateMap.has(it.stateID))
+        stateMap.set(it.stateID, { name: it.state, counties: new Map() });
+      const st = stateMap.get(it.stateID);
+      if (!st.counties.has(it.countyID))
+        st.counties.set(it.countyID, { name: it.county, facilities: [] });
+      st.counties.get(it.countyID).facilities.push({ id: it.healthFacilityID, name: it.healthFacility });
+    }
+
+    let html = '<ul class="tree-list tree-list--state">';
+    for (const [, sd] of [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))) {
+      html += `<li class="tree-node tree-node--state">
+        <details class="tree-details" open>
+          <summary class="tree-summary tree-summary--state">
+            <span class="tree-toggle-box"></span>
+            <span>${escHtml(sd.name)}</span>
+          </summary>
+          <ul class="tree-list tree-list--county">`;
+
+      for (const [, cd] of [...sd.counties.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))) {
+        const countyOpen = term ? ' open' : '';
+        html += `<li class="tree-node tree-node--county">
+              <details class="tree-details"${countyOpen}>
+                <summary class="tree-summary tree-summary--county">
+                  <span class="tree-toggle-box"></span>
+                  <span>${escHtml(cd.name)} County</span>
+                </summary>
+                <ul class="tree-list tree-list--facility">`;
+
+        for (const fac of cd.facilities.sort((a, b) => a.name.localeCompare(b.name))) {
+          const sel = fac.id === currentId ? ' tree-node--selected' : '';
+          html += `<li class="tree-node tree-node--facility${sel}" data-fid="${fac.id}">
+                    <button class="tree-facility-btn" type="button"
+                            data-fid="${fac.id}" data-fname="${escHtml(fac.name)}">
+                      ${escHtml(fac.name)}
+                    </button>
+                  </li>`;
+        }
+
+        html += `</ul></details></li>`;
+      }
+      html += `</ul></details></li>`;
+    }
+    html += '</ul>';
+
+    treeFacTreeEl.innerHTML = html;
+
+    treeFacTreeEl.querySelectorAll('.tree-facility-btn').forEach(btn => {
+      btn.addEventListener('click', () => _selectBlFacility(
+        parseInt(btn.dataset.fid, 10), btn.dataset.fname
+      ));
+    });
+
+    // Scroll selected item into view
+    const sel = treeFacTreeEl.querySelector('.tree-node--selected');
+    if (sel) setTimeout(() => sel.scrollIntoView({ block: 'nearest' }), 0);
+  }
+
+  async function _selectBlFacility(facId, facName) {
+    if (facilityIdEl) facilityIdEl.value = facId;
+    if (treeTriggerTxt) {
+      treeTriggerTxt.textContent = facName || `Facility #${facId}`;
+      treeTriggerTxt.classList.remove('placeholder');
+    }
+    _closeTree();
+    _clearStatus();
+    _resetForm();
+    _setStatus('Loading existing baseline data…', 'info');
+    const existing = await loadBaseline(facId);
+    _clearStatus();
+    if (existing)              _fillFormFromData(existing);
+    else if (existing === undefined) _setStatus('Could not load existing baseline data — eTBr server error. Please try again or check the console.', 'danger');
+  }
+
+  // ── Build / populate the facility tree picker ─────────────────────────────
+  async function _loadFacilityTree(preselectedId) {
+    if (!treeTriggerEl) return;
+    if (treeTriggerTxt) { treeTriggerTxt.textContent = '— Loading health facilities… —'; treeTriggerTxt.classList.add('placeholder'); }
+    treeTriggerEl.disabled = true;
 
     let items = [];
-    try { items = await fetchGeoTreeData(); } catch { /* fall through with empty list */ }
+    try { items = await fetchGeoTreeData(); } catch { /* fall through */ }
 
-    // Facility-locked users can only configure their own facility
     const user = getUser();
     if (user?.dataSourceID > 0) {
       items = items.filter(it => it.healthFacilityID === user.dataSourceID);
     }
 
-    if (items.length === 0) {
-      facilitySelectEl.innerHTML = '<option value="">— No facilities available —</option>';
-      facilitySelectEl.disabled = false;
+    _blItems = items;
+
+    if (!items.length) {
+      if (treeTriggerTxt) treeTriggerTxt.textContent = '— No facilities available —';
+      treeTriggerEl.disabled = false;
       return;
     }
 
-    items.sort((a, b) =>
-      a.state.localeCompare(b.state) ||
-      a.county.localeCompare(b.county) ||
-      a.healthFacility.localeCompare(b.healthFacility)
-    );
+    // Single-facility users: disable the picker (no choice to make)
+    const locked = user?.dataSourceID > 0;
+    treeTriggerEl.disabled = locked;
 
-    facilitySelectEl.innerHTML =
-      '<option value="">— Select a health facility —</option>' +
-      items.map(it =>
-        `<option value="${it.healthFacilityID}">${escHtml(it.healthFacility)} — ${escHtml(it.county)}</option>`
-      ).join('');
-    facilitySelectEl.disabled = false;
+    if (treeTriggerTxt) { treeTriggerTxt.textContent = '— Select a health facility —'; treeTriggerTxt.classList.add('placeholder'); }
 
-    // Pre-select
-    const target = preselectedId ? String(preselectedId) : '';
-    if (target && facilitySelectEl.querySelector(`option[value="${target}"]`)) {
-      facilitySelectEl.value = target;
-    } else if (items.length === 1) {
-      facilitySelectEl.value = String(items[0].healthFacilityID);
-    }
+    _renderBlTree('');
 
-    const selectedId = parseInt(facilitySelectEl.value, 10) || 0;
-    facilityIdEl.value = selectedId;
-    if (selectedId) {
-      _setStatus('Loading existing baseline data…', 'info');
-      const existing = await loadBaseline(selectedId);
-      _clearStatus();
-      if (existing)              _fillFormFromData(existing);
-      else if (existing === undefined) _setStatus('Could not load existing baseline data — eTBr server error. Please try again or check the console.', 'danger');
+    // Determine pre-selection
+    const targetId = preselectedId || (items.length === 1 ? items[0].healthFacilityID : 0);
+    if (targetId) {
+      const item = items.find(it => it.healthFacilityID === targetId);
+      if (item) {
+        if (facilityIdEl) facilityIdEl.value = targetId;
+        if (treeTriggerTxt) { treeTriggerTxt.textContent = item.healthFacility; treeTriggerTxt.classList.remove('placeholder'); }
+        _renderBlTree(''); // re-render to show selection highlight
+        _setStatus('Loading existing baseline data…', 'info');
+        const existing = await loadBaseline(targetId);
+        _clearStatus();
+        if (existing)              _fillFormFromData(existing);
+        else if (existing === undefined) _setStatus('Could not load existing baseline data — eTBr server error. Please try again or check the console.', 'danger');
+      }
     }
   }
 
-  // ── Reload baseline data when the facility selector changes ──────────────
-  facilitySelectEl?.addEventListener('change', async () => {
-    const newId = parseInt(facilitySelectEl.value, 10) || 0;
-    if (facilityIdEl) facilityIdEl.value = newId;
-    _clearStatus();
-    _resetForm();
-    if (!newId) return;
-    _setStatus('Loading existing baseline data…', 'info');
-    const existing = await loadBaseline(newId);
-    _clearStatus();
-    if (existing)              _fillFormFromData(existing);
-    else if (existing === undefined) _setStatus('Could not load existing baseline data — eTBr server error. Please try again or check the console.', 'danger');
+  // Toggle tree open / closed
+  treeTriggerEl?.addEventListener('click', () => {
+    if (treeTriggerEl.disabled) return;
+    const nowOpen = !treePanelEl.hidden;
+    treePanelEl.hidden = nowOpen;
+    treeTriggerEl.setAttribute('aria-expanded', nowOpen ? 'false' : 'true');
+    if (!nowOpen) {
+      if (treeSearchEl) { treeSearchEl.value = ''; }
+      _renderBlTree('');
+      treeSearchEl?.focus();
+    }
   });
+
+  treeSearchEl?.addEventListener('input', () => _renderBlTree(treeSearchEl.value));
+
+  // Close tree when modal closes (reset for next open)
+  modal.addEventListener('hidden.bs.modal', () => { _closeTree(); if (treeSearchEl) treeSearchEl.value = ''; });
 
   // ── Open baseline modal ───────────────────────────────────────────────────
   async function showBaselineModal(facilityId, facilityName) {
@@ -13923,8 +14810,8 @@ function resolveGeoScope(user, geo) {
     // This avoids any dependency on the window.bootstrap global.
     document.getElementById('bl-modal-trigger')?.click();
 
-    // Load facility selector, pre-select facilityId, and load its baseline data.
-    await _loadFacilitySelect(facilityId || 0);
+    // Load facility tree, pre-select facilityId, and load its baseline data.
+    await _loadFacilityTree(facilityId || 0);
   }
 
   // ── Inline facility-selection warning banner ──────────────────────────────
