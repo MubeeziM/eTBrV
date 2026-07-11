@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v110720261918';
+const APP_VERSION = 'v110720262046';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -9655,6 +9655,7 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
                   data-hfid="${escHtml(String(p.NearestHFID || 0))}"
                   data-hfname="${escHtml(p.HealthFacility || '')}"
                   data-canwrite="${canWrite}"
+                  data-fromsrv="${fromServer}"
                   role="button" tabindex="0" style="cursor:pointer">
         <td>${regBadge}</td>
         <td>${escHtml(_xlTitleCase(p.PtName) || '—')}</td>
@@ -9664,10 +9665,6 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
         <td>${escHtml(p.Phone || '—')}</td>
         <td>${escHtml(p.HealthFacility || '—')}</td>
       </tr>`;
-    }).join('');
-
-    // Row click → open patient
-    tbodyEl.querySelectorAll('tr[data-tid]').forEach(tr => {
       const open = () => _openPatient(tr);
       tr.addEventListener('click', open);
       tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
@@ -9675,13 +9672,44 @@ document.getElementById('dash-goto-tb-quality')?.addEventListener('keydown', e =
   }
 
   // ── Open a patient record from search results ──────────────────────────────
-  function _openPatient(tr) {
+  async function _openPatient(tr) {
     const tid      = tr.dataset.tid;
     const reg      = tr.dataset.reg;       // 'ART' | 'TB'
     const hfid     = Number(tr.dataset.hfid);
     const hfname   = tr.dataset.hfname || '';
     const canWrite = tr.dataset.canwrite === 'true';
+    const fromSvr  = tr.dataset.fromsrv === 'true';
+
     if (!tid) return;
+
+    // ── If the result came from a server search, the patient may not be in
+    //    local IndexedDB. Fetch the full record from the API and upsert it
+    //    first so the existing load functions find the data locally.
+    if (fromSvr) {
+      const token = getToken();
+      if (token) {
+        try {
+          const endpoint = reg === 'TB'
+            ? `${API_BASE}/tb-patients/${encodeURIComponent(tid)}`
+            : `${API_BASE}/patients/${encodeURIComponent(tid)}`;
+          const resp = await fetch(endpoint, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (resp.ok) {
+            const payload = await resp.json();
+            if (reg === 'TB') {
+              await importTBPayloadFromServer(payload);
+            } else {
+              await importFullPayloadFromServer(payload);
+            }
+          }
+        } catch (e) {
+          console.warn('[Search] Could not pre-fetch patient record from server:', e);
+          // Fall through — if the patient is already locally cached this still works.
+        }
+      }
+    }
 
     _fromSearch = true;
     _searchQuery = inputEl?.value || '';

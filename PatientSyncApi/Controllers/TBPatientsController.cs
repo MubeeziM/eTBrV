@@ -1092,4 +1092,113 @@ public sealed class TBPatientsController : ControllerBase
             return StatusCode(500, new { error = "Could not retrieve data quality details." });
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/{id}
+    //  Returns the full record payload for a single TB patient (registration
+    //  + follow-up), in the same shape as GET /api/tb-patients/mine, so the
+    //  PWA can upsert it locally before opening the edit/view form.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetOne(string id)
+    {
+        if (!Guid.TryParse(id, out var tid))
+            return BadRequest(new { error = "Invalid patient ID." });
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            const string patSql = """
+                SELECT
+                    CAST(PtDetailsTID AS nvarchar(36))            AS PtDetailsTID,
+                    HasChanged, Deleted, NearestHFID, DataSourceID, CountyID,
+                    CAST(EnteredByID AS nvarchar(36))              AS EnteredByID,
+                    CONVERT(nvarchar(30), LastModOn,          126) AS LastModOn,
+                    CONVERT(nvarchar(30), CreatedOn,          126) AS CreatedOn,
+                    CONVERT(nvarchar(10), RegDate,             23) AS RegDate,
+                    UnitTBNo, PtName,
+                    CONVERT(nvarchar(10), DateOfBirth,         23) AS DateOfBirth,
+                    Age, AgeMonths, SexID, ReferredByID,
+                    Village, Boma, Payam, County, PtPhone,
+                    TbTypeID, PtTypeID, TIHF, TICounty,
+                    CONVERT(nvarchar(10), DateRxStarted,       23) AS DateRxStarted,
+                    RegimenID, DiagMethodID, CountryID
+                FROM PtDetailsT
+                WHERE PtDetailsTID = @TID
+                  AND ISNULL(Deleted, 0) = 0
+                """;
+
+            var patients = new List<Dictionary<string, object?>>();
+            await using (var cmd = new SqlCommand(patSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@TID", tid);
+                await using var rdr = await cmd.ExecuteReaderAsync();
+                while (await rdr.ReadAsync())
+                {
+                    var row = new Dictionary<string, object?>();
+                    for (int i = 0; i < rdr.FieldCount; i++)
+                        row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+                    patients.Add(row);
+                }
+            }
+
+            if (patients.Count == 0)
+                return NotFound(new { error = "Patient not found." });
+
+            const string fuSql = """
+                SELECT
+                    CAST(PtFollowUpTID AS nvarchar(36)) AS PtFollowUpTID,
+                    CAST(PtDetailsTID  AS nvarchar(36)) AS PtDetailsTID,
+                    HasChanged, Deleted,
+                    CAST(EnteredByID AS nvarchar(36))           AS EnteredByID,
+                    CONVERT(nvarchar(30), LastModOn, 126)       AS LastModOn,
+                    CONVERT(nvarchar(30), CreatedOn,  126)      AS CreatedOn,
+                    CONVERT(nvarchar(10), Mon0Date,          23) AS Mon0Date,
+                    Mon0LabNo, Mon0LabResultID,
+                    CONVERT(nvarchar(10), Mon0XpertResultDate, 23) AS Mon0XpertResultDate,
+                    Mon0XpertResultID,
+                    CONVERT(nvarchar(10), HIVTestDate,       23) AS HIVTestDate,
+                    HIVTestResultID, DSTResult,
+                    CONVERT(nvarchar(10), Mon2Date,          23) AS Mon2Date,
+                    Mon2LabNo, Mon2LabResultID,
+                    CONVERT(nvarchar(10), Mon3Date,          23) AS Mon3Date,
+                    Mon3LabNo, Mon3LabResultID,
+                    CONVERT(nvarchar(10), Mon5Date,          23) AS Mon5Date,
+                    Mon5LabNo, Mon5LabResultID,
+                    CONVERT(nvarchar(10), Mon6Date,          23) AS Mon6Date,
+                    Mon6LabNo, Mon6LabResultID,
+                    OutcomeID,
+                    CONVERT(nvarchar(10), OutcomeDate,       23) AS OutcomeDate,
+                    TOHF, TOCounty, OnART,
+                    CONVERT(nvarchar(10), ARTDate,           23) AS ARTDate,
+                    OnCPT,
+                    CONVERT(nvarchar(10), CPTDate,           23) AS CPTDate,
+                    MovedTo2ndLine, Remarks
+                FROM PtFollowUpT WHERE PtDetailsTID = @TID
+                """;
+
+            var followUps = new List<Dictionary<string, object?>>();
+            await using (var cmd = new SqlCommand(fuSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@TID", tid);
+                await using var rdr = await cmd.ExecuteReaderAsync();
+                while (await rdr.ReadAsync())
+                {
+                    var row = new Dictionary<string, object?>();
+                    for (int i = 0; i < rdr.FieldCount; i++)
+                        row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+                    followUps.Add(row);
+                }
+            }
+
+            return Ok(new { patients, followUps });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in TB GetOne for patient {TID}.", tid);
+            return StatusCode(500, new { error = "Could not retrieve TB patient record." });
+        }
+    }
 }

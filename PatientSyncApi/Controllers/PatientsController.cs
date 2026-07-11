@@ -1249,4 +1249,147 @@ public sealed class PatientsController : ControllerBase
             return StatusCode(500, new { error = "Search failed." });
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    //  GET /api/patients/{id}
+    //  Returns the full record payload for a single ART patient, in the same
+    //  shape as GET /api/patients/mine so the PWA can upsert it locally before
+    //  opening the edit form (needed when the patient was found via server
+    //  search and is not yet in the device's local IndexedDB).
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetOne(string id)
+    {
+        if (!Guid.TryParse(id, out var tid))
+            return BadRequest(new { error = "Invalid patient ID." });
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            const string patSql = """
+                SELECT
+                    CAST(PtDetailsTID AS nvarchar(36))            AS PtDetailsTID,
+                    HasChanged, Deleted, NearestHFID,
+                    DataSourceID, CountyID,
+                    CAST(EnteredByID AS nvarchar(36))              AS EnteredByID,
+                    CONVERT(nvarchar(30), LastModOn,          126) AS LastModOn,
+                    CONVERT(nvarchar(30), CreatedOn,          126) AS CreatedOn,
+                    HIVRetest, ARTNo,
+                    CONVERT(nvarchar(10), ARTStartDate,        23) AS ARTStartDate,
+                    CONVERT(nvarchar(10), DateEnrolledInCare,  23) AS DateEnrolledInCare,
+                    PtName, ResidenceAddress, Phone1, Phone2,
+                    OccupationID, OccupationOther, KeyPopuID, KeyPopuOther,
+                    Age,
+                    CONVERT(nvarchar(10), DateOfBirth,         23) AS DateOfBirth,
+                    SexID,
+                    WeightKg, HeightCm, MUACCm, BMI,
+                    WHOStageID, CD4Value, CD4IsPercent,
+                    CONVERT(nvarchar(10), CPTStartDate,        23) AS CPTStartDate,
+                    CPTDrugID,
+                    CONVERT(nvarchar(10), TBRxStartDate,       23) AS TBRxStartDate,
+                    UnitTBNo, TBStatusID,
+                    BreastfeedingID, IsTransferIn, TransferFromFacility,
+                    GuardianName, GuardianPhone1
+                FROM PtDetailsARTT
+                WHERE PtDetailsTID = @TID
+                  AND ISNULL(Deleted, 0) = 0
+                """;
+
+            var patients = new List<Dictionary<string, object?>>();
+            await using (var cmd = new SqlCommand(patSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@TID", tid);
+                await using var rdr = await cmd.ExecuteReaderAsync();
+                while (await rdr.ReadAsync())
+                {
+                    var row = new Dictionary<string, object?>();
+                    for (int i = 0; i < rdr.FieldCount; i++)
+                        row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+                    patients.Add(row);
+                }
+            }
+
+            if (patients.Count == 0)
+                return NotFound(new { error = "Patient not found." });
+
+            var tidStr = tid.ToString();
+
+            async Task<List<Dictionary<string, object?>>> ReadChild(string sql)
+            {
+                await using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@TID", tid);
+                var rows = new List<Dictionary<string, object?>>();
+                await using var rdr = await cmd.ExecuteReaderAsync();
+                while (await rdr.ReadAsync())
+                {
+                    var row = new Dictionary<string, object?>();
+                    for (int i = 0; i < rdr.FieldCount; i++)
+                        row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+                    rows.Add(row);
+                }
+                return rows;
+            }
+
+            var inhRecords = await ReadChild("""
+                SELECT CAST(INHProphylaxisTID AS nvarchar(36)) AS INHProphylaxisTID,
+                       CAST(PtDetailsTID     AS nvarchar(36)) AS PtDetailsTID,
+                       SequenceNo,
+                       CONVERT(nvarchar(10), INHDate, 23)     AS INHDate,
+                       CAST(EnteredByID      AS nvarchar(36)) AS EnteredByID,
+                       HasChanged,
+                       CONVERT(nvarchar(30), LastModOn, 126)  AS LastModOn,
+                       CONVERT(nvarchar(30), CreatedOn,  126) AS CreatedOn
+                FROM INHProphylaxisT WHERE PtDetailsTID = @TID
+                """);
+
+            var pmtctRecords = await ReadChild("""
+                SELECT CAST(PMTCTPregnancyTID AS nvarchar(36)) AS PMTCTPregnancyTID,
+                       CAST(PtDetailsTID      AS nvarchar(36)) AS PtDetailsTID,
+                       PregnancyNo, ANCNo,
+                       CONVERT(nvarchar(10), DeliveryDate, 23) AS DeliveryDate,
+                       MotherReceivedART, InfantReceivedARVs,
+                       CAST(EnteredByID       AS nvarchar(36)) AS EnteredByID,
+                       HasChanged,
+                       CONVERT(nvarchar(30), LastModOn, 126)   AS LastModOn,
+                       CONVERT(nvarchar(30), CreatedOn,  126)  AS CreatedOn
+                FROM PMTCTPregnancyT WHERE PtDetailsTID = @TID
+                """);
+
+            var regimenHistory = await ReadChild("""
+                SELECT CAST(RegimenHistoryTID AS nvarchar(36)) AS RegimenHistoryTID,
+                       CAST(PtDetailsTID      AS nvarchar(36)) AS PtDetailsTID,
+                       RegimenLine, SequenceNo, RegimenID, ChangeReasonID, OtherReasonText,
+                       CONVERT(nvarchar(10), EventDate, 23)    AS EventDate,
+                       CAST(EnteredByID       AS nvarchar(36)) AS EnteredByID,
+                       HasChanged,
+                       CONVERT(nvarchar(30), LastModOn, 126)   AS LastModOn,
+                       CONVERT(nvarchar(30), CreatedOn,  126)  AS CreatedOn
+                FROM RegimenHistoryT WHERE PtDetailsTID = @TID
+                """);
+
+            var followUps = await ReadChild("""
+                SELECT CAST(PtFollowUpTID AS nvarchar(36)) AS PtFollowUpTID,
+                       CAST(PtDetailsTID  AS nvarchar(36)) AS PtDetailsTID,
+                       CONVERT(nvarchar(10), VisitDate, 23) AS VisitDate,
+                       VisitMonth, FollowUpStatusID, RegimenID, TBStatusID,
+                       StopReasonID, StopOtherText, WeeksInterrupted,
+                       WeightKg, HeightCm, BMI, CPTDrugID,
+                       CD4Value, CD4IsPercent, ViralLoad, Notes, Deleted,
+                       CAST(EnteredByID   AS nvarchar(36)) AS EnteredByID,
+                       HasChanged,
+                       CONVERT(nvarchar(30), LastModOn, 126) AS LastModOn,
+                       CONVERT(nvarchar(30), CreatedOn,  126) AS CreatedOn
+                FROM PtFollowUpARTT WHERE PtDetailsTID = @TID
+                """);
+
+            return Ok(new { patients, inhRecords, pmtctRecords, regimenHistory, followUps });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in GetOne for patient {TID}.", tid);
+            return StatusCode(500, new { error = "Could not retrieve patient record." });
+        }
+    }
 }
