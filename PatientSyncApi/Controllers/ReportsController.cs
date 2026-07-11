@@ -4124,4 +4124,100 @@ public sealed class ReportsController : ControllerBase
                 break;
         }
     }
+
+    // ── GET api/reports/dashboard-counts ─────────────────────────────────
+    /// <summary>
+    /// Returns the total non-deleted ART and TB patient counts scoped to the
+    /// caller's geographic area (facility → county → state → sub-recipient → national).
+    /// </summary>
+    [HttpGet("dashboard-counts")]
+    public async Task<IActionResult> DashboardCounts()
+    {
+        bool isNgo = User.IsInRole("NGO");
+        bool isZonal = User.IsInRole("StateCoordinator");
+        bool isDtls  = User.IsInRole("CountySupervisor");
+
+        int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
+        int.TryParse(User.FindFirstValue("state_id"),    out var userStateId);
+        int.TryParse(User.FindFirstValue("county_id"),   out var userCountyId);
+        int.TryParse(User.FindFirstValue("sub_rec_id"),  out var userSubRecId);
+        int.TryParse(User.FindFirstValue("location_id"), out var userLocationId);
+
+        // Build parameterised geo WHERE clause (same logic as report generation)
+        var geoConditions = new List<string>();
+        var sqlParams     = new Dictionary<string, object>();
+
+        if (userFacilityId > 0)
+        {
+            geoConditions.Add("hf.HealthFacilityID = @FacilityId");
+            sqlParams["@FacilityId"] = userFacilityId;
+        }
+        else if (userCountyId > 0)
+        {
+            geoConditions.Add("hf.CountyID = @CountyId");
+            sqlParams["@CountyId"] = userCountyId;
+        }
+        else if (userStateId > 0)
+        {
+            geoConditions.Add("hf.StateID = @StateId");
+            sqlParams["@StateId"] = userStateId;
+        }
+
+        if (isNgo && userSubRecId > 0)
+        {
+            geoConditions.Add("hf.SubRecID = @SubRecId");
+            sqlParams["@SubRecId"] = userSubRecId;
+            if ((isZonal || isDtls) && userLocationId > 0)
+            {
+                geoConditions.Add("hf.LocationID = @LocationId");
+                sqlParams["@LocationId"] = userLocationId;
+            }
+        }
+
+        var geoAnd = geoConditions.Count > 0
+            ? "AND " + string.Join(" AND ", geoConditions)
+            : string.Empty;
+
+        const string ArtSql = """
+            SELECT COUNT(*)
+            FROM   PtDetailsARTT p
+            JOIN   HealthFacilityT hf ON hf.HealthFacilityID = p.NearestHFID
+            WHERE  ISNULL(p.Deleted, 0) = 0
+            {0}
+            """;
+
+        const string TbSql = """
+            SELECT COUNT(*)
+            FROM   PtDetailsT p
+            JOIN   HealthFacilityT hf ON hf.HealthFacilityID = p.NearestHFID
+            WHERE  ISNULL(p.Deleted, 0) = 0
+            {0}
+            """;
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            async Task<int> Count(string template)
+            {
+                var sql = string.Format(template, geoAnd);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = sql;
+                foreach (var (k, v) in sqlParams)
+                    cmd.Parameters.AddWithValue(k, v);
+                return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+            }
+
+            var artCount = await Count(ArtSql);
+            var tbCount  = await Count(TbSql);
+
+            return Ok(new { artCount, tbCount });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching dashboard counts");
+            return StatusCode(500, new { error = "Failed to retrieve counts." });
+        }
+    }
 }

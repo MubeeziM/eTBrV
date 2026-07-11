@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v110720261638';
+const APP_VERSION = 'v110720261744';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -4090,8 +4090,6 @@ const artRegisterScreen   = document.getElementById('art-register-screen');
  */
 function updateDashboardStats() {
   try {
-    const total    = getAllPtDetails().length;
-    const tbTotal  = getAllPtDetailsTB().length;
     const pending  = getAllPtDetailsForSync().length + getAllPtDetailsTBForSync().length;
     const lastSyncART = localStorage.getItem('art.lastSync');
     const lastSyncTB  = localStorage.getItem('tb.lastSync');
@@ -4105,8 +4103,9 @@ function updateDashboardStats() {
     const elPend  = document.getElementById('db-stat-pending');
     const elSync  = document.getElementById('db-stat-lastsync');
 
-    if (elPts)   elPts.textContent   = total;
-    if (elTbPts) elTbPts.textContent = tbTotal;
+    // Show local counts immediately as a fallback while the server responds
+    if (elPts)   elPts.textContent   = getAllPtDetails().length;
+    if (elTbPts) elTbPts.textContent = getAllPtDetailsTB().length;
     if (elPend)  elPend.textContent  = pending;
     if (elSync) {
       if (lastSync) {
@@ -4120,6 +4119,23 @@ function updateDashboardStats() {
       }
     }
   } catch { /* DB not ready yet — stats will be refreshed on next call */ }
+
+  // Overlay server-side counts (authoritative, scope-filtered) when online
+  if (navigator.onLine && getToken()) {
+    const token = getToken();
+    fetch(`${API_BASE}/reports/dashboard-counts`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        const elPts   = document.getElementById('db-stat-patients');
+        const elTbPts = document.getElementById('db-stat-tb-patients');
+        if (elPts)   elPts.textContent   = data.artCount ?? elPts.textContent;
+        if (elTbPts) elTbPts.textContent = data.tbCount  ?? elTbPts.textContent;
+      })
+      .catch(() => { /* offline or error — keep local counts */ });
+  }
 }
 
 /** Navigate to the dashboard, hiding any open register screen. */
@@ -10125,6 +10141,7 @@ function resolveGeoScope(user, geo) {
   const geoTreeWrap     = document.getElementById('rpt-geo-tree');
   const treeEl          = document.getElementById('rpt-tree');
   const summaryEl       = document.getElementById('rpt-tree-summary');
+  const treeSearchEl    = document.getElementById('rpt-tree-search');
 
   // Delegated handler: clicking × on a chip unchecks that facility in the tree
   summaryEl.addEventListener('click', e => {
@@ -10489,7 +10506,50 @@ function resolveGeoScope(user, geo) {
 
     applyScope(scope);
     updateSummary(true);
+    // Clear any previous search when tree is rebuilt
+    if (treeSearchEl) { treeSearchEl.value = ''; _filterTree(''); }
   }
+
+  // ── Tree filter (search box) ──────────────────────────────────────────
+  function _filterTree(term) {
+    const q = term.trim().toLowerCase();
+    for (const facNode of treeEl.querySelectorAll('.rpt-tree-facility')) {
+      const label = facNode.querySelector('.rpt-tree-label')?.textContent?.toLowerCase() ?? '';
+      const match = !q || label.includes(q);
+      facNode.style.display = match ? '' : 'none';
+    }
+    // Show/hide county nodes based on whether any children are visible
+    for (const countyNode of treeEl.querySelectorAll('.rpt-tree-county')) {
+      const visibleFacs = [...countyNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-facility')]
+        .some(n => n.style.display !== 'none');
+      countyNode.style.display = visibleFacs ? '' : 'none';
+      if (q && visibleFacs) {
+        const ch = countyNode.querySelector(':scope > .rpt-tree-children');
+        const tog = countyNode.querySelector(':scope > .rpt-tree-toggle');
+        if (ch && !ch.classList.contains('open')) { ch.classList.add('open'); tog?.classList.add('open'); }
+      }
+    }
+    // Show/hide state nodes based on whether any county children are visible
+    for (const stateNode of treeEl.querySelectorAll('.rpt-tree-state')) {
+      const visibleCounties = [...stateNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county')]
+        .some(n => n.style.display !== 'none');
+      stateNode.style.display = visibleCounties ? '' : 'none';
+      if (q && visibleCounties) {
+        const ch = stateNode.querySelector(':scope > .rpt-tree-children');
+        const tog = stateNode.querySelector(':scope > .rpt-tree-toggle');
+        if (ch && !ch.classList.contains('open')) { ch.classList.add('open'); tog?.classList.add('open'); }
+      }
+    }
+  }
+
+  if (treeSearchEl) {
+    treeSearchEl.addEventListener('input', () => _filterTree(treeSearchEl.value));
+  }
+
+  // Reset search when modal is closed
+  modal.addEventListener('hidden.bs.modal', () => {
+    if (treeSearchEl) { treeSearchEl.value = ''; _filterTree(''); }
+  });
 
   // ── DOM helpers ───────────────────────────────────────────────────────
   function _el(tag, cls, text) {
