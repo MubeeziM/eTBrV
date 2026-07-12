@@ -1596,9 +1596,9 @@ input[type="month"]:focus {
 .migration-fac-row:hover { background: var(--bg); }
 
 .migration-fac-name {
-  flex: none;
+  flex: 0 0 220px;
+  max-width: 220px;
   min-width: 0;
-  max-width: 38%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

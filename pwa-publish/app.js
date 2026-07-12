@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v120720260053';
+const APP_VERSION = 'v120720260937';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -4767,12 +4767,21 @@ _wireUmgmtCard(
 const _migrationPolls = new Map();
 
 /**
+ * True when the current user is allowed to trigger migration actions.
+ * Set on each panel load; false for read-only users.
+ */
+let _migrationCanAct = false;
+
+/**
  * Loads the facility list from the API and renders the migration table.
  * Called when the Migration card is clicked.
  */
 async function loadLegacyMigrationPanel() {
   const user = getUser();
-  if (!user || (user.superUserID !== 1 && user.adminID !== 1)) return;
+  if (!user) return;
+
+  // Determine whether this user may trigger migration actions.
+  _migrationCanAct = user.superUserID === 1 || user.adminID === 1;
 
   const token = getToken();
   if (!token || !navigator.onLine) return;
@@ -4839,11 +4848,11 @@ function _migrationFacilityNode(r) {
       data-count="${r.legacyPatients ?? 0}">
     <div class="migration-fac-row">
       <span class="migration-fac-name">${escHtml(r.facilityName)}</span>
-      <span style="flex-shrink:0;min-width:60px;display:flex;justify-content:center;align-items:center;margin-left:auto">${countStr ? `<span class="migration-count-chip">${countStr}</span>` : ''}</span>
-      <span id="migration-migrate-${r.dataSourceId}" style="min-width:82px;display:flex;justify-content:center;align-items:center">${_migrationMigrateCell(r)}</span>
-      <span id="migration-delta-${r.dataSourceId}" style="min-width:110px;display:flex;justify-content:center;align-items:center">${_migrationDeltaCell(r)}</span>
-      <span id="migration-undo-${r.dataSourceId}" style="min-width:80px;display:flex;justify-content:center;align-items:center">${_migrationUndoCell(r)}</span>
-      <span id="migration-status-${r.dataSourceId}" style="min-width:160px;display:flex;align-items:center">${_migrationStatusCell(r)}</span>
+      <span style="flex-shrink:0;min-width:60px;display:flex;justify-content:center;align-items:center">${countStr ? `<span class="migration-count-chip">${countStr}</span>` : ''}</span>
+      <span id="migration-migrate-${r.dataSourceId}" style="flex-shrink:0;min-width:82px;display:flex;justify-content:center;align-items:center">${_migrationMigrateCell(r)}</span>
+      <span id="migration-delta-${r.dataSourceId}" style="flex-shrink:0;min-width:110px;display:flex;justify-content:center;align-items:center">${_migrationDeltaCell(r)}</span>
+      <span id="migration-undo-${r.dataSourceId}" style="flex-shrink:0;min-width:80px;display:flex;justify-content:center;align-items:center">${_migrationUndoCell(r)}</span>
+      <span id="migration-status-${r.dataSourceId}" style="flex-shrink:0;min-width:160px;display:flex;flex-direction:column;align-items:flex-start;gap:3px">${_migrationStatusCell(r)}</span>
     </div>
   </li>`;
 }
@@ -4992,6 +5001,13 @@ function _migrationProgressBar(dataSourceId, pct, msg) {
 /** Returns HTML for the Migrate column of a facility row. */
 function _migrationMigrateCell(r) {
   if (r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued' || r.isMigrated) return '';
+  if (!_migrationCanAct) {
+    return `<button type="button" disabled
+              style="flex-shrink:0;background:#e5e7eb;color:#9ca3af;border:1px solid #d1d5db;border-radius:6px;
+                     padding:0.22rem 0.65rem;font-size:0.78rem;cursor:not-allowed;font-weight:600;white-space:nowrap">
+              Migrate
+            </button>`;
+  }
   return `<button type="button"
             class="migration-start-btn"
             data-dsid="${r.dataSourceId}"
@@ -5006,7 +5022,7 @@ function _migrationMigrateCell(r) {
 /** Returns HTML for the Sync Changes column of a facility row. */
 function _migrationDeltaCell(r) {
   if (r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued') return '';
-  if (r.isMigrated) {
+  if (r.isMigrated && _migrationCanAct) {
     return `<button type="button"
               class="migration-delta-btn"
               data-dsid="${r.dataSourceId}"
@@ -5027,6 +5043,13 @@ function _migrationDeltaCell(r) {
 function _migrationUndoCell(r) {
   if (r.progressStatus === 'running' || r.progressStatus === 'delta-running' || r.progressStatus === 'queued') return '';
   if (r.isMigrated) {
+    if (!_migrationCanAct) {
+      return `<button type="button" disabled
+                style="flex-shrink:0;background:#e5e7eb;color:#9ca3af;border:1px solid #d1d5db;border-radius:6px;
+                       padding:0.22rem 0.6rem;font-size:0.78rem;cursor:not-allowed;font-weight:500;white-space:nowrap">
+                Undo
+              </button>`;
+    }
     return `<button type="button"
               class="migration-reset-btn"
               data-dsid="${r.dataSourceId}"
@@ -5872,12 +5895,9 @@ function showAppScreen() {
   // Always land on the dashboard after login
   showDashboard();
 
-  // Show baseline card for facility staff AND county supervisors (DTLS).
-  // County supervisors have no facility (dataSourceID=0) so userCanWrite()
-  // returns false for them, but they still need to enter baseline data.
+  // Baseline card is visible to all users regardless of role.
   const baselineCard = document.getElementById('dash-goto-baseline');
-  const _blUser = getUser();
-  if (baselineCard) baselineCard.hidden = !userCanWrite() && !_blUser?.dtls && !_blUser?.superUserID && !_blUser?.adminID;
+  if (baselineCard) baselineCard.hidden = false;
 
   // Start the 5-minute heartbeat and kick off a bidirectional sync on login.
   // 1. Upload any local HasChanged=1 records to the server first (1.5 s delay).
