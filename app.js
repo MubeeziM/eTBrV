@@ -8589,7 +8589,7 @@ async function _monSelectCategory(cat) {
     let rows;
     if (_monUseServer) {
       const tbody = document.getElementById('mon-patient-tbody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from server…</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from the eTBr server…</td></tr>';
       rows = [];
       const token = getToken();
       if (token && _reallyOnline) {
@@ -8962,7 +8962,10 @@ async function _dqBuildTree() {
           if (resp.ok) {
             const serverFacs = await resp.json();
             if (Array.isArray(serverFacs) && serverFacs.length) {
-              activeFacs = serverFacs.map(f => ({ HealthFacilityID: f.HealthFacilityID }));
+              activeFacs = serverFacs.map(f => ({
+                HealthFacilityID: f.HealthFacilityID,
+                HealthFacility:   f.HealthFacility || ''
+              }));
               _dqUseServer = true;
             }
           }
@@ -8996,9 +8999,18 @@ async function _dqBuildTree() {
     }
 
     if (!stateMap.size) {
-      treeEl.innerHTML = '<div class="tree-empty">No facilities found.</div>';
-      _dqFacilityIDs = [];
-      _dqRefreshAll();
+      if (_dqUseServer) {
+        // No local geo hierarchy but server has data — load counts for all
+        // accessible facilities (JWT scope enforced server-side).
+        treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
+        if (summaryEl) summaryEl.textContent = 'All facilities';
+        _dqFacilityIDs = [];
+        _dqRefreshAll();
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No facilities found.</div>';
+        _dqFacilityIDs = [];
+        _dqRefreshAll();
+      }
       return;
     }
 
@@ -9218,6 +9230,17 @@ function _dqSetSidebarCollapsed(collapsed) {
 // ── Counts and list rendering ──────────────────────────────────────────────
 
 async function _dqRefreshAll() {
+  // Show skeleton shimmer on all count badges while the server call is in flight.
+  const countIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
+    'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
+    'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
+    'dq-count-norxstart','dq-count-futuredates','dq-count-deleted'];
+  if (_dqUseServer) {
+    countIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = ''; el.classList.add('dq-stat-count--loading'); }
+    });
+  }
   try {
     let counts;
     if (_dqUseServer) {
@@ -9242,6 +9265,7 @@ async function _dqRefreshAll() {
     const setCount = (id, n, isIssue) => {
       const el = document.getElementById(id);
       if (!el) return;
+      el.classList.remove('dq-stat-count--loading');
       el.textContent = fmt(n);
       if (isIssue) el.classList.toggle('dq-stat-count--issue', n > 0);
     };
@@ -9261,6 +9285,8 @@ async function _dqRefreshAll() {
 
     _dqSelectCategory(_dqCategory);
   } catch (err) {
+    // Remove skeletons on error too
+    countIds.forEach(id => document.getElementById(id)?.classList.remove('dq-stat-count--loading'));
     console.error('[DQ] _dqRefreshAll:', err);
   }
 }
@@ -9274,27 +9300,56 @@ async function _dqSelectCategory(cat) {
   });
   try {
     let rows;
+    const _loadBar = document.getElementById('dq-load-bar');
     if (_dqUseServer) {
+      if (_loadBar) _loadBar.hidden = false;
       const tbody = document.getElementById('dq-patient-tbody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from server…</td></tr>';
+      if (tbody) tbody.innerHTML = '';
       rows = [];
       const token = getToken();
+      const DQ_ROW_LIMIT = 500;
       if (token && _reallyOnline) {
+        let fetchErr = null;
         try {
-          const qs = new URLSearchParams({ category: cat });
+          const qs = new URLSearchParams({ category: cat, limit: String(DQ_ROW_LIMIT) });
           _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(60000),
           });
           if (resp.ok) rows = await resp.json();
-        } catch (_) {}
+          else fetchErr = new Error(`Server returned ${resp.status}`);
+        } catch (e) { fetchErr = e; }
+        if (_loadBar) _loadBar.hidden = true;
+        if (fetchErr) {
+          const isTimeout = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
+          if (tbody) tbody.innerHTML = isTimeout
+            ? `<tr><td colspan="12" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — too many records to stream. Use <strong>Export to Excel</strong> to get the full list.</td></tr>`
+            : `<tr><td colspan="12" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
+          return;
+        }
+        // Show truncation note if the server capped the results
+        const totalBadge = parseInt(
+          document.getElementById(`dq-count-${cat}`)?.textContent?.replace(/\D/g, '') || '0', 10);
+        if (rows.length >= DQ_ROW_LIMIT && totalBadge > rows.length) {
+          _dqRenderList(cat, rows);
+          const hintEl = document.getElementById('dq-list-hint');
+          if (hintEl) {
+            hintEl.innerHTML =
+              `⚠\u202fShowing first <strong>${rows.length.toLocaleString()}</strong> of <strong>${totalBadge.toLocaleString()}</strong> patients. Use <strong>Export&nbsp;to&nbsp;Excel</strong> for the complete list.`;
+            hintEl.style.cssText = 'color:#d97706;font-weight:500;margin-top:0.3rem;display:block';
+          }
+          return;
+        }
+      } else {
+        if (_loadBar) _loadBar.hidden = true;
       }
     } else {
       rows = getDQList(cat, _dqFacilityIDs);
     }
     _dqRenderList(cat, rows);
   } catch (err) {
+    document.getElementById('dq-load-bar')?.setAttribute('hidden', '');
     const tbody = document.getElementById('dq-patient-tbody');
     if (tbody) tbody.innerHTML =
       `<tr><td colspan="11" class="text-danger text-center py-3">Error: ${escHtml(err.message)}</td></tr>`;

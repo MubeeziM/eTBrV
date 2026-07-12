@@ -1686,7 +1686,8 @@ public sealed class TBPatientsController : ControllerBase
     [HttpGet("quality-patients")]
     public async Task<IActionResult> GetQualityPatients(
         [FromQuery] int[]?  facilityIds = null,
-        [FromQuery] string  category    = "all")
+        [FromQuery] string  category    = "all",
+        [FromQuery] int     limit       = 500)
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
@@ -1860,6 +1861,10 @@ public sealed class TBPatientsController : ControllerBase
 
         try
         {
+            int topN = Math.Clamp(limit, 1, 2000);
+            // Append row limit — works with plain SELECTs and CTEs alike
+            querySql += "\nOFFSET 0 ROWS FETCH NEXT @Top ROWS ONLY";
+
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
             await using var cmd = new SqlCommand(querySql, conn);
@@ -1867,8 +1872,10 @@ public sealed class TBPatientsController : ControllerBase
             // Also add facD params for duplicates (same param names, single conn)
             if (category == "duplicates") AddFacParams(cmd, facDPrms);
             cmd.Parameters.AddWithValue("@MinYear", minYear);
+            cmd.Parameters.AddWithValue("@Top", topN);
             await using var rdr = await cmd.ExecuteReaderAsync();
             var rows = await ReadRowsAsync(rdr);
+            Response.Headers["X-Total-Limit"] = topN.ToString();
             return Ok(rows);
         }
         catch (Exception ex)
