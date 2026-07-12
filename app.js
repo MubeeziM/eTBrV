@@ -4147,6 +4147,7 @@ function updateDashboardStats() {
 
 /** Navigate to the dashboard, hiding any open register screen. */
 function showDashboard() {
+  _unlockOrientation();
   if (dashboardScreen)     dashboardScreen.hidden     = false;
   if (artRegisterScreen)   artRegisterScreen.hidden   = true;
   if (tbMonitoringScreen)  tbMonitoringScreen.hidden  = true;
@@ -4709,6 +4710,52 @@ document.getElementById('umf-save-btn')?.addEventListener('click', async () => {
 
 // ─── User Management Card Clicks / Panel Toggle ───────────────────────────
 
+// Lock orientation to landscape while the migration panel is open;
+// unlock when any other panel opens or the user navigates away.
+let _orientationChangeListener = null;
+
+function _lockLandscape() {
+  const prompt  = document.getElementById('migration-rotate-prompt');
+  const portrait = () => window.matchMedia('(orientation: portrait)').matches;
+
+  // Remove any stale listener from a previous open.
+  if (_orientationChangeListener) {
+    screen.orientation?.removeEventListener('change', _orientationChangeListener);
+  }
+
+  // Track orientation changes: show/hide the prompt as the device rotates.
+  _orientationChangeListener = () => {
+    if (prompt) prompt.hidden = !portrait();
+  };
+  screen.orientation?.addEventListener('change', _orientationChangeListener);
+
+  // Try the browser API first (works on Android standalone PWA when auto-rotate is ON).
+  const lockAttempt = (async () => {
+    try {
+      if (screen.orientation?.lock) await screen.orientation.lock('landscape');
+    } catch (_) { /* not supported or denied — fall through to prompt */ }
+  })();
+
+  // Show the prompt immediately if currently in portrait; it will
+  // auto-hide via the listener once the device (or API) goes landscape.
+  if (prompt) {
+    lockAttempt.then(() => { prompt.hidden = !portrait(); });
+    if (portrait()) prompt.hidden = false;
+  }
+}
+
+function _unlockOrientation() {
+  const prompt = document.getElementById('migration-rotate-prompt');
+  if (prompt) prompt.hidden = true;
+  if (_orientationChangeListener) {
+    screen.orientation?.removeEventListener('change', _orientationChangeListener);
+    _orientationChangeListener = null;
+  }
+  try {
+    if (screen.orientation?.unlock) screen.orientation.unlock();
+  } catch (_) {}
+}
+
 /** Opens one panel, closes the others. If already open, closes it. */
 async function _toggleUmgmtPanel(panelId, loadFn) {
   // Warn if the migration panel is currently open and migrations are active.
@@ -4723,11 +4770,17 @@ async function _toggleUmgmtPanel(panelId, loadFn) {
   const target = document.getElementById(panelId);
   if (!target) return;
   const wasHidden = target.hidden;
+  const migrationWasOpen = !document.getElementById('migration-panel')?.hidden;
   panels.forEach(p => { p.hidden = true; });
   if (wasHidden) {
     target.hidden = false;
     target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     if (loadFn) loadFn();
+    if (panelId === 'migration-panel') _lockLandscape();
+    else if (migrationWasOpen)         _unlockOrientation();
+  } else {
+    // Toggled closed — if migration panel was the one closing, release lock.
+    if (migrationWasOpen) _unlockOrientation();
   }
 }
 
@@ -4876,7 +4929,7 @@ function _renderMigrationTree(rows, filterText = '') {
   if (visible.length === 0) {
     container.innerHTML = term
       ? `<p class="tree-empty">No facilities match "<em>${escHtml(filterText)}</em>".</p>`
-      : `<p class="tree-empty">No legacy records found.</p>`;
+      : `<p class="tree-empty">No old eTBr legacy records found.</p>`;
     return;
   }
 
@@ -5331,7 +5384,7 @@ async function _warnIfMigratingAsync() {
 }
 
 // Delegated click handler for Migrate / Retry buttons in the migration table
-document.getElementById('usermgmt-section')?.addEventListener('click', async e => {
+document.getElementById('migration-panel')?.addEventListener('click', async e => {
   const btn = e.target.closest('.migration-start-btn');
   if (!btn) return;
 
@@ -5389,7 +5442,7 @@ document.getElementById('usermgmt-section')?.addEventListener('click', async e =
 });
 
 // Delegated click handler for Remove (rollback) buttons
-document.getElementById('usermgmt-section')?.addEventListener('click', async e => {
+document.getElementById('migration-panel')?.addEventListener('click', async e => {
   const btn = e.target.closest('.migration-reset-btn');
   if (!btn) return;
 
@@ -5463,7 +5516,7 @@ document.getElementById('usermgmt-section')?.addEventListener('click', async e =
 });
 
 // Delegated click handler for Sync Changes (delta) buttons
-document.getElementById('usermgmt-section')?.addEventListener('click', async e => {
+document.getElementById('migration-panel')?.addEventListener('click', async e => {
   const btn = e.target.closest('.migration-delta-btn');
   if (!btn) return;
 
@@ -5472,7 +5525,7 @@ document.getElementById('usermgmt-section')?.addEventListener('click', async e =
 
   const confirmed = await showGenericConfirmModal(
     'Sync Changes',
-    `Sync records changed in the legacy system after 30 Jun 2026 for<br><em>${escHtml(name)}</em>?<br><br>Only modified or newly added patients will be processed.`,
+    `Sync patient records that changed in the old eTBr system after 30 Jun 2026 for<br><em>${escHtml(name)}</em>?<br><br>Only modified or newly added patients will be processed.`,
     'Sync Changes'
   );
   if (!confirmed) return;
@@ -5917,6 +5970,7 @@ function showAppScreen() {
 async function showAuthScreen() {
   stopPeriodicSync();
   _stopInactivityWatcher();
+  _unlockOrientation();
   // When offline, show the PIN panel if a PIN is enrolled — even if the user
   // profile was cleared from localStorage (e.g. after an explicit logout).
   if (!_reallyOnline) {

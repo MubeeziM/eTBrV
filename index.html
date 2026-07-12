@@ -522,7 +522,7 @@
             </div>
             <div class="db-card-body mt-3">
               <h4>Legacy Data Migration</h4>
-              <p>Import historical patient records from the legacy system, one facility at a time.</p>
+              <p>Import historical patient records from the old eTBr system, one facility at a time.</p>
               <span id="migration-summary-badge" style="font-size:0.82rem;color:#6b7280;margin-top:0.3rem;display:block"></span>
             </div>
             <div class="db-card-foot">
@@ -553,6 +553,14 @@
 
         <!-- ── Panel: Legacy Data Migration ──────────────────────────────── -->
         <div id="migration-panel" class="umgmt-panel" hidden>
+          <!-- Shown in portrait; hides automatically when device rotates to landscape -->
+          <div id="migration-rotate-prompt" class="landscape-rotate-prompt" hidden>
+            <svg width="68" height="68" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+              <line x1="10" y1="20" x2="14" y2="20"/>
+            </svg>
+            <p>Rotate your device to landscape<br>for the best experience</p>
+          </div>
           <div class="umgmt-panel-hd">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
             Legacy Data Migration
@@ -574,7 +582,7 @@
                   placeholder="Search facilities…" autocomplete="off" aria-label="Search migration facilities" />
               </div>
               <div style="display:flex;align-items:center;gap:0.45rem;padding:0 calc(0.5rem + 17px) 0.4rem 0.5rem;border-bottom:1px solid #e5e7eb;margin-bottom:0.35rem">
-                <span style="flex:0 0 220px;flex-shrink:0"></span>
+                <span style="flex:0 0 280px;flex-shrink:0"></span>
                 <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:60px;text-align:center"># Patients</span>
                 <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:82px;text-align:center">Migrate</span>
                 <span style="flex-shrink:0;font-size:0.71rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;min-width:110px;text-align:center">Sync Changes</span>
