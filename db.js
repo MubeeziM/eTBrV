@@ -1801,12 +1801,8 @@ function getDQMissingRegInfo(facilityIDs) {
  * Patients who are past their expected treatment end date with no DOTS outcome
  * recorded (OutcomeID = 0, 7, or no follow-up row at all).
  *
- * Treatment durations (1 TB month = 28 days):
- *   PtTypeID = 1 (New)                          → 6 months = 168 days
- *   PtTypeID IN (2,3,4,6) (Retreatment/Others)  → 8 months = 224 days
- *   PtTypeID IN (0,5,7)                         → excluded (unknown / Transfer-In / placeholder)
- *
- * "Not Evaluated" (OutcomeID = 6) is tracked separately — see getDQNotEvaluated.
+ * Treatment durations: New (PtTypeID=1) 180–540 days, Retreatment/Others 240–600 days.
+ * PtTypeID IN (0,5,7) excluded (unknown / Transfer-In / placeholder).
  */
 function getDQNoOutcome(facilityIDs) {
   if (!_db) return [];
@@ -1836,39 +1832,10 @@ function getDQNoOutcome(facilityIDs) {
     '    (p.PtTypeID IN (2,3,4,6) AND ' + days + ' BETWEEN 240 AND 600)',
     '  )',
     '  ' + hf,
-    'ORDER BY p.DateRxStarted',
+    'ORDER BY p.DateRxStarted DESC',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
   catch (e) { console.error('[DQ] nooutcome:', e.message); return []; }
-}
-
-/**
- * Patients whose outcome is explicitly recorded as "Not Evaluated" (OutcomeID = 6).
- * Distinct from No DOTS Outcome — these patients have a follow-up record but it
- * carries the WHO "Not Evaluated" status, meaning the outcome could not be assessed.
- */
-function getDQNotEvaluated(facilityIDs) {
-  if (!_db) return [];
-  var hf  = _dqFacilityFilter(facilityIDs, 'p');
-  var sql = [
-    'SELECT ' + _DQ_COLS + ',',
-    "       COALESCE(o.Outcome,'') AS Outcome,",
-    "       CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) AS DaysSinceStart",
-    'FROM PtDetailsT p',
-    'JOIN  PtFollowUpT    fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0',
-    'LEFT JOIN SexT           s  ON p.SexID        = s.SexID',
-    'LEFT JOIN PtTypeT        pt ON p.PtTypeID     = pt.PtTypeID',
-    'LEFT JOIN TbTypeT        tt ON p.TbTypeID     = tt.TbTypeID',
-    'LEFT JOIN DiagMethodT    dm ON p.DiagMethodID = dm.DiagMethodID',
-    'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
-    'LEFT JOIN OutcomeT        o  ON fu.OutcomeID  = o.OutcomeID',
-    'WHERE p.Deleted = 0',
-    '  AND fu.OutcomeID = 6',
-    '  ' + hf,
-    'ORDER BY p.DateRxStarted',
-  ].join('\n');
-  try { return _dqRows(_db.exec(sql)); }
-  catch (e) { console.error('[DQ] notevaluated:', e.message); return []; }
 }
 
 /** Patients with no TB diagnostic method recorded (DiagMethodID = 0 or null). */
@@ -1940,7 +1907,7 @@ function getDQDeletedPatients(facilityIDs) {
  * @param {number}   cfYear    Calendar year of the CF period
  */
 function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYear, scStart, scEnd) {
-  if (!_db) return { duplicates:0, sametbno:0, missingreg:0, diagmethod:0, scmissed2:0, scmissed3:0, nooutcome:0, smearcured:0, notevaluated:0, skipped:0 };
+  if (!_db) return { duplicates:0, sametbno:0, missingreg:0, diagmethod:0, scmissed2:0, scmissed3:0, nooutcome:0, smearcured:0, skipped:0 };
 
   var outerHF = _dqFacilityFilter(facilityIDs, 'p');
   var innerHF = _dqFacilityFilter(facilityIDs, 'd');
@@ -2008,10 +1975,6 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
       ' AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)' +
       ' AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) ' + outerHF),
 
-    notevaluated: _dqCount(
-      'SELECT COUNT(*) FROM PtDetailsT p JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0' +
-      ' WHERE p.Deleted=0 AND fu.OutcomeID=6' + toF + ' ' + outerHF),
-
     skipped: _dqCount(
       _dqSkippedCTE(outerHF, minYear) + '\nSELECT COUNT(*) FROM gaps'),
   };
@@ -2021,7 +1984,7 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
  * Returns the patient list for a given DQ category, filtered to the report date ranges.
  * Used by the pre-report DQ modal's detail panel.
  *
- * @param {string}   category    One of: duplicates|sametbno|missingreg|diagmethod|nooutcome|smearcured|notevaluated|skipped
+ * @param {string}   category    One of: duplicates|sametbno|missingreg|diagmethod|nooutcome|smearcured|skipped
  * @param {number[]} facilityIDs
  * @param {string}   cfStart     YYYY-MM-DD  (registration period start)
  * @param {string}   cfEnd       YYYY-MM-DD  (registration period end)
@@ -2153,20 +2116,6 @@ function getDQListForReport(category, facilityIDs, cfStart, cfEnd, toStart, toEn
         'ORDER BY p.PtName',
       ].join('\n')));
 
-      case 'notevaluated': {
-        var daysNE = "CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER)";
-        return _dqRows(_db.exec([
-          "SELECT " + _DQ_COLS + ", p.RegimenID, COALESCE(o.Outcome,'') AS Outcome, " + daysNE + ' AS DaysSinceStart',
-          'FROM PtDetailsT p',
-          'JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0',
-          'LEFT JOIN SexT s ON p.SexID=s.SexID LEFT JOIN PtTypeT pt ON p.PtTypeID=pt.PtTypeID',
-          'LEFT JOIN TbTypeT tt ON p.TbTypeID=tt.TbTypeID LEFT JOIN DiagMethodT dm ON p.DiagMethodID=dm.DiagMethodID',
-          'LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID LEFT JOIN OutcomeT o ON fu.OutcomeID=o.OutcomeID',
-          'WHERE p.Deleted=0 AND fu.OutcomeID=6' + toF + ' ' + outerHF,
-          'ORDER BY p.DateRxStarted',
-        ].join('\n')));
-      }
-
       case 'skipped': {
         var hfFilter = _dqFacilityFilter(facilityIDs, 'p');
         return _dqRows(_db.exec(
@@ -2201,7 +2150,6 @@ function getDQList(category, facilityIDs) {
     case 'smearcured':  return getDQSmearNegCured(facilityIDs);
     case 'missingreg':  return getDQMissingRegInfo(facilityIDs);
     case 'nooutcome':    return getDQNoOutcome(facilityIDs);
-    case 'notevaluated': return getDQNotEvaluated(facilityIDs);
     case 'diagmethod':   return getDQDiagMethodMissing(facilityIDs);
     case 'norxstart':   return getDQNoTreatmentStart(facilityIDs);
     case 'deleted':     return getDQDeletedPatients(facilityIDs);
@@ -2214,7 +2162,7 @@ function getDQList(category, facilityIDs) {
  * Uses COUNT(*) queries for efficiency rather than fetching all rows.
  */
 function getDQCounts(facilityIDs) {
-  if (!_db) return { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, deleted:0 };
+  if (!_db) return { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, diagmethod:0, norxstart:0, deleted:0 };
 
   var outerHF = _dqFacilityFilter(facilityIDs, 'p');
   var innerHF = _dqFacilityFilter(facilityIDs, 'd');
@@ -2300,12 +2248,6 @@ function getDQCounts(facilityIDs) {
       ' AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))' +
       " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)" +
       "   OR (p.PtTypeID IN (2,3,4,6) AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))" +
-      ' ' + outerHF),
-
-    notevaluated: _dqCount(
-      'SELECT COUNT(*) FROM PtDetailsT p' +
-      ' JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0' +
-      ' WHERE p.Deleted = 0 AND fu.OutcomeID = 6' +
       ' ' + outerHF),
 
     diagmethod: _dqCount(

@@ -721,14 +721,6 @@ public sealed class TBPatientsController : ControllerBase
                   AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
                 """);
 
-            // 8. Outcome recorded as "Not Evaluated"
-            int notevaluated = await Scalar($"""
-                SELECT COUNT(*) FROM PtDetailsT p
-                JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                WHERE p.Deleted=0 AND fu.OutcomeID=6
-                  AND p.DateRxStarted >= @ToStart AND p.DateRxStarted <= @ToEnd {facP}
-                """);
-
             // 9. Skipped (gapped) TB register numbers per facility per year
             // SQL Server recursive CTE — OPTION(MAXRECURSION 2000) matches the
             // local SQLite TBNoB < 2000 cap so the two sources produce identical counts.
@@ -768,13 +760,13 @@ public sealed class TBPatientsController : ControllerBase
                 """);
 
             _logger.LogInformation(
-                "DQ counts by {User}: dup={D} sametbno={S} misreg={M} diag={Di} sc2={Sc2} sc3={Sc3} noout={N} smear={Sm} notev={Nv} skip={Sk}",
+                "DQ counts by {User}: dup={D} sametbno={S} misreg={M} diag={Di} sc2={Sc2} sc3={Sc3} noout={N} smear={Sm} skip={Sk}",
                 User.Identity?.Name, duplicates, sametbno, missingreg, diagmethod,
-                scmissed2, scmissed3, nooutcome, smearcured, notevaluated, skipped);
+                scmissed2, scmissed3, nooutcome, smearcured, skipped);
 
             return Ok(new { duplicates, sametbno, missingreg, diagmethod,
                             scmissed2, scmissed3,
-                            nooutcome, smearcured, notevaluated, skipped });
+                            nooutcome, smearcured, skipped });
         }
         catch (Exception ex)
         {
@@ -788,7 +780,7 @@ public sealed class TBPatientsController : ControllerBase
     //  Returns patient rows for one DQ category (used by the detail panel).
     //  Accepts the same date / facility params as dq-counts, plus:
     //    category — one of: duplicates|sametbno|missingreg|diagmethod|
-    //                        nooutcome|smearcured|notevaluated|skipped
+    //                        nooutcome|smearcured|skipped
     //
     //  SECURITY: same scope enforcement and parameterisation as dq-counts.
     // ───────────────────────────────────────────────────────────────────────
@@ -807,7 +799,7 @@ public sealed class TBPatientsController : ControllerBase
         var validCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "duplicates","sametbno","missingreg","diagmethod",
               "scmissed2","scmissed3",
-              "nooutcome","smearcured","notevaluated","skipped" };
+              "nooutcome","smearcured","skipped" };
 
         if (string.IsNullOrWhiteSpace(category) || !validCategories.Contains(category))
             return BadRequest(new { error = "Invalid or missing category." });
@@ -1008,19 +1000,6 @@ public sealed class TBPatientsController : ControllerBase
                       AND COALESCE(fu.OutcomeID,0) = 1
                       AND COALESCE(fu.Mon0LabResultID,0)   NOT IN (1,4,5,6)
                       AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
-                    ORDER BY p.PtName
-                    """,
-
-                "notevaluated" => $"""
-                    SELECT {StdCols},
-                           p.RegimenID,
-                           COALESCE(o.Outcome,'')                    AS Outcome,
-                           DATEDIFF(day, p.DateRxStarted, GETDATE()) AS DaysSinceStart
-                    {StdJoins}
-                    JOIN  PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                    LEFT JOIN OutcomeT o ON fu.OutcomeID=o.OutcomeID
-                    WHERE p.Deleted=0 AND fu.OutcomeID=6
-                      AND p.DateRxStarted >= @ToStart AND p.DateRxStarted <= @ToEnd {facP}
                     ORDER BY p.PtName
                     """,
 
@@ -1654,11 +1633,6 @@ public sealed class TBPatientsController : ControllerBase
                 AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
                   OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600)) {facP}
                 """);
-            var tNotevaluated = Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p
-                JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                WHERE p.Deleted=0 AND fu.OutcomeID=6 {facP}
-                """);
             var tDiagmethod = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
@@ -1687,7 +1661,7 @@ public sealed class TBPatientsController : ControllerBase
             var tDeleted = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=1 {facP}");
 
             await Task.WhenAll(tAll, tDuplicates, tSametbno, tMissingreg, tSmearcured,
-                               tNooutcome, tNotevaluated, tDiagmethod, tNorxstart,
+                               tNooutcome, tDiagmethod, tNorxstart,
                                tSkipped, tDeleted);
 
             return Ok(new {
@@ -1698,7 +1672,6 @@ public sealed class TBPatientsController : ControllerBase
                 smearcured   = tSmearcured.Result,
                 missingreg   = tMissingreg.Result,
                 nooutcome    = tNooutcome.Result,
-                notevaluated = tNotevaluated.Result,
                 diagmethod   = tDiagmethod.Result,
                 norxstart    = tNorxstart.Result,
                 deleted      = tDeleted.Result,
@@ -1854,18 +1827,7 @@ public sealed class TBPatientsController : ControllerBase
                     -- TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
                     AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
                       OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600)) {facP}
-                    ORDER BY p.DateRxStarted
-                    """;
-                break;
-            case "notevaluated":
-                querySql = $"""
-                    SELECT {dqCols}, ISNULL(o.Outcome,'') AS Outcome,
-                           DATEDIFF(DAY,p.DateRxStarted,GETDATE()) AS DaysSinceStart
-                    {dqJoins}
-                    JOIN  PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                    LEFT JOIN OutcomeT  o ON fu.OutcomeID=o.OutcomeID
-                    WHERE p.Deleted=0 AND fu.OutcomeID=6 {facP}
-                    ORDER BY p.DateRxStarted
+                    ORDER BY p.DateRxStarted DESC
                     """;
                 break;
             case "diagmethod":

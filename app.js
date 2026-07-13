@@ -1411,10 +1411,6 @@ function _applyDQFieldFocus() {
     mark('tb-outcomeID', 'Please record a treatment outcome.');
     _openAndFocus(document.getElementById('tb-outcomeID'));
 
-  } else if (cat === 'notevaluated') {
-    mark('tb-outcomeID', 'Outcome is "Not Evaluated" — please update to the correct DOTS outcome.');
-    _openAndFocus(document.getElementById('tb-outcomeID'));
-
   } else if (cat === 'duplicates') {
     // Name is the suspected duplicate — focus it so the user can review.
     _openAndFocus(document.getElementById('tb-ptName'));
@@ -2553,7 +2549,7 @@ async function exportDQPatientsToExcel() {
       let issue = '';
       if      (cat === 'missingreg'   && r.MissingFields)          issue = `Missing: ${r.MissingFields.replace(/,\s*$/, '')}`;
       else if (cat === 'smearcured'   && r.Outcome)                issue = `Outcome: ${r.Outcome}`;
-      else if (cat === 'nooutcome' || cat === 'notevaluated') {
+      else if (cat === 'nooutcome') {
         const _ei = _tbExpectedEndInfo(r);
         issue = _ei ? `Due: ${_ei.endFmt} (+${_ei.daysOver}d overdue)` : r.DaysSinceStart != null ? `${r.DaysSinceStart}d on Rx` : '';
       }
@@ -9384,7 +9380,7 @@ function _dqTreeChanged() {
     // No facility selected — clear counts and list immediately, no API calls
     const cIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
       'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
-      'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
+      'dq-count-nooutcome','dq-count-diagmethod',
       'dq-count-norxstart','dq-count-deleted'];
     cIds.forEach(id => {
       const el = document.getElementById(id);
@@ -9427,7 +9423,7 @@ async function _dqRefreshAll(skipList = false, _retried = false) {
   // Show skeleton shimmer on all count badges while the server call is in flight.
   const countIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
     'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
-    'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
+    'dq-count-nooutcome','dq-count-diagmethod',
     'dq-count-norxstart','dq-count-deleted'];
   if (_dqUseServer) {
     countIds.forEach(id => {
@@ -9474,7 +9470,7 @@ async function _dqRefreshAll(skipList = false, _retried = false) {
           return;
         }
       }
-      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, deleted:0 };
+      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, diagmethod:0, norxstart:0, deleted:0 };
     } else {
       counts = getDQCounts(_dqFacilityIDs);
     }
@@ -9495,7 +9491,6 @@ async function _dqRefreshAll(skipList = false, _retried = false) {
     setCount('dq-count-smearcured',  counts.smearcured,  true);
     setCount('dq-count-missingreg',  counts.missingreg,  true);
     setCount('dq-count-nooutcome',    counts.nooutcome,    true);
-    setCount('dq-count-notevaluated',  counts.notevaluated, true);
     setCount('dq-count-diagmethod',  counts.diagmethod,  true);
     setCount('dq-count-norxstart',   counts.norxstart,   true);
     setCount('dq-count-deleted',     counts.deleted,     true);
@@ -9591,7 +9586,6 @@ function _dqCatTitle(cat) {
     case 'smearcured':  return 'Smear Negative Patients Declared Cured';
     case 'missingreg':  return 'Patients With Missing Registration Info';
     case 'nooutcome':    return 'Patients With No DOTS Outcome';
-    case 'notevaluated': return 'Patients Marked Not Evaluated';
     case 'diagmethod':  return 'Patients With No TB Diagnostic Method Recorded';
     case 'norxstart':   return 'Patients With No Treatment Start Date (Registered >14 Days Ago)';
     case 'deleted':     return 'Deleted Patients — Click Any Row To Restore';
@@ -9609,7 +9603,6 @@ function _dqCatHint(cat, n) {
     case 'smearcured':  return 'HINT: Change the outcome to "Treatment Completed" for patients who were not bacteriologically confirmed.';
     case 'missingreg':  return 'HINT: Open each patient record and fill in the highlighted missing fields.';
     case 'nooutcome':    return 'HINT: Record the correct DOTS outcome for each patient shown.';
-    case 'notevaluated': return 'HINT: Review each patient and update the outcome from "Not Evaluated" to the correct DOTS outcome.';
     case 'diagmethod':  return 'HINT: Open each patient record and select the method used to diagnose TB.';
     case 'norxstart':   return 'HINT: Enter the date treatment was started, or verify whether the patient began treatment.';
     case 'deleted':     return 'HINT: Click the Restore button on any row to undelete a patient record that was removed in error.';
@@ -9632,7 +9625,7 @@ function _dqBuildRowHtml(cat, r) {
     notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields.replace(/,\s*$/, ''))}</span>`;
   } else if (cat === 'smearcured' && r.Outcome) {
     notes = `<span class="dq-issue-badge">Outcome: ${esc(r.Outcome)}</span>`;
-  } else if (cat === 'nooutcome' || cat === 'notevaluated') {
+  } else if (cat === 'nooutcome') {
     const info = _tbExpectedEndInfo(r);
     if (info) {
       notes = `<span class="dq-issue-badge">Due: ${info.endFmt}<br><span style="color:#dc2626">&#9650; ${info.daysOver}d overdue</span></span>`;
@@ -9823,7 +9816,7 @@ function _dqRenderList(cat, rows) {
   if (theadSkipped) theadSkipped.hidden = (cat !== 'skipped');
 
   // Decide whether the Notes/Issue column is relevant for this category
-  const showNotes = ['missingreg', 'smearcured', 'nooutcome', 'notevaluated', 'norxstart', 'duplicates', 'sametbno', 'deleted'].includes(cat);
+  const showNotes = ['missingreg', 'smearcured', 'nooutcome', 'norxstart', 'duplicates', 'sametbno', 'deleted'].includes(cat);
   if (notesHd) notesHd.hidden = !showNotes;
   const tbl = document.getElementById('dq-patient-table');
   if (tbl) tbl.classList.toggle('dq-hide-notes', !showNotes);
@@ -11867,7 +11860,6 @@ function resolveGeoScope(user, geo) {
         { key: 'scmissed3',    label: 'Missed 3-Month Sputum Exam',                   period: 'sc'   },
         { key: 'nooutcome',    label: 'Missing TB Treatment Outcome',                 period: 'to'   },
         { key: 'smearcured',   label: 'Smear-Negative But Declared Cured',            period: 'to'   },
-        { key: 'notevaluated', label: 'Outcome Marked as "Not Evaluated"',            period: 'to'   },
         { key: 'skipped',      label: 'Skipped TB Numbers (Data Entry Gaps)',         period: 'year' },
       ];
       const PERIOD_LABEL = { cf: cfLabel, to: toLabel, sc: scLabel, year: `Year ${cfYear}` };
@@ -12095,7 +12087,7 @@ function resolveGeoScope(user, geo) {
             const noteFor = r => {
               if (cat === 'missingreg' && r.MissingFields)    return esc(r.MissingFields.replace(/,\s*$/, ''));
               if (cat === 'smearcured' && r.Outcome)          return `Outcome: ${esc(r.Outcome)}`;
-              if (cat === 'nooutcome' || cat === 'notevaluated') {
+              if (cat === 'nooutcome') {
                 const info = _tbExpectedEndInfo(r);
                 if (info) return `Due: ${info.endFmt} <span style="color:#dc2626;white-space:nowrap">&#9650; ${info.daysOver}d overdue</span>`;
                 if (r.DaysSinceStart != null) return `${r.DaysSinceStart}d on Rx`;
