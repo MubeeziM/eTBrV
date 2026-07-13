@@ -9483,7 +9483,8 @@ async function _dqSelectCategory(cat) {
       if (token && _reallyOnline) {
         let fetchErr = null;
         try {
-          const qs = new URLSearchParams({ category: cat, limit: String(DQ_ROW_LIMIT) });
+          const rowLimit = cat === 'skipped' ? 10000 : 500;
+          const qs = new URLSearchParams({ category: cat, limit: String(rowLimit) });
           _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -9503,12 +9504,14 @@ async function _dqSelectCategory(cat) {
         // Total comes directly from the server — no need to read the badge
         if (_dqTotalCount > rows.length) {
           _dqRenderList(cat, rows);
-          _dqSetupPagingSentinel(cat);
-          const hintEl = document.getElementById('dq-list-hint');
-          if (hintEl) {
-            hintEl.innerHTML =
-              `Loaded <strong>${rows.length.toLocaleString()}</strong> of <strong>${_dqTotalCount.toLocaleString()}</strong> — scroll down for more, or use <strong>Export to Excel</strong> for the full list.`;
-            hintEl.style.cssText = 'color:#64748b;font-size:0.84rem;margin-top:0.3rem;display:block';
+          if (cat !== 'skipped') {
+            _dqSetupPagingSentinel(cat);
+            const hintEl = document.getElementById('dq-list-hint');
+            if (hintEl) {
+              hintEl.innerHTML =
+                `Loaded <strong>${rows.length.toLocaleString()}</strong> of <strong>${_dqTotalCount.toLocaleString()}</strong> — scroll down for more, or use <strong>Export to Excel</strong> for the full list.`;
+              hintEl.style.cssText = 'color:#64748b;font-size:0.84rem;margin-top:0.3rem;display:block';
+            }
           }
           return;
         }
@@ -9779,7 +9782,10 @@ function _dqRenderList(cat, rows) {
   const n = rows.length;
   if (subEl) {
     if (n === 0)                subEl.textContent = cat === 'all' ? 'No Patients In The Database' : 'No Issues Found — Congratulations!';
-    else if (cat === 'skipped') subEl.textContent = n === 1 ? 'Found 01 TB patient skipped during data entry' : `Found ${String(n).padStart(2, '0')} TB patients skipped during data entry`;
+    else if (cat === 'skipped') {
+      const tot = (_dqUseServer && _dqTotalCount) ? _dqTotalCount : n;
+      subEl.textContent = tot === 1 ? 'Found 01 TB patient skipped during data entry' : `Found ${tot.toLocaleString()} TB patients skipped during data entry`;
+    }
     else if (n === 1)           subEl.textContent = 'Found 01 Patient';
     else { const tot = (_dqUseServer && _dqTotalCount > n) ? _dqTotalCount : n;
            subEl.textContent = `Found ${tot.toLocaleString()} Patients`; }

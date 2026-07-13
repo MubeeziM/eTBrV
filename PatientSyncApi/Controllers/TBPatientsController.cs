@@ -1871,26 +1871,25 @@ public sealed class TBPatientsController : ControllerBase
                 querySql = $"""
                     WITH norm AS (
                         SELECT p.NearestHFID, YEAR(p.RegDate) AS RegYear,
-                               TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB,
-                               hf.HealthFacility
-                        FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
-                        WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL AND YEAR(p.RegDate)>=@MinYear {facP}
+                               TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
+                        FROM PtDetailsT p
+                        WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL
+                          AND YEAR(p.RegDate)>=@MinYear AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' {facP}
                     ),
-                    valid AS (SELECT NearestHFID,RegYear,TBNoB,HealthFacility FROM norm WHERE TBNoB>0 AND TBNoB<2000),
-                    ranges AS (SELECT NearestHFID,RegYear,HealthFacility,MIN(TBNoB) AS MinNo,MAX(TBNoB) AS MaxNo FROM valid GROUP BY NearestHFID,RegYear,HealthFacility),
+                    valid AS (SELECT NearestHFID, RegYear, TBNoB FROM norm WHERE TBNoB>0 AND TBNoB<2000),
+                    ranges AS (SELECT NearestHFID, RegYear, MIN(TBNoB) AS MinNo, MAX(TBNoB) AS MaxNo FROM valid GROUP BY NearestHFID, RegYear),
                     seq AS (SELECT TOP 2000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL))-1 AS n FROM sys.objects CROSS JOIN sys.objects s2),
-                    expected AS (SELECT r.NearestHFID,r.RegYear,r.HealthFacility,r.MinNo+s.n AS TBNoB FROM ranges r CROSS JOIN seq s WHERE r.MinNo+s.n<=r.MaxNo),
-                    gaps AS (SELECT e.NearestHFID,e.RegYear,e.HealthFacility,e.TBNoB FROM expected e
-                             WHERE NOT EXISTS (SELECT 1 FROM valid v WHERE v.NearestHFID=e.NearestHFID AND v.RegYear=e.RegYear AND v.TBNoB=e.TBNoB))
-                    SELECT NULL AS PtDetailsTID, CAST(TBNoB AS nvarchar(10)) AS UnitTBNo,
-                           CAST(RegYear AS nvarchar(4))+'-01-01' AS RegDate,
-                           'Missing TB#'+CAST(TBNoB AS nvarchar(10))+'/'+CAST(RegYear AS nvarchar(4)) AS PtName,
-                           NULL AS Age, NULL AS AgeMonths, NULL AS Village, NULL AS Payam, NULL AS PtPhone,
-                           0 AS SexID, 0 AS TbTypeID, 0 AS PtTypeID, 0 AS DiagMethodID,
-                           NULL AS DateRxStarted, NearestHFID,
-                           '' AS Sex, '' AS PtTypeShort, '' AS TbType, '' AS DiagMethod, HealthFacility,
+                    expected AS (SELECT r.NearestHFID, r.RegYear, r.MinNo+s.n AS TBNoB FROM ranges r CROSS JOIN seq s WHERE r.MinNo+s.n<=r.MaxNo),
+                    gaps AS (
+                        SELECT e.NearestHFID, e.RegYear, e.TBNoB FROM expected e
+                        WHERE NOT EXISTS (SELECT 1 FROM valid v WHERE v.NearestHFID=e.NearestHFID AND v.RegYear=e.RegYear AND v.TBNoB=e.TBNoB)
+                    )
+                    SELECT g.NearestHFID, g.RegYear, g.TBNoB AS MissingTBNo,
+                           COALESCE(hf.HealthFacility,'') AS HealthFacility,
                            COUNT(*) OVER() AS _TotalCount
-                    FROM gaps ORDER BY RegYear DESC, NearestHFID, TBNoB
+                    FROM gaps g
+                    LEFT JOIN HealthFacilityT hf ON hf.HealthFacilityID = g.NearestHFID
+                    ORDER BY g.RegYear DESC, g.NearestHFID, g.TBNoB
                     """;
                 break;
             default:
