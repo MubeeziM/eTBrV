@@ -1746,7 +1746,7 @@ public sealed class TBPatientsController : ControllerBase
         switch (category)
         {
             case "all":
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 {facP} ORDER BY p.PtName";
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 {facP} ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "duplicates":
                 querySql = $"""
@@ -1786,7 +1786,7 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
                     AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
                     AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
-                    ORDER BY p.PtName
+                    ORDER BY p.RegDate DESC, p.PtName
                     """;
                 break;
             case "missingreg":
@@ -1819,7 +1819,7 @@ public sealed class TBPatientsController : ControllerBase
                         OR p.DateRxStarted IS NULL
                         OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
                     )
-                    ORDER BY p.PtName
+                    ORDER BY p.RegDate DESC, p.PtName
                     """;
                 break;
             case "nooutcome":
@@ -1848,7 +1848,7 @@ public sealed class TBPatientsController : ControllerBase
                     """;
                 break;
             case "diagmethod":
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} ORDER BY p.PtName";
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "norxstart":
                 querySql = $"""
@@ -1856,14 +1856,14 @@ public sealed class TBPatientsController : ControllerBase
                     {dqJoins}
                     WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
                     AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
-                    ORDER BY p.RegDate
+                    ORDER BY p.RegDate DESC
                     """;
                 break;
             case "futuredates":
                 querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP} ORDER BY p.RegDate DESC";
                 break;
             case "deleted":
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=1 {facP} ORDER BY p.PtName";
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=1 {facP} ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "skipped":
                 querySql = $"""

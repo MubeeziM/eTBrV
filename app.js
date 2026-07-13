@@ -9334,6 +9334,27 @@ function _dqTreeChanged() {
     else              showLabel.textContent = `${n} Facilities Selected`;
   }
 
+  if (n === 0) {
+    // No facility selected — clear counts and list immediately, no API calls
+    const cIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
+      'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
+      'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
+      'dq-count-norxstart','dq-count-futuredates','dq-count-deleted'];
+    cIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('dq-stat-count--loading');
+      el.style.cssText = ''; el.onclick = null; el.textContent = '00';
+    });
+    if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+    document.getElementById('dq-page-sentinel')?.remove();
+    const tbody = document.getElementById('dq-patient-tbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4" style="color:#64748b">Select a facility in the filter panel to view patients.</td></tr>`;
+    const hintEl = document.getElementById('dq-list-hint');
+    if (hintEl) hintEl.style.display = 'none';
+    return;
+  }
+
   _dqSelectCategory(_dqCategory);
   _dqRefreshAll(true);
 }
