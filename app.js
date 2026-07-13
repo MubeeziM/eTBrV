@@ -8233,6 +8233,20 @@ async function _monBuildTree() {
   treeEl.innerHTML = '<div class="tree-loading">Loading facilities…</div>';
 
   try {
+    const user     = getUser();
+    const isSenior = user && (user.superUserID === 1 || user.adminID === 1);
+
+    // ── Senior / admin users: always read from server ─────────────────────
+    if (isSenior && _reallyOnline) {
+      _monUseServer = true;
+      treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
+      if (summaryEl) summaryEl.textContent = 'All facilities';
+      _monFacilityIDs = [];
+      _monRefreshAll();
+      return;
+    }
+
+    // ── Data entry users: local DB first, server fallback when empty ──────
     // Get only facilities that have TB patients (local DB, works offline)
     let activeFacs = getMonitoringFacilities(null, null);
     _monUseServer = false;
@@ -8272,7 +8286,6 @@ async function _monBuildTree() {
     const geo = getGeoAreaData().filter(r => activeSet.has(r.HealthFacilityID));
 
     // Apply the same user scope rules as the reports tree
-    const user  = getUser();
     const scope = user ? resolveGeoScope(user, geo) : { level: 'national', stateID: 0, countyID: 0, facilityID: 0 };
 
     treeEl.innerHTML = '';
@@ -8948,6 +8961,20 @@ async function _dqBuildTree() {
   treeEl.innerHTML = '<div class="tree-loading">Loading facilities…</div>';
 
   try {
+    const user     = getUser();
+    const isSenior = user && (user.superUserID === 1 || user.adminID === 1);
+
+    // ── Senior / admin users: always read from server (no local TB data) ──
+    if (isSenior && _reallyOnline) {
+      _dqUseServer = true;
+      treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
+      if (summaryEl) summaryEl.textContent = 'All facilities';
+      _dqFacilityIDs = [];
+      _dqRefreshAll();
+      return;
+    }
+
+    // ── Data entry users: local DB first, server fallback when empty ──────
     let activeFacs = getMonitoringFacilities(null, null);
     _dqUseServer = false;
 
