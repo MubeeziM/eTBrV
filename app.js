@@ -1403,10 +1403,6 @@ function _applyDQFieldFocus() {
     mark('tb-dateRxStarted', 'Date treatment started is required.');
     _openAndFocus(document.getElementById('tb-dateRxStarted'));
 
-  } else if (cat === 'futuredates') {
-    flag('tb-regDate', 'Registration date is in the future — please correct.');
-    _openAndFocus(document.getElementById('tb-regDate'));
-
   } else if (cat === 'smearcured') {
     flag('tb-outcomeID', 'Outcome is "Cured" but no positive smear was recorded at baseline — please verify.');
     _openAndFocus(document.getElementById('tb-outcomeID'));
@@ -2526,7 +2522,6 @@ async function exportDQPatientsToExcel() {
         issue = _ei ? `Due: ${_ei.endFmt} (+${_ei.daysOver}d overdue)` : r.DaysSinceStart != null ? `${r.DaysSinceStart}d on Rx` : '';
       }
       else if (cat === 'norxstart'    && r.DaysSinceReg != null)   issue = `${r.DaysSinceReg}d since reg.`;
-      else if (cat === 'futuredates')                               issue = 'Future date';
       else if (cat === 'duplicates')                                issue = 'Possible duplicate';
       else if (cat === 'sametbno'     && r.UnitTBNo)               issue = `TB No: ${r.UnitTBNo}`;
       else if (cat === 'deleted')                                   issue = 'Deleted';
@@ -9339,7 +9334,7 @@ function _dqTreeChanged() {
     const cIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
       'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
       'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
-      'dq-count-norxstart','dq-count-futuredates','dq-count-deleted'];
+      'dq-count-norxstart','dq-count-deleted'];
     cIds.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -9382,7 +9377,7 @@ async function _dqRefreshAll(skipList = false, _retried = false) {
   const countIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
     'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
     'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
-    'dq-count-norxstart','dq-count-futuredates','dq-count-deleted'];
+    'dq-count-norxstart','dq-count-deleted'];
   if (_dqUseServer) {
     countIds.forEach(id => {
       const el = document.getElementById(id);
@@ -9428,7 +9423,7 @@ async function _dqRefreshAll(skipList = false, _retried = false) {
           return;
         }
       }
-      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, futuredates:0, deleted:0 };
+      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, deleted:0 };
     } else {
       counts = getDQCounts(_dqFacilityIDs);
     }
@@ -9452,7 +9447,6 @@ async function _dqRefreshAll(skipList = false, _retried = false) {
     setCount('dq-count-notevaluated',  counts.notevaluated, true);
     setCount('dq-count-diagmethod',  counts.diagmethod,  true);
     setCount('dq-count-norxstart',   counts.norxstart,   true);
-    setCount('dq-count-futuredates', counts.futuredates, true);
     setCount('dq-count-deleted',     counts.deleted,     true);
 
     if (!skipList) _dqSelectCategory(_dqCategory);
@@ -9546,7 +9540,6 @@ function _dqCatTitle(cat) {
     case 'notevaluated': return 'Patients Marked Not Evaluated';
     case 'diagmethod':  return 'Patients With No TB Diagnostic Method Recorded';
     case 'norxstart':   return 'Patients With No Treatment Start Date (Registered >14 Days Ago)';
-    case 'futuredates': return 'Patients With Registration Date In The Future';
     case 'deleted':     return 'Deleted Patients — Click Any Row To Restore';
     default:            return cat;
   }
@@ -9565,7 +9558,6 @@ function _dqCatHint(cat, n) {
     case 'notevaluated': return 'HINT: Review each patient and update the outcome from "Not Evaluated" to the correct DOTS outcome.';
     case 'diagmethod':  return 'HINT: Open each patient record and select the method used to diagnose TB.';
     case 'norxstart':   return 'HINT: Enter the date treatment was started, or verify whether the patient began treatment.';
-    case 'futuredates': return 'HINT: Correct the registration date — it cannot be in the future.';
     case 'deleted':     return 'HINT: Click the Restore button on any row to undelete a patient record that was removed in error.';
     default:            return '';
   }
@@ -9595,8 +9587,6 @@ function _dqBuildRowHtml(cat, r) {
     }
   } else if (cat === 'norxstart' && r.DaysSinceReg != null) {
     notes = `<span class="dq-issue-badge">${r.DaysSinceReg}d since reg.</span>`;
-  } else if (cat === 'futuredates') {
-    notes = `<span class="dq-issue-badge">Future date</span>`;
   } else if (cat === 'duplicates') {
     notes = `<span class="dq-issue-badge">Possible duplicate</span>`;
   } else if (cat === 'sametbno' && r.UnitTBNo) {
@@ -9779,7 +9769,7 @@ function _dqRenderList(cat, rows) {
   if (theadSkipped) theadSkipped.hidden = (cat !== 'skipped');
 
   // Decide whether the Notes/Issue column is relevant for this category
-  const showNotes = ['missingreg', 'smearcured', 'nooutcome', 'notevaluated', 'norxstart', 'futuredates', 'duplicates', 'sametbno', 'deleted'].includes(cat);
+  const showNotes = ['missingreg', 'smearcured', 'nooutcome', 'notevaluated', 'norxstart', 'duplicates', 'sametbno', 'deleted'].includes(cat);
   if (notesHd) notesHd.hidden = !showNotes;
   const tbl = document.getElementById('dq-patient-table');
   if (tbl) tbl.classList.toggle('dq-hide-notes', !showNotes);

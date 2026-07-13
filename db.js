@@ -1872,7 +1872,7 @@ function getDQDiagMethodMissing(facilityIDs) {
     'SELECT ' + _DQ_COLS,
     _DQ_JOINS,
     'WHERE p.Deleted = 0 AND COALESCE(p.DiagMethodID, 0) = 0' +
-    " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365 " + hf,
+    " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180 " + hf,
     'ORDER BY p.PtName',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
@@ -1894,25 +1894,12 @@ function getDQNoTreatmentStart(facilityIDs) {
     "  AND (p.DateRxStarted IS NULL OR p.DateRxStarted = '')",
     "  AND p.RegDate IS NOT NULL AND p.RegDate != ''",
     "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) > 14",
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180",
     '  ' + hf,
     'ORDER BY p.RegDate',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
   catch (e) { console.error('[DQ] norxstart:', e.message); return []; }
-}
-
-/** Patients whose registration date is in the future (data-entry error). */
-function getDQFutureDates(facilityIDs) {
-  if (!_db) return [];
-  var hf  = _dqFacilityFilter(facilityIDs, 'p');
-  var sql = [
-    'SELECT ' + _DQ_COLS,
-    _DQ_JOINS,
-    "WHERE p.Deleted = 0 AND p.RegDate IS NOT NULL AND p.RegDate > date('now') " + hf,
-    'ORDER BY p.RegDate DESC',
-  ].join('\n');
-  try { return _dqRows(_db.exec(sql)); }
-  catch (e) { console.error('[DQ] futuredates:', e.message); return []; }
 }
 
 /** Soft-deleted patients (Deleted = 1) — can be restored. */
@@ -2211,7 +2198,6 @@ function getDQList(category, facilityIDs) {
     case 'notevaluated': return getDQNotEvaluated(facilityIDs);
     case 'diagmethod':   return getDQDiagMethodMissing(facilityIDs);
     case 'norxstart':   return getDQNoTreatmentStart(facilityIDs);
-    case 'futuredates': return getDQFutureDates(facilityIDs);
     case 'deleted':     return getDQDeletedPatients(facilityIDs);
     default:            return [];
   }
@@ -2222,7 +2208,7 @@ function getDQList(category, facilityIDs) {
  * Uses COUNT(*) queries for efficiency rather than fetching all rows.
  */
 function getDQCounts(facilityIDs) {
-  if (!_db) return { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, futuredates:0, deleted:0 };
+  if (!_db) return { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, deleted:0 };
 
   var outerHF = _dqFacilityFilter(facilityIDs, 'p');
   var innerHF = _dqFacilityFilter(facilityIDs, 'd');
@@ -2277,7 +2263,7 @@ function getDQCounts(facilityIDs) {
 
     missingreg: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0 ' + outerHF +
-      " AND (p.RegDate IS NULL OR p.RegDate = '' OR p.RegDate >= date('now', '-540 days'))" +
+      " AND (p.RegDate IS NULL OR p.RegDate = '' OR p.RegDate >= date('now', '-180 days'))" +
       " AND (p.PtName IS NULL OR p.PtName = ''"+
       " OR p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo) = ''"+
       ' OR p.Age = 0 OR p.Age IS NULL' +
@@ -2308,18 +2294,15 @@ function getDQCounts(facilityIDs) {
 
     diagmethod: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0' +
-      " AND COALESCE(p.DiagMethodID, 0) = 0 AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365 " + outerHF),
+      " AND COALESCE(p.DiagMethodID, 0) = 0 AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180 " + outerHF),
 
     norxstart: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0' +
       " AND (p.DateRxStarted IS NULL OR p.DateRxStarted = '')" +
       " AND p.RegDate IS NOT NULL AND p.RegDate != ''" +
       " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) > 14" +
+      " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180" +
       ' ' + outerHF),
-
-    futuredates: _dqCount(
-      "SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0" +
-      " AND p.RegDate IS NOT NULL AND p.RegDate > date('now') " + outerHF),
 
     deleted: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 1 ' + outerHF),

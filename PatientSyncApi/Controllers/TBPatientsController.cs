@@ -1616,7 +1616,7 @@ public sealed class TBPatientsController : ControllerBase
             var tMissingreg = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
-                AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 540)
+                AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 180)
                 AND (
                     p.PtName IS NULL OR p.PtName=''
                     OR p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))=''
@@ -1653,17 +1653,14 @@ public sealed class TBPatientsController : ControllerBase
             var tDiagmethod = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
-                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365
-                -- TODO: user preference DQ_DIAGMETHOD_DAYS (default 365)
+                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 180
+                -- TODO: user preference DQ_DIAGMETHOD_DAYS (default 180)
                 """);
             var tNorxstart = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
-                AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
-                """);
-            var tFuturedates = Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p
-                WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP}
+                AND DATEDIFF(DAY,p.RegDate,GETDATE()) > 14
+                AND DATEDIFF(DAY,p.RegDate,GETDATE()) < 180 {facP}
                 """);
             var tSkipped = Cnt($"""
                 WITH norm AS (
@@ -1682,7 +1679,7 @@ public sealed class TBPatientsController : ControllerBase
 
             await Task.WhenAll(tAll, tDuplicates, tSametbno, tMissingreg, tSmearcured,
                                tNooutcome, tNotevaluated, tDiagmethod, tNorxstart,
-                               tFuturedates, tSkipped, tDeleted);
+                               tSkipped, tDeleted);
 
             return Ok(new {
                 all          = tAll.Result,
@@ -1695,7 +1692,6 @@ public sealed class TBPatientsController : ControllerBase
                 notevaluated = tNotevaluated.Result,
                 diagmethod   = tDiagmethod.Result,
                 norxstart    = tNorxstart.Result,
-                futuredates  = tFuturedates.Result,
                 deleted      = tDeleted.Result,
             });
         }
@@ -1813,7 +1809,7 @@ public sealed class TBPatientsController : ControllerBase
                     )) AS MissingFields
                     {dqJoins}
                     WHERE p.Deleted=0 {facP}
-                    AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 540)
+                    AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 180)
                     AND (
                         p.PtName IS NULL OR p.PtName=''
                         OR p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))=''
@@ -1855,20 +1851,18 @@ public sealed class TBPatientsController : ControllerBase
                     """;
                 break;
             case "diagmethod":
-                // TODO: user preference DQ_DIAGMETHOD_DAYS (default 365)
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 ORDER BY p.RegDate DESC, p.PtName";
+                // TODO: user preference DQ_DIAGMETHOD_DAYS (default 180)
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 180 ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "norxstart":
                 querySql = $"""
                     SELECT {dqCols}, DATEDIFF(DAY,p.RegDate,GETDATE()) AS DaysSinceReg
                     {dqJoins}
                     WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
-                    AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
+                    AND DATEDIFF(DAY,p.RegDate,GETDATE()) > 14
+                    AND DATEDIFF(DAY,p.RegDate,GETDATE()) < 180 {facP}
                     ORDER BY p.RegDate DESC
                     """;
-                break;
-            case "futuredates":
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP} ORDER BY p.RegDate DESC";
                 break;
             case "deleted":
                 querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=1 {facP} ORDER BY p.RegDate DESC, p.PtName";
