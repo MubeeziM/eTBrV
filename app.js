@@ -11755,9 +11755,9 @@ function resolveGeoScope(user, geo) {
       const closeDetailBtn = document.getElementById('pre-dq-close-detail-btn');
 
       const _THEAD_FULL    = '<tr><th>TB No</th><th>Reg Date</th><th>Patient Name</th><th>Age</th><th>Sex</th><th>Facility</th><th>Issue / Note</th></tr>';
-      const _THEAD_SKIPPED = '<tr><th style="width:16.666%">TB No</th><th>Facility</th></tr>';
+      const _THEAD_SKIPPED = '<tr><th style="width:2.5rem;text-align:center">#</th><th>TB Number</th><th>Facility</th></tr>';
       const _COL_FULL = 7;
-      const _COL_SKIP = 2;
+      const _COL_SKIP = 3;
 
       if (!modalEl) { resolve(true); return; }
 
@@ -12080,8 +12080,9 @@ function resolveGeoScope(user, geo) {
 
             if (isSkipped) {
               detailTbody.innerHTML =
-                rows.slice(0, 250).map(r =>
-                  `<tr><td>${esc(String(r.MissingTBNo || '').padStart(3,'0'))}/${r.RegYear || ''}</td>` +
+                rows.slice(0, 250).map((r, i) =>
+                  `<tr><td style="text-align:center;color:#64748b;font-size:0.82rem">${i + 1}.</td>` +
+                  `<td>${esc(String(r.MissingTBNo || '').padStart(3,'0'))}/${r.RegYear || ''}</td>` +
                   `<td>${esc(r.HealthFacility || '—')}</td></tr>`
                 ).join('') +
                 (rows.length > 250 ? `<tr><td colspan="${_cols}" class="text-center text-muted fst-italic py-1">… and ${rows.length - 250} more</td></tr>` : '');
