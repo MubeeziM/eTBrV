@@ -9688,9 +9688,9 @@ function _dqSetupPagingSentinel(cat) {
   if (!tbody || !tableWrap) return;
   const sentinel = document.createElement('tr');
   sentinel.id = 'dq-page-sentinel';
-  sentinel.innerHTML = `<td colspan="12" style="text-align:center;padding:0.5rem;background:#f8fafc;color:#64748b;font-size:0.82rem">
-    <span id="dq-page-spinner" hidden>Loading more…</span>
-    <span id="dq-page-more">${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more ↓</span></td>`;
+  sentinel.innerHTML = `<td colspan="12" style="text-align:center;padding:0.6rem;background:#f0fdf4;font-size:0.82rem">
+    <span id="dq-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em">⧗ Loading more…</span>
+    <span id="dq-page-more" style="color:#0f766e;font-weight:600">${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more ↓</span></td>`;
   tbody.appendChild(sentinel);
   _dqPageObserver = new IntersectionObserver(async entries => {
     if (!entries[0].isIntersecting || _dqIsPaging) return;
@@ -9734,10 +9734,9 @@ async function _dqLoadNextPage(cat) {
         tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
       }
     }
-    // Update subtitle
+    // Update subtitle — always show the server total, not the loaded page count
     const subEl = document.getElementById('dq-list-subtitle');
-    if (subEl) subEl.textContent = `Found ${String(_dqCurrentRows.length).padStart(2, '0')} Patients` +
-      (_dqCurrentRows.length < _dqTotalCount ? ` (of ${_dqTotalCount.toLocaleString()})` : '');
+    if (subEl) subEl.textContent = `Found ${_dqTotalCount.toLocaleString()} Patients`;
     if (_dqCurrentRows.length >= _dqTotalCount) {
       document.getElementById('dq-page-sentinel')?.remove();
       if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
@@ -9792,7 +9791,8 @@ function _dqRenderList(cat, rows) {
     if (n === 0)                subEl.textContent = cat === 'all' ? 'No Patients In The Database' : 'No Issues Found — Congratulations!';
     else if (cat === 'skipped') subEl.textContent = n === 1 ? 'Found 01 TB patient skipped during data entry' : `Found ${String(n).padStart(2, '0')} TB patients skipped during data entry`;
     else if (n === 1)           subEl.textContent = 'Found 01 Patient';
-    else                        subEl.textContent = `Found ${String(n).padStart(2, '0')} Patients`;
+    else { const tot = (_dqUseServer && _dqTotalCount > n) ? _dqTotalCount : n;
+           subEl.textContent = `Found ${tot.toLocaleString()} Patients`; }
   }
   if (hintEl) hintEl.textContent = _dqCatHint(cat, n);
 
