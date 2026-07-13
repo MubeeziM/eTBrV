@@ -9689,7 +9689,7 @@ function _dqSetupPagingSentinel(cat) {
   const sentinel = document.createElement('tr');
   sentinel.id = 'dq-page-sentinel';
   sentinel.innerHTML = `<td colspan="12" style="text-align:center;padding:0.6rem;background:#f0fdf4;font-size:0.82rem">
-    <span id="dq-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em">⧗ Loading more…</span>
+    <span id="dq-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em"><span class="dq-spin-icon">↻</span> Loading more…</span>
     <span id="dq-page-more" style="color:#0f766e;font-weight:600">${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more ↓</span></td>`;
   tbody.appendChild(sentinel);
   _dqPageObserver = new IntersectionObserver(async entries => {

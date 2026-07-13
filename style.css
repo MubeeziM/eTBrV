@@ -3425,6 +3425,11 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
 }
+.dq-spin-icon {
+  display: inline-block;
+  animation: spin 0.75s linear infinite;
+  transform-origin: center;
+}
 
 /* Inline issue badge in the Notes column */
 .dq-issue-badge {
