@@ -1871,7 +1871,8 @@ function getDQDiagMethodMissing(facilityIDs) {
   var sql = [
     'SELECT ' + _DQ_COLS,
     _DQ_JOINS,
-    'WHERE p.Deleted = 0 AND COALESCE(p.DiagMethodID, 0) = 0 ' + hf,
+    'WHERE p.Deleted = 0 AND COALESCE(p.DiagMethodID, 0) = 0' +
+    " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365 " + hf,
     'ORDER BY p.PtName',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
@@ -2307,7 +2308,7 @@ function getDQCounts(facilityIDs) {
 
     diagmethod: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0' +
-      ' AND COALESCE(p.DiagMethodID, 0) = 0 ' + outerHF),
+      " AND COALESCE(p.DiagMethodID, 0) = 0 AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365 " + outerHF),
 
     norxstart: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0' +
