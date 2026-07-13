@@ -1647,10 +1647,12 @@ public sealed class TBPatientsController : ControllerBase
             var tNooutcome = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtTypeID NOT IN (0,5,7)
+                WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtName IS NOT NULL AND p.PtName!=''
+                AND p.PtTypeID NOT IN (0,5,7)
                 AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
-                AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>168)
-                  OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>224)) {facP}
+                -- TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
+                AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
+                  OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600)) {facP}
                 """);
             var tNotevaluated = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
@@ -1846,10 +1848,12 @@ public sealed class TBPatientsController : ControllerBase
                     {dqJoins}
                     LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                     LEFT JOIN OutcomeT     o ON fu.OutcomeID=o.OutcomeID
-                    WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtTypeID NOT IN (0,5,7)
+                    WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtName IS NOT NULL AND p.PtName!=''
+                    AND p.PtTypeID NOT IN (0,5,7)
                     AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
-                    AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>168)
-                      OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>224)) {facP}
+                    -- TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
+                    AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
+                      OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600)) {facP}
                     ORDER BY p.DateRxStarted
                     """;
                 break;

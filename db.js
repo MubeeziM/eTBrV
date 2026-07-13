@@ -1826,12 +1826,14 @@ function getDQNoOutcome(facilityIDs) {
     'LEFT JOIN OutcomeT        o  ON fu.OutcomeID  = o.OutcomeID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
     '  AND p.PtTypeID NOT IN (0, 5, 7)',
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
+    // TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
     '  AND (',
-    '    (p.PtTypeID = 1          AND ' + days + ' > 168)',
+    '    (p.PtTypeID = 1          AND ' + days + ' BETWEEN 180 AND 540)',
     '    OR',
-    '    (p.PtTypeID IN (2,3,4,6) AND ' + days + ' > 224)',
+    '    (p.PtTypeID IN (2,3,4,6) AND ' + days + ' BETWEEN 240 AND 600)',
     '  )',
     '  ' + hf,
     'ORDER BY p.DateRxStarted',
@@ -2287,15 +2289,17 @@ function getDQCounts(facilityIDs) {
       " OR p.DateRxStarted IS NULL OR p.DateRxStarted = ''"+
       ' OR p.DiagMethodID = 0 OR p.DiagMethodID IS NULL)'),
 
+    // TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
     nooutcome: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p' +
       ' LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0' +
       ' WHERE p.Deleted = 0' +
       " AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''" +
+      " AND p.PtName IS NOT NULL AND p.PtName != ''" +
       ' AND p.PtTypeID NOT IN (0, 5, 7)' +
       ' AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))' +
-      " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) > 168)" +
-      "   OR (p.PtTypeID IN (2,3,4,6) AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) > 224))" +
+      " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)" +
+      "   OR (p.PtTypeID IN (2,3,4,6) AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))" +
       ' ' + outerHF),
 
     notevaluated: _dqCount(
