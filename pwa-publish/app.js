@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v130720261034';
+const APP_VERSION = 'v130720261040';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -9497,6 +9497,8 @@ function _dqRenderList(cat, rows) {
     return d;
   };
   const esc = escHtml;
+  // Treat null/empty/"Select One" as not recorded → show dash
+  const dqVal = v => (!v || v === 'Select One') ? '—' : String(v);
 
   tbody.innerHTML = rows.map(r => {
     // Build notes cell content based on category
@@ -9541,10 +9543,10 @@ function _dqRenderList(cat, rows) {
       <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${esc(String(r.PtDetailsTID))}" aria-label="Select ${esc(r.PtName || '')}"></td>
       <td>${esc(ageDisplay)}</td>
       <td>${r.SexID === 1 ? 'M' : r.SexID === 2 ? 'F' : '—'}</td>
-      <td>${esc(r.TbType || '—')}</td>
-      <td>${esc(r.PtTypeShort || '—')}</td>
+      <td>${esc(dqVal(r.TbType))}</td>
+      <td>${esc(dqVal(r.PtTypeShort))}</td>
       ${notesTd}
-      <td>${esc((r.DiagMethod || '').replace(/Smear Microscopy/gi, 'Microscopy') || '—')}</td>
+      <td>${esc(dqVal((r.DiagMethod || '').replace(/Smear Microscopy/gi, 'Microscopy')))}</td>
       <td>${esc(r.PtPhone || '—')}</td>
       <td>${esc(r.HealthFacility || '—')}</td>
     </tr>`;
