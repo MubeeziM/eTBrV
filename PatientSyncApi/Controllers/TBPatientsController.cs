@@ -1214,9 +1214,11 @@ public sealed class TBPatientsController : ControllerBase
         FacFilter(int[] cleanIds, string alias = "p")
     {
         if (cleanIds.Length == 0) return (string.Empty, []);
-        var names = cleanIds.Select((_, i) => $"@FId{i}").ToArray();
+        // Prefix parameter names with the alias so that p-params (@pFId0…) and
+        // d-params (@dFId0…) are unique when both are added to the same SqlCommand.
+        var names = cleanIds.Select((_, i) => $"@{alias}FId{i}").ToArray();
         var inSql = string.Join(", ", names);
-        var prms  = cleanIds.Select((v, i) => ($"@FId{i}", v)).ToList();
+        var prms  = cleanIds.Select((v, i) => ($"@{alias}FId{i}", v)).ToList();
         return ($"AND {alias}.NearestHFID IN ({inSql})", prms);
     }
 
