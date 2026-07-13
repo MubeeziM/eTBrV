@@ -1610,10 +1610,21 @@ public sealed class TBPatientsController : ControllerBase
                 SELECT COUNT(*) FROM norm n JOIN dupes dk ON dk.NearestHFID=n.NearestHFID AND dk.RegYear=n.RegYear AND dk.TBNoB=n.TBNoB WHERE n.TBNoB>0
                 """);
             int missingreg = await Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+                SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
-                AND (p.PtName IS NULL OR p.PtName='' OR p.Age=0 OR p.Age IS NULL OR p.SexID=0 OR p.TbTypeID=0
-                     OR p.PtTypeID=0 OR p.RegDate IS NULL OR p.DateRxStarted IS NULL OR p.DiagMethodID=0)
+                AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 540)
+                AND (
+                    p.PtName IS NULL OR p.PtName=''
+                    OR p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))=''
+                    OR p.Age IS NULL OR p.Age=0
+                    OR p.SexID IS NULL OR p.SexID IN (0,3)
+                    OR p.TbTypeID IS NULL OR p.TbTypeID IN (0,4)
+                    OR p.PtTypeID IS NULL OR p.PtTypeID IN (0,7)
+                    OR p.NearestHFID IS NULL OR p.NearestHFID=0
+                    OR p.RegDate IS NULL
+                    OR p.DateRxStarted IS NULL
+                    OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
+                )
                 """);
             int smearcured = await Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
@@ -1769,21 +1780,33 @@ public sealed class TBPatientsController : ControllerBase
             case "missingreg":
                 querySql = $"""
                     SELECT {dqCols},
-                    LTRIM(
+                    RTRIM(LTRIM(
                       CASE WHEN p.PtName IS NULL OR p.PtName='' THEN 'Patient Name, ' ELSE '' END +
-                      CASE WHEN p.Age=0 OR p.Age IS NULL THEN 'Age, ' ELSE '' END +
-                      CASE WHEN p.SexID=0 THEN 'Sex, ' ELSE '' END +
-                      CASE WHEN p.TbTypeID=0 THEN 'TB Site, ' ELSE '' END +
-                      CASE WHEN p.PtTypeID=0 THEN 'Patient Type, ' ELSE '' END +
+                      CASE WHEN p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))='' THEN 'Unit TB No, ' ELSE '' END +
+                      CASE WHEN p.Age IS NULL OR p.Age=0 THEN 'Age, ' ELSE '' END +
+                      CASE WHEN p.SexID IS NULL OR p.SexID IN (0,3) THEN 'Sex, ' ELSE '' END +
+                      CASE WHEN p.TbTypeID IS NULL OR p.TbTypeID IN (0,4) THEN 'TB Site, ' ELSE '' END +
+                      CASE WHEN p.PtTypeID IS NULL OR p.PtTypeID IN (0,7) THEN 'Patient Type, ' ELSE '' END +
+                      CASE WHEN p.NearestHFID IS NULL OR p.NearestHFID=0 THEN 'Treatment Facility, ' ELSE '' END +
                       CASE WHEN p.RegDate IS NULL THEN 'Reg Date, ' ELSE '' END +
                       CASE WHEN p.DateRxStarted IS NULL THEN 'Rx Start Date, ' ELSE '' END +
-                      CASE WHEN p.DiagMethodID=0 THEN 'Diag Method, ' ELSE '' END
-                    ) AS MissingFields
+                      CASE WHEN p.DiagMethodID IS NULL OR p.DiagMethodID=0 THEN 'Diag Method, ' ELSE '' END
+                    )) AS MissingFields
                     {dqJoins}
                     WHERE p.Deleted=0 {facP}
-                    AND (p.PtName IS NULL OR p.PtName='' OR p.Age=0 OR p.Age IS NULL OR p.SexID=0
-                         OR p.TbTypeID=0 OR p.PtTypeID=0 OR p.RegDate IS NULL OR p.DateRxStarted IS NULL
-                         OR p.DiagMethodID=0)
+                    AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 540)
+                    AND (
+                        p.PtName IS NULL OR p.PtName=''
+                        OR p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))=''
+                        OR p.Age IS NULL OR p.Age=0
+                        OR p.SexID IS NULL OR p.SexID IN (0,3)
+                        OR p.TbTypeID IS NULL OR p.TbTypeID IN (0,4)
+                        OR p.PtTypeID IS NULL OR p.PtTypeID IN (0,7)
+                        OR p.NearestHFID IS NULL OR p.NearestHFID=0
+                        OR p.RegDate IS NULL
+                        OR p.DateRxStarted IS NULL
+                        OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
+                    )
                     ORDER BY p.PtName
                     """;
                 break;
