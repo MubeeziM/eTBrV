@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v130720261027';
+const APP_VERSION = 'v130720261034';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -9009,7 +9009,6 @@ async function _dqBuildTree() {
 
     const activeSet = new Set(activeFacs.map(f => f.HealthFacilityID));
     const geo       = getGeoAreaData().filter(r => activeSet.has(r.HealthFacilityID));
-    const user      = getUser();
     const scope     = user ? resolveGeoScope(user, geo) : { level: 'national', stateID: 0, countyID: 0, facilityID: 0 };
 
     treeEl.innerHTML = '';
