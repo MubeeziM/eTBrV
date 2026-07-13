@@ -1577,24 +1577,25 @@ public sealed class TBPatientsController : ControllerBase
 
         try
         {
-            // Use a single connection with sequential queries to avoid exhausting
-            // the SQL Server connection pool on shared hosting (parallel connections
-            // caused immediate pool failures showing "—" in 3-5 s).
-            await using var conn = new SqlConnection(_connectionString);
-            await conn.OpenAsync();
-
-            async Task<int> Cnt(string sql, bool useFacD = false)
+            // Run all 12 COUNT queries in parallel — each on its own connection.
+            // Wall-clock time = max(slowest query) rather than sum(all queries).
+            // (The earlier "sequential single-connection" workaround was a red
+            // herring; the real bug was duplicate @FId0 parameter names when both
+            // facPrms and facDPrms were added to the same SqlCommand.)
+            async Task<int> Cnt(string sql, List<(string Name, int Value)>? extraPrms = null)
             {
-                await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 25 };
+                await using var conn = new SqlConnection(_connectionString);
+                await conn.OpenAsync();
+                await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 55 };
                 AddFacParams(cmd, facPrms);
-                if (useFacD) AddFacParams(cmd, facDPrms);
+                if (extraPrms != null) AddFacParams(cmd, extraPrms);
                 cmd.Parameters.AddWithValue("@MinYear", minYear);
                 var r = await cmd.ExecuteScalarAsync();
                 return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
             }
 
-            var all = await Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP}");
-            var duplicates = await Cnt($"""
+            var tAll = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP}");
+            var tDuplicates = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP} AND p.PtName!=''
                 AND EXISTS (SELECT 1 FROM PtDetailsT d
                             WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
@@ -1602,8 +1603,8 @@ public sealed class TBPatientsController : ControllerBase
                             AND COALESCE(d.Age,-1)=COALESCE(p.Age,-1) AND COALESCE(d.SexID,-1)=COALESCE(p.SexID,-1)
                             AND COALESCE(d.UnitTBNo,'')=COALESCE(p.UnitTBNo,'')
                             AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
-                """, useFacD: true);
-            var sametbno = await Cnt($"""
+                """, facDPrms);
+            var tSametbno = Cnt($"""
                 WITH norm AS (
                     SELECT p.PtDetailsTID, p.NearestHFID, YEAR(p.RegDate) AS RegYear,
                            TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
@@ -1612,7 +1613,7 @@ public sealed class TBPatientsController : ControllerBase
                 dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
                 SELECT COUNT(*) FROM norm n JOIN dupes dk ON dk.NearestHFID=n.NearestHFID AND dk.RegYear=n.RegYear AND dk.TBNoB=n.TBNoB WHERE n.TBNoB>0
                 """);
-            var missingreg = await Cnt($"""
+            var tMissingreg = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
                 AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 540)
@@ -1629,14 +1630,14 @@ public sealed class TBPatientsController : ControllerBase
                     OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
                 )
                 """);
-            var smearcured = await Cnt($"""
+            var tSmearcured = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                 WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
                 AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
                 AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
                 """);
-            var nooutcome = await Cnt($"""
+            var tNooutcome = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                 WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtTypeID NOT IN (0,5,7)
@@ -1644,25 +1645,25 @@ public sealed class TBPatientsController : ControllerBase
                 AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>168)
                   OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>224)) {facP}
                 """);
-            var notevaluated = await Cnt($"""
+            var tNotevaluated = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                 WHERE p.Deleted=0 AND fu.OutcomeID=6 {facP}
                 """);
-            var diagmethod = await Cnt($"""
+            var tDiagmethod = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
                 """);
-            var norxstart = await Cnt($"""
+            var tNorxstart = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
                 AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
                 """);
-            var futuredates = await Cnt($"""
+            var tFuturedates = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP}
                 """);
-            var skipped = await Cnt($"""
+            var tSkipped = Cnt($"""
                 WITH norm AS (
                     SELECT p.NearestHFID, YEAR(p.RegDate) AS RegYear,
                            TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
@@ -1675,11 +1676,25 @@ public sealed class TBPatientsController : ControllerBase
                 gaps AS (SELECT e.NearestHFID, e.RegYear, e.TBNoB FROM expected e WHERE NOT EXISTS (SELECT 1 FROM valid v WHERE v.NearestHFID=e.NearestHFID AND v.RegYear=e.RegYear AND v.TBNoB=e.TBNoB))
                 SELECT COUNT(*) FROM gaps
                 """);
-            var deleted = await Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=1 {facP}");
+            var tDeleted = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=1 {facP}");
+
+            await Task.WhenAll(tAll, tDuplicates, tSametbno, tMissingreg, tSmearcured,
+                               tNooutcome, tNotevaluated, tDiagmethod, tNorxstart,
+                               tFuturedates, tSkipped, tDeleted);
 
             return Ok(new {
-                all, duplicates, skipped, sametbno, smearcured, missingreg,
-                nooutcome, notevaluated, diagmethod, norxstart, futuredates, deleted,
+                all          = tAll.Result,
+                duplicates   = tDuplicates.Result,
+                skipped      = tSkipped.Result,
+                sametbno     = tSametbno.Result,
+                smearcured   = tSmearcured.Result,
+                missingreg   = tMissingreg.Result,
+                nooutcome    = tNooutcome.Result,
+                notevaluated = tNotevaluated.Result,
+                diagmethod   = tDiagmethod.Result,
+                norxstart    = tNorxstart.Result,
+                futuredates  = tFuturedates.Result,
+                deleted      = tDeleted.Result,
             });
         }
         catch (Exception ex)
