@@ -607,7 +607,7 @@ public sealed class TBPatientsController : ControllerBase
                 return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
             }
 
-            // 1. Duplicate patients (same name + age + sex + TBNo + regdate in same facility)
+            // 1. Duplicate patients (same name + age + patient type + regdate, within report period)
             int duplicates = await Scalar($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
@@ -618,9 +618,8 @@ public sealed class TBPatientsController : ControllerBase
                         WHERE d.Deleted=0 AND d.PtDetailsTID != p.PtDetailsTID {facD}
                           AND d.PtName != ''
                           AND UPPER(LTRIM(RTRIM(d.PtName))) = UPPER(LTRIM(RTRIM(p.PtName)))
-                          AND COALESCE(d.Age,  -1) = COALESCE(p.Age,  -1)
-                          AND COALESCE(d.SexID,-1) = COALESCE(p.SexID,-1)
-                          AND COALESCE(d.UnitTBNo,'') = COALESCE(p.UnitTBNo,'')
+                          AND COALESCE(d.Age,      -1) = COALESCE(p.Age,      -1)
+                          AND COALESCE(d.PtTypeID, -1) = COALESCE(p.PtTypeID, -1)
                           AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')
                             = COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
                 """);
@@ -882,9 +881,8 @@ public sealed class TBPatientsController : ControllerBase
                             WHERE d.Deleted=0 AND d.PtDetailsTID != p.PtDetailsTID {facD}
                               AND d.PtName != ''
                               AND UPPER(LTRIM(RTRIM(d.PtName))) = UPPER(LTRIM(RTRIM(p.PtName)))
-                              AND COALESCE(d.Age,  -1) = COALESCE(p.Age,  -1)
-                              AND COALESCE(d.SexID,-1) = COALESCE(p.SexID,-1)
-                              AND COALESCE(d.UnitTBNo,'') = COALESCE(p.UnitTBNo,'')
+                              AND COALESCE(d.Age,      -1) = COALESCE(p.Age,      -1)
+                              AND COALESCE(d.PtTypeID, -1) = COALESCE(p.PtTypeID, -1)
                               AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')
                                 = COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
                     ORDER BY p.PtName, p.RegDate
@@ -1597,11 +1595,12 @@ public sealed class TBPatientsController : ControllerBase
             var tAll = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP}");
             var tDuplicates = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP} AND p.PtName!=''
+                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
                 AND EXISTS (SELECT 1 FROM PtDetailsT d
                             WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
                             AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
-                            AND COALESCE(d.Age,-1)=COALESCE(p.Age,-1) AND COALESCE(d.SexID,-1)=COALESCE(p.SexID,-1)
-                            AND COALESCE(d.UnitTBNo,'')=COALESCE(p.UnitTBNo,'')
+                            AND COALESCE(d.Age,     -1)=COALESCE(p.Age,     -1)
+                            AND COALESCE(d.PtTypeID,-1)=COALESCE(p.PtTypeID,-1)
                             AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
                 """, facDPrms);
             var tSametbno = Cnt($"""
@@ -1755,11 +1754,12 @@ public sealed class TBPatientsController : ControllerBase
                 querySql = $"""
                     SELECT {dqCols} {dqJoins}
                     WHERE p.Deleted=0 {facP} AND p.PtName!=''
+                    AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
                     AND EXISTS (SELECT 1 FROM PtDetailsT d LEFT JOIN HealthFacilityT hfd ON d.NearestHFID=hfd.HealthFacilityID
                                 WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
                                 AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
-                                AND COALESCE(d.Age,-1)=COALESCE(p.Age,-1) AND COALESCE(d.SexID,-1)=COALESCE(p.SexID,-1)
-                                AND COALESCE(d.UnitTBNo,'')=COALESCE(p.UnitTBNo,'')
+                                AND COALESCE(d.Age,     -1)=COALESCE(p.Age,     -1)
+                                AND COALESCE(d.PtTypeID,-1)=COALESCE(p.PtTypeID,-1)
                                 AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
                     ORDER BY p.PtName, p.RegDate
                     """;

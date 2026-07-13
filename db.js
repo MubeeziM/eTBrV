@@ -1551,15 +1551,16 @@ function getDQDuplicates(facilityIDs) {
     _DQ_JOINS,
     'WHERE p.Deleted = 0 ' + outerHF,
     "AND p.PtName != ''",
+    // 365-day rolling window — TODO: configurable via user preferences
+    "AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365",
     'AND EXISTS (',
     '  SELECT 1 FROM PtDetailsT d',
     '  WHERE d.Deleted = 0 AND d.PtDetailsTID != p.PtDetailsTID ' + innerHF,
     "  AND d.PtName != ''",
-    '  AND UPPER(TRIM(d.PtName))    = UPPER(TRIM(p.PtName))',
-    '  AND COALESCE(d.Age, -1)      = COALESCE(p.Age, -1)',
-    '  AND COALESCE(d.SexID, -1)    = COALESCE(p.SexID, -1)',
-    "  AND COALESCE(d.UnitTBNo, '') = COALESCE(p.UnitTBNo, '')",
-    "  AND COALESCE(d.RegDate, '')  = COALESCE(p.RegDate, '')",
+    '  AND UPPER(TRIM(d.PtName))      = UPPER(TRIM(p.PtName))',
+    '  AND COALESCE(d.Age, -1)        = COALESCE(p.Age, -1)',
+    '  AND COALESCE(d.PtTypeID, -1)   = COALESCE(p.PtTypeID, -1)',
+    "  AND COALESCE(d.RegDate, '')    = COALESCE(p.RegDate, '')",
     ')',
     'ORDER BY p.PtName, p.RegDate',
   ].join('\n');
@@ -1949,10 +1950,9 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
       ' AND EXISTS (SELECT 1 FROM PtDetailsT d' +
       '  WHERE d.Deleted = 0 AND d.PtDetailsTID != p.PtDetailsTID ' + innerHF +
       "  AND d.PtName != '' AND UPPER(TRIM(d.PtName)) = UPPER(TRIM(p.PtName))" +
-      '  AND COALESCE(d.Age,-1) = COALESCE(p.Age,-1)' +
-      '  AND COALESCE(d.SexID,-1) = COALESCE(p.SexID,-1)' +
-      "  AND COALESCE(d.UnitTBNo,'') = COALESCE(p.UnitTBNo,'')" +
-      "  AND COALESCE(d.RegDate,'') = COALESCE(p.RegDate,''))"),
+      '  AND COALESCE(d.Age,-1)      = COALESCE(p.Age,-1)' +
+      '  AND COALESCE(d.PtTypeID,-1) = COALESCE(p.PtTypeID,-1)' +
+      "  AND COALESCE(d.RegDate,'')  = COALESCE(p.RegDate,''))"),
 
     sametbno: _dqCount(
       "WITH norm AS (SELECT p.PtDetailsTID, p.NearestHFID, CAST(strftime('%Y',p.RegDate) AS INTEGER) AS RegYear," +
@@ -2220,15 +2220,16 @@ function getDQCounts(facilityIDs) {
     duplicates: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0 ' + outerHF +
       " AND p.PtName != ''" +
+      // 365-day rolling window — TODO: configurable via user preferences
+      " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365" +
       ' AND EXISTS (' +
       '  SELECT 1 FROM PtDetailsT d' +
       '  WHERE d.Deleted = 0 AND d.PtDetailsTID != p.PtDetailsTID ' + innerHF +
       "  AND d.PtName != ''" +
-      '  AND UPPER(TRIM(d.PtName))    = UPPER(TRIM(p.PtName))' +
-      '  AND COALESCE(d.Age, -1)      = COALESCE(p.Age, -1)' +
-      '  AND COALESCE(d.SexID, -1)    = COALESCE(p.SexID, -1)' +
-      "  AND COALESCE(d.UnitTBNo, '') = COALESCE(p.UnitTBNo, '')" +
-      "  AND COALESCE(d.RegDate, '')  = COALESCE(p.RegDate, '')" +
+      '  AND UPPER(TRIM(d.PtName))      = UPPER(TRIM(p.PtName))' +
+      '  AND COALESCE(d.Age, -1)        = COALESCE(p.Age, -1)' +
+      '  AND COALESCE(d.PtTypeID, -1)   = COALESCE(p.PtTypeID, -1)' +
+      "  AND COALESCE(d.RegDate, '')    = COALESCE(p.RegDate, '')" +
       ')'),
 
     skipped: _dqCount(
