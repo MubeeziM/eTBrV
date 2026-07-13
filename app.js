@@ -2428,13 +2428,49 @@ async function exportDQPatientsToExcel() {
     return;
   }
 
+  const cat = typeof _dqCategory !== 'undefined' ? _dqCategory : '';
+
+  // ── Special path for skipped (gap) rows — no patient TIDs, simple 3-col export ──
+  if (cat === 'skipped') {
+    const checkedIdxs = [...document.querySelectorAll('#dq-patient-tbody .row-check-gap:checked')]
+      .map(cb => parseInt(cb.value, 10));
+    if (!checkedIdxs.length) { showToast('Please select the rows you want to export.', 'error'); return; }
+    const gapRows = checkedIdxs.map(i => _dqSkippedRows[i]).filter(Boolean);
+    if (!gapRows.length) { showToast('No rows to export.', 'error'); return; }
+    const confirmed = await showGenericConfirmModal('Export to Excel',
+      `Export ${gapRows.length.toLocaleString()} skipped TB number${gapRows.length !== 1 ? 's' : ''} to Excel?\n\nProceed?`, 'Export');
+    if (!confirmed) return;
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.created = new Date(); wb.modified = new Date();
+      const ws = wb.addWorksheet('Skipped TB Numbers');
+      ws.columns = [{ key: 's', width: 6 }, { key: 'n', width: 14 }, { key: 'f', width: 36 }];
+      ['#', 'Unit TB Number', 'Health Facility'].forEach((h, i) => { ws.getCell(1, i + 1).value = h; });
+      _xlStyleHeader(ws, 1, 3);
+      gapRows.forEach((r, i) => {
+        ws.getCell(i + 2, 1).value = i + 1;
+        ws.getCell(i + 2, 2).value = `${String(r.MissingTBNo).padStart(3, '0')}/${r.RegYear}`;
+        ws.getCell(i + 2, 3).value = r.HealthFacility || '';
+        _xlStyleDataRow(ws, i + 2, 3, [0]);
+      });
+      ws.views = [{ state: 'frozen', ySplit: 1 }];
+      const user = getUser();
+      const exportedBy = user?.fullName ?? user?.userName ?? 'Unknown User';
+      ws.headerFooter.oddFooter = `&LExported from eTBr on ${new Date().toDateString()} by ${exportedBy}`;
+      await _xlDownload(wb, `DataQuality_SkippedTBNumbers_${_xlTimestamp()}.xlsx`);
+      showToast(`Exported ${gapRows.length} skipped TB number${gapRows.length !== 1 ? 's' : ''} to Excel.`, 'success');
+    } catch (err) {
+      console.error('[Excel Export DQ Skipped]', err);
+      showToast('Failed to export to Excel.', 'error');
+    }
+    return;
+  }
+
   const checkedTIDs = _getCheckedTIDs('dq-patient-tbody');
   if (!checkedTIDs) {
     showToast('Please select the patients you want to export to Excel.', 'error');
     return;
   }
-
-  const cat = typeof _dqCategory !== 'undefined' ? _dqCategory : '';
 
   // If in server mode and the user selected rows that represent the full page (Select All)
   // but the server has more rows, fetch ALL rows from the server before exporting.
@@ -7045,6 +7081,7 @@ let _sidebarAutoCollapsed = false;
 let _monCurrentRows = [];
 /** Last-rendered rows in the Data Quality list — used by the Excel export. */
 let _dqCurrentRows  = [];
+let _dqSkippedRows  = [];  // gap rows for the skipped category (used by Excel export)
 let _dqTotalCount   = 0;    // server total for current category (used by paging)
 let _dqIsPaging     = false; // guard: one page load at a time
 let _dqPageObserver = null;  // IntersectionObserver on the load-more sentinel
@@ -8948,6 +8985,20 @@ _wireSelectAll('patients-table',    'art-select-all', 'patients-tbody');
 _wireSelectAll('tb-patient-table',  'tb-select-all',  'tb-patient-tbody');
 _wireSelectAll('mon-patient-table', 'mon-select-all', 'mon-patient-tbody');
 _wireSelectAll('dq-patient-table',  'dq-select-all',  'dq-patient-tbody');
+
+// Wire select-all checkbox for the skipped (gap) category rows
+document.getElementById('dq-patient-table')?.addEventListener('change', e => {
+  if (e.target.id === 'dq-select-all-gap') {
+    document.querySelectorAll('#dq-patient-tbody .row-check-gap').forEach(cb => { cb.checked = e.target.checked; });
+  } else if (e.target.classList.contains('row-check-gap')) {
+    const sa = document.getElementById('dq-select-all-gap');
+    if (!sa) return;
+    const all = [...document.querySelectorAll('#dq-patient-tbody .row-check-gap')];
+    const cnt = all.filter(cb => cb.checked).length;
+    sa.checked = cnt === all.length;
+    sa.indeterminate = cnt > 0 && cnt < all.length;
+  }
+});
 
 /** Returns the TIDs of the currently checked rows in a tbody,
  *  or null if none are checked (caller should export all rows). */

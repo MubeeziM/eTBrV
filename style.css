@@ -3496,20 +3496,28 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
 
 #dq-patient-table tbody tr[data-tid] { cursor: pointer; }
 
-/* Skipped-gaps view: narrow TB-number column, facility left-aligned */
-#dq-patient-table tr.dq-row--gap td:first-child {
+/* Skipped-gaps view: serial # narrow, TB-number constrained, facility left-aligned, checkbox narrow */
+#dq-patient-table tr.dq-row--gap td:nth-child(1) {
+  width: 2.5rem;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+#dq-patient-table tr.dq-row--gap td:nth-child(2) {
   width: 130px;
   white-space: nowrap;
 }
-#dq-patient-table tr.dq-row--gap td:last-child {
+#dq-patient-table tr.dq-row--gap td:nth-child(3) {
   text-align: left;
 }
-#dq-thead-skipped th:first-child {
-  width: 130px;
+#dq-patient-table tr.dq-row--gap td:nth-child(4) {
+  width: 36px;
+  text-align: center;
 }
-#dq-thead-skipped th:last-child {
-  text-align: left;
-}
+#dq-thead-skipped th:nth-child(1) { width: 2.5rem; text-align: center; }
+#dq-thead-skipped th:nth-child(2) { width: 130px; }
+#dq-thead-skipped th:nth-child(3) { text-align: left; }
+#dq-thead-skipped th:nth-child(4) { width: 36px; text-align: center; }
 
 /* Print */
 @media print {
