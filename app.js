@@ -8366,7 +8366,8 @@ async function _monBuildTree() {
       toggleEl.classList.toggle('open', open);
     };
 
-    const sortedStates = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const sortedStates    = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const countryChildren = mkEl('div', 'rpt-tree-children open');
 
     for (const [stateId, stateData] of sortedStates) {
       const stateNode     = mkEl('div', 'rpt-tree-node rpt-tree-state');
@@ -8423,6 +8424,7 @@ async function _monBuildTree() {
           if (!cb.disabled) { cb.checked = stateCb.checked; cb.indeterminate = false; }
         });
         stateCb.indeterminate = false;
+        _monRefreshAncestors();
         _monTreeChanged();
       });
       stateLabel.addEventListener('click', () => { if (!stateCb.disabled) stateCb.click(); });
@@ -8432,8 +8434,29 @@ async function _monBuildTree() {
       stateNode.appendChild(stateCb);
       stateNode.appendChild(stateLabel);
       stateNode.appendChild(stateChildren);
-      treeEl.appendChild(stateNode);
+      countryChildren.appendChild(stateNode);
     }
+
+    const countryCb    = document.createElement('input');
+    countryCb.type = 'checkbox'; countryCb.className = 'rpt-tree-cb';
+    countryCb.dataset.level = 'country'; countryCb.dataset.id = '0';
+    const countryLabel  = mkEl('span', 'rpt-tree-label', 'South Sudan');
+    const countryToggle = mkEl('span', 'rpt-tree-toggle open');
+    const countryNode   = mkEl('div', 'rpt-tree-node rpt-tree-country');
+    countryCb.addEventListener('change', () => {
+      countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+        if (!cb.disabled) { cb.checked = countryCb.checked; cb.indeterminate = false; }
+      });
+      countryCb.indeterminate = false;
+      _monTreeChanged();
+    });
+    countryLabel.addEventListener('click', () => { if (!countryCb.disabled) countryCb.click(); });
+    countryToggle.addEventListener('click', () => toggle(countryChildren, countryToggle));
+    countryNode.appendChild(countryToggle);
+    countryNode.appendChild(countryCb);
+    countryNode.appendChild(countryLabel);
+    countryNode.appendChild(countryChildren);
+    treeEl.appendChild(countryNode);
 
     // Apply user scope (same logic as reports): pre-check and expand relevant nodes
     _monApplyScope(scope);
@@ -8513,6 +8536,11 @@ function _monRefreshAncestors() {
     const ccbs = [...sn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
     setParent(scb, ccbs);
   }
+  for (const rn of treeEl.querySelectorAll('.rpt-tree-country')) {
+    const ccb  = rn.querySelector(':scope > .rpt-tree-cb');
+    const scbs = [...rn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+    setParent(ccb, scbs);
+  }
 }
 
 /**
@@ -8563,7 +8591,8 @@ function _monTreeChanged() {
     }
   }
 
-  _monRefreshAll();
+  _monSelectCategory(_monCategory);
+  _monRefreshAll(true);
 }
 
 /** Collapse or expand the monitoring sidebar. */
@@ -8584,7 +8613,7 @@ function _monSetSidebarCollapsed(collapsed) {
 }
 
 /** Recompute all category counts and re-render the active list. */
-async function _monRefreshAll() {
+async function _monRefreshAll(skipList = false) {
   try {
     let counts;
     if (_monUseServer) {
@@ -8626,7 +8655,7 @@ async function _monRefreshAll() {
         : 'TB Patients Due For Sputum Examination';
     }
 
-    _monSelectCategory(_monCategory);
+    if (!skipList) _monSelectCategory(_monCategory);
   } catch (err) {
     console.error('[Monitoring] _monRefreshAll:', err);
   }
@@ -9100,7 +9129,8 @@ async function _dqBuildTree() {
       toggleEl.classList.toggle('open', open);
     };
 
-    const sortedStates = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const sortedStates    = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const countryChildren = mkEl('div', 'rpt-tree-children open');
 
     for (const [stateId, stateData] of sortedStates) {
       const stateNode     = mkEl('div', 'rpt-tree-node rpt-tree-state');
@@ -9157,6 +9187,7 @@ async function _dqBuildTree() {
           if (!cb.disabled) { cb.checked = stateCb.checked; cb.indeterminate = false; }
         });
         stateCb.indeterminate = false;
+        _dqRefreshAncestors();
         _dqTreeChanged();
       });
       stateLabel.addEventListener('click', () => { if (!stateCb.disabled) stateCb.click(); });
@@ -9166,8 +9197,29 @@ async function _dqBuildTree() {
       stateNode.appendChild(stateCb);
       stateNode.appendChild(stateLabel);
       stateNode.appendChild(stateChildren);
-      treeEl.appendChild(stateNode);
+      countryChildren.appendChild(stateNode);
     }
+
+    const countryCb    = document.createElement('input');
+    countryCb.type = 'checkbox'; countryCb.className = 'rpt-tree-cb';
+    countryCb.dataset.level = 'country'; countryCb.dataset.id = '0';
+    const countryLabel  = mkEl('span', 'rpt-tree-label', 'South Sudan');
+    const countryToggle = mkEl('span', 'rpt-tree-toggle open');
+    const countryNode   = mkEl('div', 'rpt-tree-node rpt-tree-country');
+    countryCb.addEventListener('change', () => {
+      countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+        if (!cb.disabled) { cb.checked = countryCb.checked; cb.indeterminate = false; }
+      });
+      countryCb.indeterminate = false;
+      _dqTreeChanged();
+    });
+    countryLabel.addEventListener('click', () => { if (!countryCb.disabled) countryCb.click(); });
+    countryToggle.addEventListener('click', () => toggle(countryChildren, countryToggle));
+    countryNode.appendChild(countryToggle);
+    countryNode.appendChild(countryCb);
+    countryNode.appendChild(countryLabel);
+    countryNode.appendChild(countryChildren);
+    treeEl.appendChild(countryNode);
 
     _dqApplyScope(scope);
     _dqTreeChanged();
@@ -9241,6 +9293,11 @@ function _dqRefreshAncestors() {
     const ccbs = [...sn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
     setParent(scb, ccbs);
   }
+  for (const rn of treeEl.querySelectorAll('.rpt-tree-country')) {
+    const ccb  = rn.querySelector(':scope > .rpt-tree-cb');
+    const scbs = [...rn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+    setParent(ccb, scbs);
+  }
 }
 
 function _dqTreeChanged() {
@@ -9277,7 +9334,8 @@ function _dqTreeChanged() {
     else              showLabel.textContent = `${n} Facilities Selected`;
   }
 
-  _dqRefreshAll();
+  _dqSelectCategory(_dqCategory);
+  _dqRefreshAll(true);
 }
 
 function _dqSetSidebarCollapsed(collapsed) {
@@ -9298,7 +9356,7 @@ function _dqSetSidebarCollapsed(collapsed) {
 
 // ── Counts and list rendering ──────────────────────────────────────────────
 
-async function _dqRefreshAll() {
+async function _dqRefreshAll(skipList = false) {
   // Show skeleton shimmer on all count badges while the server call is in flight.
   const countIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
     'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
@@ -9368,7 +9426,7 @@ async function _dqRefreshAll() {
     setCount('dq-count-futuredates', counts.futuredates, true);
     setCount('dq-count-deleted',     counts.deleted,     true);
 
-    _dqSelectCategory(_dqCategory);
+    if (!skipList) _dqSelectCategory(_dqCategory);
   } catch (err) {
     // Remove skeletons on error too
     countIds.forEach(id => document.getElementById(id)?.classList.remove('dq-stat-count--loading'));
@@ -9643,6 +9701,10 @@ async function _dqLoadNextPage(cat) {
     if (tbody && sentinel) {
       sentinel.insertAdjacentHTML('beforebegin', newRows.map(r => _dqBuildRowHtml(cat, r)).join(''));
       _dqAttachRowHandlers(tbody, cat);
+      const selectAll = document.getElementById('dq-select-all');
+      if (selectAll?.checked) {
+        tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+      }
     }
     // Update subtitle
     const subEl = document.getElementById('dq-list-subtitle');

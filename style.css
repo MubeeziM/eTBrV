@@ -354,6 +354,8 @@ textarea.invalid {
   vertical-align: middle;
   font-size: .875rem;
 }
+.rpt-tree-country  { padding: 4px 0; font-weight: 700; color: #065f46; }
+.rpt-tree-country > .rpt-tree-children { margin-left: 0.7rem; padding-left: 0.7rem; }
 .rpt-tree-state    { padding: 3px 0; font-weight: 600; position: relative; }
 .rpt-tree-county   { padding: 2px 0; position: relative; }
 .rpt-tree-facility { padding: 1px 0; color: #374151; position: relative; }
