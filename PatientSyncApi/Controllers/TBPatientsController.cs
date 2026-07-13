@@ -1653,6 +1653,8 @@ public sealed class TBPatientsController : ControllerBase
             var tDiagmethod = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
+                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365
+                -- TODO: user preference DQ_DIAGMETHOD_DAYS (default 365)
                 """);
             var tNorxstart = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
@@ -1853,7 +1855,8 @@ public sealed class TBPatientsController : ControllerBase
                     """;
                 break;
             case "diagmethod":
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} ORDER BY p.RegDate DESC, p.PtName";
+                // TODO: user preference DQ_DIAGMETHOD_DAYS (default 365)
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "norxstart":
                 querySql = $"""
