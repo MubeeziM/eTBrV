@@ -1876,9 +1876,9 @@ public sealed class TBPatientsController : ControllerBase
                         WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL
                           AND YEAR(p.RegDate)>=@MinYear AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' {facP}
                     ),
-                    valid AS (SELECT NearestHFID, RegYear, TBNoB FROM norm WHERE TBNoB>0 AND TBNoB<2000),
+                    valid AS (SELECT NearestHFID, RegYear, TBNoB FROM norm WHERE TBNoB>0 AND TBNoB<10000 AND NOT (TBNoB BETWEEN 2000 AND 2099)),
                     ranges AS (SELECT NearestHFID, RegYear, MIN(TBNoB) AS MinNo, MAX(TBNoB) AS MaxNo FROM valid GROUP BY NearestHFID, RegYear),
-                    seq AS (SELECT TOP 2000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL))-1 AS n FROM sys.objects CROSS JOIN sys.objects s2),
+                    seq AS (SELECT TOP 10000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL))-1 AS n FROM sys.objects CROSS JOIN sys.objects s2),
                     expected AS (SELECT r.NearestHFID, r.RegYear, r.MinNo+s.n AS TBNoB FROM ranges r CROSS JOIN seq s WHERE r.MinNo+s.n<=r.MaxNo),
                     gaps AS (
                         SELECT e.NearestHFID, e.RegYear, e.TBNoB FROM expected e
@@ -1898,7 +1898,7 @@ public sealed class TBPatientsController : ControllerBase
 
         try
         {
-            int topN = Math.Clamp(limit, 1, export ? 50_000 : 2_000);
+            int topN = Math.Clamp(limit, 1, export ? 50_000 : 10_000);
             int skip = Math.Max(0, offset);
             // Append row limit — works with plain SELECTs and CTEs alike
             querySql += "\nOFFSET @Skip ROWS FETCH NEXT @Top ROWS ONLY";
