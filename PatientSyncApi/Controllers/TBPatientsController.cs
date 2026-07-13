@@ -714,6 +714,7 @@ public sealed class TBPatientsController : ControllerBase
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                 WHERE p.Deleted=0
+                  AND p.PtTypeID <> 5
                   AND p.DateRxStarted >= @ToStart AND p.DateRxStarted <= @ToEnd
                   AND COALESCE(fu.OutcomeID,0) = 1
                   AND COALESCE(fu.Mon0LabResultID,0)   NOT IN (1,4,5,6)
@@ -1002,6 +1003,7 @@ public sealed class TBPatientsController : ControllerBase
                     LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                     LEFT JOIN OutcomeT    o  ON fu.OutcomeID=o.OutcomeID
                     WHERE p.Deleted=0
+                      AND p.PtTypeID <> 5
                       AND p.DateRxStarted >= @ToStart AND p.DateRxStarted <= @ToEnd
                       AND COALESCE(fu.OutcomeID,0) = 1
                       AND COALESCE(fu.Mon0LabResultID,0)   NOT IN (1,4,5,6)
@@ -1634,9 +1636,13 @@ public sealed class TBPatientsController : ControllerBase
             var tSmearcured = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
+                WHERE p.Deleted=0 AND p.PtTypeID <> 5
+                AND p.DateRxStarted IS NOT NULL
+                AND COALESCE(fu.OutcomeID,0)=1
                 AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
-                AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
+                AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5)
+                AND ((p.PtTypeID = 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 180 AND 540)
+                  OR (p.PtTypeID <> 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 240 AND 600)) {facP}
                 """);
             var tNooutcome = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
@@ -1790,9 +1796,13 @@ public sealed class TBPatientsController : ControllerBase
                     {dqJoins}
                     LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
                     LEFT JOIN OutcomeT     o ON fu.OutcomeID=o.OutcomeID
-                    WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
+                    WHERE p.Deleted=0 AND p.PtTypeID <> 5
+                    AND p.DateRxStarted IS NOT NULL
+                    AND COALESCE(fu.OutcomeID,0)=1
                     AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
-                    AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
+                    AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5)
+                    AND ((p.PtTypeID = 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 180 AND 540)
+                      OR (p.PtTypeID <> 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 240 AND 600)) {facP}
                     ORDER BY p.RegDate DESC, p.PtName
                     """;
                 break;

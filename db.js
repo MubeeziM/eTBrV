@@ -1738,9 +1738,13 @@ function getDQSmearNegCured(facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'LEFT JOIN OutcomeT        o  ON fu.OutcomeID  = o.OutcomeID',
     'WHERE p.Deleted = 0',
-    '  AND COALESCE(fu.OutcomeID, 0) = 1',           // Cured
-    '  AND COALESCE(fu.Mon0LabResultID, 0) NOT IN (1,4,5,6)',  // not smear-positive
-    '  AND COALESCE(fu.Mon0XpertResultID, 0) NOT IN (3,4,5)',  // not Xpert-positive
+    '  AND p.PtTypeID <> 5',                                         // exclude Transfer-In
+    '  AND p.DateRxStarted IS NOT NULL',
+    '  AND COALESCE(fu.OutcomeID, 0) = 1',                           // Cured
+    '  AND COALESCE(fu.Mon0LabResultID, 0) NOT IN (1,4,5,6)',        // not smear-positive
+    '  AND COALESCE(fu.Mon0XpertResultID, 0) NOT IN (3,4,5)',        // not Xpert-positive
+    "  AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)",
+    "   OR  (p.PtTypeID <> 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))",
     '  ' + hf,
     'ORDER BY p.PtName',
   ].join('\n');
@@ -1997,7 +2001,7 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
 
     smearcured: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0' +
-      ' WHERE p.Deleted=0' + toF +
+      ' WHERE p.Deleted=0 AND p.PtTypeID <> 5' + toF +
       ' AND COALESCE(fu.OutcomeID,0)=1' +
       ' AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)' +
       ' AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) ' + outerHF),
@@ -2140,7 +2144,7 @@ function getDQListForReport(category, facilityIDs, cfStart, cfEnd, toStart, toEn
         'LEFT JOIN SexT s ON p.SexID=s.SexID LEFT JOIN PtTypeT pt ON p.PtTypeID=pt.PtTypeID',
         'LEFT JOIN TbTypeT tt ON p.TbTypeID=tt.TbTypeID LEFT JOIN DiagMethodT dm ON p.DiagMethodID=dm.DiagMethodID',
         'LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID LEFT JOIN OutcomeT o ON fu.OutcomeID=o.OutcomeID',
-        'WHERE p.Deleted=0' + toF,
+        'WHERE p.Deleted=0 AND p.PtTypeID <> 5' + toF,
         '  AND COALESCE(fu.OutcomeID,0)=1',
         '  AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)',
         '  AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) ' + outerHF,
@@ -2260,9 +2264,13 @@ function getDQCounts(facilityIDs) {
       'SELECT COUNT(*) FROM PtDetailsT p' +
       ' LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0' +
       ' WHERE p.Deleted = 0' +
+      ' AND p.PtTypeID <> 5' +
+      ' AND p.DateRxStarted IS NOT NULL' +
       ' AND COALESCE(fu.OutcomeID, 0) = 1' +
       ' AND COALESCE(fu.Mon0LabResultID, 0) NOT IN (1,4,5,6)' +
       ' AND COALESCE(fu.Mon0XpertResultID, 0) NOT IN (3,4,5)' +
+      " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)" +
+      "  OR  (p.PtTypeID <> 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))" +
       ' ' + outerHF),
 
     missingreg: _dqCount(
