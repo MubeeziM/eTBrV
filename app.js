@@ -9850,10 +9850,13 @@ function _dqRenderList(cat, rows) {
 
   // ── Skipped gaps: missing sequence slots, not existing patient records ────
   if (cat === 'skipped') {
-    tbody.innerHTML = rows.map(r =>
+    _dqSkippedRows = rows;
+    tbody.innerHTML = rows.map((r, i) =>
       `<tr class="dq-row--gap">
+        <td style="text-align:center;color:#64748b;font-size:0.82rem">${i + 1}.</td>
         <td>${escHtml(String(r.MissingTBNo).padStart(3, '0'))}/${r.RegYear}</td>
-        <td colspan="11" style="text-align:left">${escHtml(r.HealthFacility || '—')}</td>
+        <td>${escHtml(r.HealthFacility || '—')}</td>
+        <td style="text-align:center"><input type="checkbox" class="row-check-gap" value="${i}"></td>
       </tr>`
     ).join('');
     return;
