@@ -633,7 +633,8 @@ public sealed class TBPatientsController : ControllerBase
                     FROM PtDetailsT p
                     WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!=''
                       AND p.RegDate IS NOT NULL
-                      AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd {facP}
+                      AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                      {facP}
                 ),
                 dupes AS (
                     SELECT NearestHFID, RegYear, TBNoB
@@ -896,7 +897,8 @@ public sealed class TBPatientsController : ControllerBase
                         FROM PtDetailsT p
                         WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!=''
                           AND p.RegDate IS NOT NULL
-                          AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd {facP}
+                          AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                          {facP}
                     ),
                     dupes AS (
                         SELECT NearestHFID, RegYear, TBNoB FROM norm WHERE TBNoB > 0
@@ -1770,7 +1772,9 @@ public sealed class TBPatientsController : ControllerBase
                         SELECT p.PtDetailsTID, p.NearestHFID, YEAR(p.RegDate) AS RegYear,
                                TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
                         FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
-                        WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL {facP}
+                        WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL
+                          AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                          {facP}
                     ),
                     dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
                     SELECT {dqCols} {dqJoins}

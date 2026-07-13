@@ -2243,7 +2243,10 @@ function getDQCounts(facilityIDs) {
       " CAST(REPLACE(COALESCE(p.UnitTBNo,''), '\\', '/') AS INTEGER) AS TBNoB" +
       ' FROM PtDetailsT p' +
       " WHERE p.Deleted = 0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo != ''" +
-      " AND p.RegDate IS NOT NULL AND p.RegDate != '' " + outerHF + '),' +
+      " AND p.RegDate IS NOT NULL AND p.RegDate != ''" +
+      // 365-day rolling window — TODO: configurable via user preferences
+      " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365" +
+      ' ' + outerHF + '),' +
       'dupes AS (' +
       ' SELECT NearestHFID, RegYear, TBNoB FROM normalized WHERE TBNoB > 0' +
       ' GROUP BY NearestHFID, RegYear, TBNoB HAVING COUNT(*) > 1)' +
