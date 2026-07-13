@@ -1734,7 +1734,8 @@ public sealed class TBPatientsController : ControllerBase
             p.NearestHFID,
             ISNULL(s.Sex,'') AS Sex, ISNULL(pt.PtTypeShort,'') AS PtTypeShort,
             ISNULL(tt.TbType,'') AS TbType, ISNULL(dm.DiagMethod,'') AS DiagMethod,
-            ISNULL(hf.HealthFacility,'') AS HealthFacility
+            ISNULL(hf.HealthFacility,'') AS HealthFacility,
+            COUNT(*) OVER() AS _TotalCount
             """;
 
         const string dqJoins = """
@@ -1890,7 +1891,8 @@ public sealed class TBPatientsController : ControllerBase
                            NULL AS Age, NULL AS AgeMonths, NULL AS Village, NULL AS Payam, NULL AS PtPhone,
                            0 AS SexID, 0 AS TbTypeID, 0 AS PtTypeID, 0 AS DiagMethodID,
                            NULL AS DateRxStarted, NearestHFID,
-                           '' AS Sex, '' AS PtTypeShort, '' AS TbType, '' AS DiagMethod, HealthFacility
+                           '' AS Sex, '' AS PtTypeShort, '' AS TbType, '' AS DiagMethod, HealthFacility,
+                           COUNT(*) OVER() AS _TotalCount
                     FROM gaps ORDER BY RegYear DESC, NearestHFID, TBNoB
                     """;
                 break;
@@ -1916,8 +1918,10 @@ public sealed class TBPatientsController : ControllerBase
             cmd.Parameters.AddWithValue("@Skip", skip);
             await using var rdr = await cmd.ExecuteReaderAsync();
             var rows = await ReadRowsAsync(rdr);
-            Response.Headers["X-Total-Limit"] = topN.ToString();
-            return Ok(rows);
+            int total = rows.Count > 0 && rows[0].TryGetValue("_TotalCount", out var tc)
+                ? Convert.ToInt32(tc ?? 0) : 0;
+            foreach (var r in rows) r.Remove("_TotalCount");
+            return Ok(new { total, rows });
         }
         catch (Exception ex)
         {

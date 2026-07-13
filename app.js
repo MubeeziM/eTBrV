@@ -2460,7 +2460,7 @@ async function exportDQPatientsToExcel() {
           headers: { Authorization: `Bearer ${token}` },
           signal: AbortSignal.timeout(120000),
         });
-        if (resp.ok) exportRows = await resp.json();
+        if (resp.ok) { const ed = await resp.json(); exportRows = ed.rows ?? ed; }
         else showToast('Could not fetch all records — exporting loaded rows only.', 'error');
       } catch (e) {
         showToast('Fetch timed out — exporting loaded rows only.', 'error');
@@ -9495,7 +9495,7 @@ async function _dqSelectCategory(cat) {
             headers: { Authorization: `Bearer ${token}` },
             signal: AbortSignal.timeout(60000),
           });
-          if (resp.ok) rows = await resp.json();
+          if (resp.ok) { const d = await resp.json(); rows = d.rows ?? d; _dqTotalCount = d.total ?? 0; }
           else fetchErr = new Error(`Server returned ${resp.status}`);
         } catch (e) { fetchErr = e; }
         if (_loadBar) _loadBar.hidden = true;
@@ -9506,17 +9506,14 @@ async function _dqSelectCategory(cat) {
             : `<tr><td colspan="12" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
           return;
         }
-        // Track total so paging knows when we've loaded everything
-        const totalBadge = parseInt(
-          document.getElementById(`dq-count-${cat}`)?.textContent?.replace(/\D/g, '') || '0', 10);
-        _dqTotalCount = totalBadge;
-        if (rows.length >= DQ_ROW_LIMIT && totalBadge > rows.length) {
+        // Total comes directly from the server — no need to read the badge
+        if (_dqTotalCount > rows.length) {
           _dqRenderList(cat, rows);
           _dqSetupPagingSentinel(cat);
           const hintEl = document.getElementById('dq-list-hint');
           if (hintEl) {
             hintEl.innerHTML =
-              `Loaded <strong>${rows.length.toLocaleString()}</strong> of <strong>${totalBadge.toLocaleString()}</strong> — scroll down for more, or use <strong>Export to Excel</strong> for the full list.`;
+              `Loaded <strong>${rows.length.toLocaleString()}</strong> of <strong>${_dqTotalCount.toLocaleString()}</strong> — scroll down for more, or use <strong>Export to Excel</strong> for the full list.`;
             hintEl.style.cssText = 'color:#64748b;font-size:0.84rem;margin-top:0.3rem;display:block';
           }
           return;
@@ -9718,7 +9715,9 @@ async function _dqLoadNextPage(cat) {
     const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
       headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const newRows = await resp.json();
+    const _pd = await resp.json();
+    const newRows = _pd.rows ?? _pd;
+    if (_pd.total != null) _dqTotalCount = _pd.total;
     if (!newRows.length) {
       document.getElementById('dq-page-sentinel')?.remove();
       if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
