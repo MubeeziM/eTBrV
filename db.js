@@ -1757,14 +1757,16 @@ function getDQMissingRegInfo(facilityIDs) {
   var hf  = _dqFacilityFilter(facilityIDs, 'p');
   var missingExpr = [
     "RTRIM(",
-    "  CASE WHEN p.PtName IS NULL OR p.PtName = ''          THEN 'Patient Name, '    ELSE '' END ||",
-    "  CASE WHEN p.Age = 0 OR p.Age IS NULL                 THEN 'Age, '             ELSE '' END ||",
-    "  CASE WHEN p.SexID = 0                                THEN 'Sex, '             ELSE '' END ||",
-    "  CASE WHEN p.TbTypeID = 0                             THEN 'TB Site, '         ELSE '' END ||",
-    "  CASE WHEN p.PtTypeID = 0                             THEN 'Patient Type, '    ELSE '' END ||",
-    "  CASE WHEN p.RegDate IS NULL OR p.RegDate = ''        THEN 'Reg Date, '        ELSE '' END ||",
-    "  CASE WHEN p.DateRxStarted IS NULL OR p.DateRxStarted = '' THEN 'Rx Start Date, ' ELSE '' END ||",
-    "  CASE WHEN p.DiagMethodID = 0                         THEN 'Diag Method, '     ELSE '' END,",
+    "  CASE WHEN p.PtName IS NULL OR p.PtName = ''          THEN 'Patient Name, '        ELSE '' END ||",
+    "  CASE WHEN p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo) = '' THEN 'Unit TB No, '          ELSE '' END ||",
+    "  CASE WHEN p.Age = 0 OR p.Age IS NULL                 THEN 'Age, '                 ELSE '' END ||",
+    "  CASE WHEN p.SexID IN (0,3) OR p.SexID IS NULL        THEN 'Sex, '                 ELSE '' END ||",
+    "  CASE WHEN p.TbTypeID IN (0,4) OR p.TbTypeID IS NULL  THEN 'TB Site, '             ELSE '' END ||",
+    "  CASE WHEN p.PtTypeID IN (0,7) OR p.PtTypeID IS NULL  THEN 'Patient Type, '        ELSE '' END ||",
+    "  CASE WHEN p.NearestHFID IS NULL OR p.NearestHFID = 0 THEN 'Treatment Facility, '  ELSE '' END ||",
+    "  CASE WHEN p.RegDate IS NULL OR p.RegDate = ''        THEN 'Reg Date, '            ELSE '' END ||",
+    "  CASE WHEN p.DateRxStarted IS NULL OR p.DateRxStarted = '' THEN 'Rx Start Date, '  ELSE '' END ||",
+    "  CASE WHEN p.DiagMethodID = 0 OR p.DiagMethodID IS NULL THEN 'Diag Method, '       ELSE '' END,",
     "', ') AS MissingFields",
   ].join('\n       ');
   var sql = [
@@ -1772,11 +1774,17 @@ function getDQMissingRegInfo(facilityIDs) {
     '       ' + missingExpr,
     _DQ_JOINS,
     'WHERE p.Deleted = 0',
-    "  AND (p.PtName IS NULL OR p.PtName = '' OR p.Age = 0 OR p.Age IS NULL",
-    "       OR p.SexID = 0 OR p.TbTypeID = 0 OR p.PtTypeID = 0",
+    "  AND (p.RegDate IS NULL OR p.RegDate = '' OR p.RegDate >= date('now', '-540 days'))",
+    "  AND (p.PtName IS NULL OR p.PtName = ''",
+    "       OR p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo) = ''",
+    '       OR p.Age = 0 OR p.Age IS NULL',
+    '       OR p.SexID IN (0,3) OR p.SexID IS NULL',
+    '       OR p.TbTypeID IN (0,4) OR p.TbTypeID IS NULL',
+    '       OR p.PtTypeID IN (0,7) OR p.PtTypeID IS NULL',
+    '       OR p.NearestHFID IS NULL OR p.NearestHFID = 0',
     "       OR p.RegDate IS NULL OR p.RegDate = ''",
     "       OR p.DateRxStarted IS NULL OR p.DateRxStarted = ''",
-    "       OR p.DiagMethodID = 0)",
+    '       OR p.DiagMethodID = 0 OR p.DiagMethodID IS NULL)',
     '  ' + hf,
     'ORDER BY p.PtName',
   ].join('\n');
@@ -2065,18 +2073,25 @@ function getDQListForReport(category, facilityIDs, cfStart, cfEnd, toStart, toEn
       case 'missingreg': return _dqRows(_db.exec([
         'SELECT ' + _DQ_COLS + ',',
         "       RTRIM(CASE WHEN p.PtName IS NULL OR p.PtName='' THEN 'Patient Name, ' ELSE '' END ||",
+        "       CASE WHEN p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo)='' THEN 'Unit TB No, ' ELSE '' END ||",
         "       CASE WHEN p.Age=0 OR p.Age IS NULL THEN 'Age, ' ELSE '' END ||",
-        "       CASE WHEN p.SexID=0 THEN 'Sex, ' ELSE '' END ||",
-        "       CASE WHEN p.TbTypeID=0 THEN 'TB Site, ' ELSE '' END ||",
-        "       CASE WHEN p.PtTypeID=0 THEN 'Patient Type, ' ELSE '' END ||",
+        "       CASE WHEN p.SexID IN (0,3) OR p.SexID IS NULL THEN 'Sex, ' ELSE '' END ||",
+        "       CASE WHEN p.TbTypeID IN (0,4) OR p.TbTypeID IS NULL THEN 'TB Site, ' ELSE '' END ||",
+        "       CASE WHEN p.PtTypeID IN (0,7) OR p.PtTypeID IS NULL THEN 'Patient Type, ' ELSE '' END ||",
+        "       CASE WHEN p.NearestHFID IS NULL OR p.NearestHFID=0 THEN 'Treatment Facility, ' ELSE '' END ||",
         "       CASE WHEN p.RegDate IS NULL OR p.RegDate='' THEN 'Reg Date, ' ELSE '' END ||",
         "       CASE WHEN p.DateRxStarted IS NULL OR p.DateRxStarted='' THEN 'Rx Start, ' ELSE '' END ||",
-        "       CASE WHEN p.DiagMethodID=0 THEN 'Diag Method, ' ELSE '' END, ', ') AS MissingFields",
+        "       CASE WHEN p.DiagMethodID=0 OR p.DiagMethodID IS NULL THEN 'Diag Method, ' ELSE '' END, ', ') AS MissingFields",
         _DQ_JOINS,
         'WHERE p.Deleted=0' + cfF + ' ' + outerHF,
-        "AND (p.PtName IS NULL OR p.PtName='' OR p.Age=0 OR p.Age IS NULL",
-        "   OR p.SexID=0 OR p.TbTypeID=0 OR p.PtTypeID=0 OR p.RegDate IS NULL OR p.RegDate=''",
-        "   OR p.DateRxStarted IS NULL OR p.DateRxStarted='' OR p.DiagMethodID=0)",
+        "AND (p.PtName IS NULL OR p.PtName='' OR p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo)=''",
+        '   OR p.Age=0 OR p.Age IS NULL',
+        '   OR p.SexID IN (0,3) OR p.SexID IS NULL',
+        '   OR p.TbTypeID IN (0,4) OR p.TbTypeID IS NULL',
+        '   OR p.PtTypeID IN (0,7) OR p.PtTypeID IS NULL',
+        '   OR p.NearestHFID IS NULL OR p.NearestHFID=0',
+        "   OR p.RegDate IS NULL OR p.RegDate=''",
+        "   OR p.DateRxStarted IS NULL OR p.DateRxStarted='' OR p.DiagMethodID=0 OR p.DiagMethodID IS NULL)",
         'ORDER BY p.PtName',
       ].join('\n')));
 
@@ -2261,11 +2276,17 @@ function getDQCounts(facilityIDs) {
 
     missingreg: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0 ' + outerHF +
-      " AND (p.PtName IS NULL OR p.PtName = '' OR p.Age = 0 OR p.Age IS NULL" +
-      " OR p.SexID = 0 OR p.TbTypeID = 0 OR p.PtTypeID = 0" +
-      " OR p.RegDate IS NULL OR p.RegDate = ''" +
-      " OR p.DateRxStarted IS NULL OR p.DateRxStarted = ''" +
-      " OR p.DiagMethodID = 0)"),
+      " AND (p.RegDate IS NULL OR p.RegDate = '' OR p.RegDate >= date('now', '-540 days'))" +
+      " AND (p.PtName IS NULL OR p.PtName = ''"+
+      " OR p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo) = ''"+
+      ' OR p.Age = 0 OR p.Age IS NULL' +
+      ' OR p.SexID IN (0,3) OR p.SexID IS NULL' +
+      ' OR p.TbTypeID IN (0,4) OR p.TbTypeID IS NULL' +
+      ' OR p.PtTypeID IN (0,7) OR p.PtTypeID IS NULL' +
+      ' OR p.NearestHFID IS NULL OR p.NearestHFID = 0' +
+      " OR p.RegDate IS NULL OR p.RegDate = ''"+
+      " OR p.DateRxStarted IS NULL OR p.DateRxStarted = ''"+
+      ' OR p.DiagMethodID = 0 OR p.DiagMethodID IS NULL)'),
 
     nooutcome: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p' +
