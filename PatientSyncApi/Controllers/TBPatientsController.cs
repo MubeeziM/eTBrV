@@ -1573,43 +1573,43 @@ public sealed class TBPatientsController : ControllerBase
         var (facD, facDPrms) = FacFilter(cleanIds, "d");
         int minYear = DateTime.Today.Year - 1;
 
-        try
+        // Each query opens its own connection so all 12 run in parallel.
+        async Task<int> Cnt(string sql, bool useFacD = false)
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
+            await using var cmd = new SqlCommand(sql, conn);
+            AddFacParams(cmd, facPrms);
+            if (useFacD) AddFacParams(cmd, facDPrms);
+            cmd.Parameters.AddWithValue("@MinYear", minYear);
+            var r = await cmd.ExecuteScalarAsync();
+            return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
+        }
 
-            async Task<int> Cnt(string sql)
-            {
-                await using var cmd = new SqlCommand(sql, conn);
-                AddFacParams(cmd, facPrms);
-                cmd.Parameters.AddWithValue("@MinYear", minYear);
-                var r = await cmd.ExecuteScalarAsync();
-                return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
-            }
-
-            int all         = await Cnt($"SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID WHERE p.Deleted=0 {facP}");
-            int duplicates  = await Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p
-                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
-                WHERE p.Deleted=0 {facP} AND p.PtName!=''
-                AND EXISTS (SELECT 1 FROM PtDetailsT d LEFT JOIN HealthFacilityT hfd ON d.NearestHFID=hfd.HealthFacilityID
+        try
+        {
+            // Fire all 12 counts in parallel — reduces wall-clock time from
+            // ~sum(query times) down to ~max(query times).
+            var t_all = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP}");
+            var t_duplicates = Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP} AND p.PtName!=''
+                AND EXISTS (SELECT 1 FROM PtDetailsT d
                             WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
                             AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
                             AND COALESCE(d.Age,-1)=COALESCE(p.Age,-1) AND COALESCE(d.SexID,-1)=COALESCE(p.SexID,-1)
                             AND COALESCE(d.UnitTBNo,'')=COALESCE(p.UnitTBNo,'')
                             AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
-                """);
-            int sametbno = await Cnt($"""
+                """, useFacD: true);
+            var t_sametbno = Cnt($"""
                 WITH norm AS (
                     SELECT p.PtDetailsTID, p.NearestHFID, YEAR(p.RegDate) AS RegYear,
                            TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
-                    FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
-                    WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL {facP}
+                    FROM PtDetailsT p WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL {facP}
                 ),
                 dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
                 SELECT COUNT(*) FROM norm n JOIN dupes dk ON dk.NearestHFID=n.NearestHFID AND dk.RegYear=n.RegYear AND dk.TBNoB=n.TBNoB WHERE n.TBNoB>0
                 """);
-            int missingreg = await Cnt($"""
+            var t_missingreg = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
                 AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 540)
@@ -1626,48 +1626,44 @@ public sealed class TBPatientsController : ControllerBase
                     OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
                 )
                 """);
-            int smearcured = await Cnt($"""
+            var t_smearcured = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
                 WHERE p.Deleted=0 AND COALESCE(fu.OutcomeID,0)=1
                 AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
                 AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) {facP}
                 """);
-            int nooutcome = await Cnt($"""
+            var t_nooutcome = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
                 WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtTypeID NOT IN (0,5,7)
                 AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
                 AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>168)
                   OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE())>224)) {facP}
                 """);
-            int notevaluated = await Cnt($"""
+            var t_notevaluated = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0
-                LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
                 WHERE p.Deleted=0 AND fu.OutcomeID=6 {facP}
                 """);
-            int diagmethod = await Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+            var t_diagmethod = Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
                 """);
-            int norxstart = await Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+            var t_norxstart = Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND p.DateRxStarted IS NULL AND p.RegDate IS NOT NULL
                 AND DATEDIFF(DAY,p.RegDate,GETDATE())>14 {facP}
                 """);
-            int futuredates = await Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
+            var t_futuredates = Cnt($"""
+                SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND p.RegDate > CONVERT(date,GETDATE()) {facP}
                 """);
-            int skipped = await Cnt($"""
+            var t_skipped = Cnt($"""
                 WITH norm AS (
                     SELECT p.NearestHFID, YEAR(p.RegDate) AS RegYear,
                            TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
-                    FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
-                    WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL AND YEAR(p.RegDate)>=@MinYear {facP}
+                    FROM PtDetailsT p WHERE p.Deleted=0 AND p.PtTypeID!=5 AND p.RegDate IS NOT NULL AND YEAR(p.RegDate)>=@MinYear {facP}
                 ),
                 valid AS (SELECT NearestHFID, RegYear, TBNoB FROM norm WHERE TBNoB>0 AND TBNoB<2000),
                 ranges AS (SELECT NearestHFID, RegYear, MIN(TBNoB) AS MinNo, MAX(TBNoB) AS MaxNo FROM valid GROUP BY NearestHFID, RegYear),
@@ -1676,12 +1672,26 @@ public sealed class TBPatientsController : ControllerBase
                 gaps AS (SELECT e.NearestHFID, e.RegYear, e.TBNoB FROM expected e WHERE NOT EXISTS (SELECT 1 FROM valid v WHERE v.NearestHFID=e.NearestHFID AND v.RegYear=e.RegYear AND v.TBNoB=e.TBNoB))
                 SELECT COUNT(*) FROM gaps
                 """);
-            int deleted = await Cnt($"""
-                SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
-                WHERE p.Deleted=1 {facP}
-                """);
+            var t_deleted = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=1 {facP}");
 
-            return Ok(new { all, duplicates, skipped, sametbno, smearcured, missingreg, nooutcome, notevaluated, diagmethod, norxstart, futuredates, deleted });
+            await Task.WhenAll(t_all, t_duplicates, t_sametbno, t_missingreg, t_smearcured,
+                               t_nooutcome, t_notevaluated, t_diagmethod, t_norxstart,
+                               t_futuredates, t_skipped, t_deleted);
+
+            return Ok(new {
+                all          = t_all.Result,
+                duplicates   = t_duplicates.Result,
+                skipped      = t_skipped.Result,
+                sametbno     = t_sametbno.Result,
+                smearcured   = t_smearcured.Result,
+                missingreg   = t_missingreg.Result,
+                nooutcome    = t_nooutcome.Result,
+                notevaluated = t_notevaluated.Result,
+                diagmethod   = t_diagmethod.Result,
+                norxstart    = t_norxstart.Result,
+                futuredates  = t_futuredates.Result,
+                deleted      = t_deleted.Result,
+            });
         }
         catch (Exception ex)
         {

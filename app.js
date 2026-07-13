@@ -9246,15 +9246,31 @@ async function _dqRefreshAll() {
     if (_dqUseServer) {
       const token = getToken();
       if (token && _reallyOnline) {
+        let cntErr = null;
         try {
           const qs = new URLSearchParams();
           _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/quality-counts?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(60000),
           });
           if (resp.ok) counts = await resp.json();
-        } catch (_) {}
+          else cntErr = new Error(`Server error ${resp.status}`);
+        } catch (e) { cntErr = e; }
+        if (cntErr) {
+          // Show a visible error on every badge instead of silent zeros
+          const isTimeout = cntErr.name === 'TimeoutError' || cntErr.name === 'AbortError';
+          countIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('dq-stat-count--loading');
+            el.textContent = '—';
+            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : cntErr.message;
+            el.style.cssText = 'color:#d97706;font-weight:600;cursor:pointer';
+            el.onclick = () => { el.onclick = null; el.style.cssText = ''; _dqRefreshAll(); };
+          });
+          return;
+        }
       }
       if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, futuredates:0, deleted:0 };
     } else {
