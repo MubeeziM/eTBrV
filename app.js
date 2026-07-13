@@ -9855,8 +9855,8 @@ function _dqRenderList(cat, rows) {
       `<tr class="dq-row--gap">
         <td style="text-align:center;color:#64748b;font-size:0.82rem">${i + 1}.</td>
         <td>${escHtml(String(r.MissingTBNo).padStart(3, '0'))}/${r.RegYear}</td>
-        <td>${escHtml(r.HealthFacility || '—')}</td>
         <td style="text-align:center"><input type="checkbox" class="row-check-gap" value="${i}"></td>
+        <td>${escHtml(r.HealthFacility || '—')}</td>
       </tr>`
     ).join('');
     return;

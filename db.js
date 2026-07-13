@@ -1629,7 +1629,7 @@ function _dqSkippedCTE(hfFilter, minYear) {
     'valid AS (',
     '  SELECT PtDetailsTID, NearestHFID, RegYear, TBNoB',
     '  FROM normalized',
-    '  WHERE TBNoB > 0 AND TBNoB < 2000',
+    '  WHERE TBNoB > 0 AND TBNoB < 10000 AND NOT (TBNoB BETWEEN 2000 AND 2099)',
     '),',
     'ranges AS (',
     '  SELECT NearestHFID, RegYear, MIN(TBNoB) AS MinNo, MAX(TBNoB) AS MaxNo',
