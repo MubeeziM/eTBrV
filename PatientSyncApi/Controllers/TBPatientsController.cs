@@ -1708,7 +1708,9 @@ public sealed class TBPatientsController : ControllerBase
     public async Task<IActionResult> GetQualityPatients(
         [FromQuery] int[]?  facilityIds = null,
         [FromQuery] string  category    = "all",
-        [FromQuery] int     limit       = 500)
+        [FromQuery] int     limit       = 500,
+        [FromQuery] int     offset      = 0,
+        [FromQuery] bool    export      = false)
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
@@ -1894,9 +1896,10 @@ public sealed class TBPatientsController : ControllerBase
 
         try
         {
-            int topN = Math.Clamp(limit, 1, 2000);
+            int topN = Math.Clamp(limit, 1, export ? 50_000 : 2_000);
+            int skip = Math.Max(0, offset);
             // Append row limit — works with plain SELECTs and CTEs alike
-            querySql += "\nOFFSET 0 ROWS FETCH NEXT @Top ROWS ONLY";
+            querySql += "\nOFFSET @Skip ROWS FETCH NEXT @Top ROWS ONLY";
 
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
@@ -1905,7 +1908,8 @@ public sealed class TBPatientsController : ControllerBase
             // Also add facD params for duplicates (same param names, single conn)
             if (category == "duplicates") AddFacParams(cmd, facDPrms);
             cmd.Parameters.AddWithValue("@MinYear", minYear);
-            cmd.Parameters.AddWithValue("@Top", topN);
+            cmd.Parameters.AddWithValue("@Top",  topN);
+            cmd.Parameters.AddWithValue("@Skip", skip);
             await using var rdr = await cmd.ExecuteReaderAsync();
             var rows = await ReadRowsAsync(rdr);
             Response.Headers["X-Total-Limit"] = topN.ToString();

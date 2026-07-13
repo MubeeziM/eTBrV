@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v130720261040';
+const APP_VERSION = 'v130720261104';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -294,7 +294,14 @@ function updateConnectionStatus() {
 }
 
 // Native events work in Chrome/Opera — use them for instant feedback there.
-window.addEventListener('online',  () => { _reallyOnline = true;  updateConnectionStatus(); });
+window.addEventListener('online',  () => {
+  _reallyOnline = true;
+  updateConnectionStatus();
+  // Rebuild facility trees if either screen is open (they may have shown the
+  // "Offline — Retry" placeholder while connectivity was down).
+  if (typeof tbMonitoringScreen !== 'undefined' && tbMonitoringScreen && !tbMonitoringScreen.hidden) _monBuildTree();
+  if (typeof tbQualityScreen    !== 'undefined' && tbQualityScreen    && !tbQualityScreen.hidden)    _dqBuildTree();
+});
 window.addEventListener('offline', () => {
   _reallyOnline = false;
   updateConnectionStatus();
@@ -8236,29 +8243,26 @@ async function _monBuildTree() {
     const user     = getUser();
     const isSenior = user && (user.superUserID === 1 || user.adminID === 1);
 
-    // ── Senior / admin users: always read from server ─────────────────────
-    if (isSenior && _reallyOnline) {
-      _monUseServer = true;
-      treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
-      if (summaryEl) summaryEl.textContent = 'All facilities';
+    // Senior users are always in server mode; show offline error immediately.
+    if (isSenior && !_reallyOnline) {
+      treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⚠ Offline — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_monBuildTree()">Retry</button></div>`;
       _monFacilityIDs = [];
-      _monRefreshAll();
       return;
     }
 
-    // ── Data entry users: local DB first, server fallback when empty ──────
-    // Get only facilities that have TB patients (local DB, works offline)
-    let activeFacs = getMonitoringFacilities(null, null);
-    _monUseServer = false;
+    // Local DB first; senior users have no local TB data so skip straight to server.
+    let activeFacs = isSenior ? [] : getMonitoringFacilities(null, null);
+    _monUseServer = isSenior;
 
     // No local data — try to get facility list from server
+    let _monFacFetchFailed = false;
     if (!activeFacs.length) {
       const token = getToken();
       if (token && _reallyOnline) {
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-facilities`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(20000),
           });
           if (resp.ok) {
             const serverFacs = await resp.json();
@@ -8267,13 +8271,17 @@ async function _monBuildTree() {
               activeFacs = serverFacs.map(f => ({ HealthFacilityID: f.HealthFacilityID }));
               _monUseServer = true;
             }
-          }
-        } catch (_) { /* stay offline */ }
+          } else { _monFacFetchFailed = true; }
+        } catch (_) { _monFacFetchFailed = true; }
       }
     }
 
     if (!activeFacs.length) {
-      treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      if (_monFacFetchFailed) {
+        treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⏱ Couldn't load facilities — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_monBuildTree()">Retry</button></div>`;
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      }
       _monFacilityIDs = [];
       _monRefreshAll();
       return;
@@ -8302,7 +8310,12 @@ async function _monBuildTree() {
     }
 
     if (!stateMap.size) {
-      treeEl.innerHTML = '<div class="tree-empty">No facilities found.</div>';
+      if (_monUseServer) {
+        treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
+        if (summaryEl) summaryEl.textContent = 'All facilities';
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No facilities found.</div>';
+      }
       _monFacilityIDs = [];
       _monRefreshAll();
       return;
@@ -8964,27 +8977,25 @@ async function _dqBuildTree() {
     const user     = getUser();
     const isSenior = user && (user.superUserID === 1 || user.adminID === 1);
 
-    // ── Senior / admin users: always read from server (no local TB data) ──
-    if (isSenior && _reallyOnline) {
-      _dqUseServer = true;
-      treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
-      if (summaryEl) summaryEl.textContent = 'All facilities';
+    // Senior users are always in server mode; show offline error immediately.
+    if (isSenior && !_reallyOnline) {
+      treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⚠ Offline — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_dqBuildTree()">Retry</button></div>`;
       _dqFacilityIDs = [];
-      _dqRefreshAll();
       return;
     }
 
-    // ── Data entry users: local DB first, server fallback when empty ──────
-    let activeFacs = getMonitoringFacilities(null, null);
-    _dqUseServer = false;
+    // Local DB first; senior users have no local TB data so skip straight to server.
+    let activeFacs = isSenior ? [] : getMonitoringFacilities(null, null);
+    _dqUseServer = isSenior;
 
+    let _dqFacFetchFailed = false;
     if (!activeFacs.length) {
       const token = getToken();
       if (token && _reallyOnline) {
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-facilities`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(20000),
           });
           if (resp.ok) {
             const serverFacs = await resp.json();
@@ -8995,13 +9006,17 @@ async function _dqBuildTree() {
               }));
               _dqUseServer = true;
             }
-          }
-        } catch (_) {}
+          } else { _dqFacFetchFailed = true; }
+        } catch (_) { _dqFacFetchFailed = true; }
       }
     }
 
     if (!activeFacs.length) {
-      treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      if (_dqFacFetchFailed) {
+        treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⏱ Couldn't load facilities — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_dqBuildTree()">Retry</button></div>`;
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      }
       _dqFacilityIDs = [];
       _dqRefreshAll();
       return;

@@ -294,7 +294,14 @@ function updateConnectionStatus() {
 }
 
 // Native events work in Chrome/Opera — use them for instant feedback there.
-window.addEventListener('online',  () => { _reallyOnline = true;  updateConnectionStatus(); });
+window.addEventListener('online',  () => {
+  _reallyOnline = true;
+  updateConnectionStatus();
+  // Rebuild facility trees if either screen is open (they may have shown the
+  // "Offline — Retry" placeholder while connectivity was down).
+  if (typeof tbMonitoringScreen !== 'undefined' && tbMonitoringScreen && !tbMonitoringScreen.hidden) _monBuildTree();
+  if (typeof tbQualityScreen    !== 'undefined' && tbQualityScreen    && !tbQualityScreen.hidden)    _dqBuildTree();
+});
 window.addEventListener('offline', () => {
   _reallyOnline = false;
   updateConnectionStatus();
@@ -2430,24 +2437,49 @@ async function exportDQPatientsToExcel() {
     showToast('Please select the patients you want to export to Excel.', 'error');
     return;
   }
-  const rows = _dqCurrentRows.filter(r => checkedTIDs.has(String(r.PtDetailsTID)));
 
-  if (!rows.length) {
-    showToast('No patients in this list to export.', 'error');
-    return;
+  const cat = typeof _dqCategory !== 'undefined' ? _dqCategory : '';
+
+  // If in server mode and the user selected rows that represent the full page (Select All)
+  // but the server has more rows, fetch ALL rows from the server before exporting.
+  let exportRows = _dqCurrentRows.filter(r => checkedTIDs.has(String(r.PtDetailsTID)));
+  if (_dqUseServer && _dqTotalCount > _dqCurrentRows.length && checkedTIDs.size >= _dqCurrentRows.length) {
+    const ok = await showGenericConfirmModal(
+      'Export All Records',
+      `This category has <strong>${_dqTotalCount.toLocaleString()}</strong> patients but only <strong>${_dqCurrentRows.length.toLocaleString()}</strong> are currently loaded.\n\nAll ${_dqTotalCount.toLocaleString()} records will be fetched from the server and exported. This may take a moment.\n\nPatient data is sensitive — store the file securely.\n\nProceed?`,
+      'Export All'
+    );
+    if (!ok) return;
+    const token = getToken();
+    if (token && _reallyOnline) {
+      showToast(`Fetching all ${_dqTotalCount.toLocaleString()} records…`, '');
+      try {
+        const qs = new URLSearchParams({ category: cat, limit: String(Math.min(_dqTotalCount + 100, 50000)), export: 'true' });
+        _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
+        const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(120000),
+        });
+        if (resp.ok) exportRows = await resp.json();
+        else showToast('Could not fetch all records — exporting loaded rows only.', 'error');
+      } catch (e) {
+        showToast('Fetch timed out — exporting loaded rows only.', 'error');
+      }
+    }
+  } else {
+    const confirmed = await showGenericConfirmModal(
+      'Export to Excel',
+      `You are about to export ${exportRows.length.toLocaleString()} patient record${exportRows.length !== 1 ? 's' : ''} to Excel.\n\nPatient data is sensitive \u2014 only export when necessary and store the file securely.\n\nProceed?`,
+      'Export'
+    );
+    if (!confirmed) return;
   }
 
-  const confirmed = await showGenericConfirmModal(
-    'Export to Excel',
-    `You are about to export ${rows.length} patient record${rows.length !== 1 ? 's' : ''} to Excel.\n\nPatient data is sensitive \u2014 only export when necessary and store the file securely.\n\nProceed?`,
-    'Export'
-  );
-  if (!confirmed) return;
-
+  if (!exportRows.length) { showToast('No patients to export.', 'error'); return; }
+  const rows = exportRows;
   const user = getUser();
   const exportedBy = user?.fullName ?? user?.userName ?? 'Unknown User';
 
-  const cat       = typeof _dqCategory !== 'undefined' ? _dqCategory : '';
   const listTitle = document.getElementById('dq-list-title')?.textContent || 'Data Quality';
 
   try {
@@ -7018,6 +7050,9 @@ let _sidebarAutoCollapsed = false;
 let _monCurrentRows = [];
 /** Last-rendered rows in the Data Quality list — used by the Excel export. */
 let _dqCurrentRows  = [];
+let _dqTotalCount   = 0;    // server total for current category (used by paging)
+let _dqIsPaging     = false; // guard: one page load at a time
+let _dqPageObserver = null;  // IntersectionObserver on the load-more sentinel
 
 /** Persist the selected facility to localStorage so it survives page reloads. */
 function _saveSelectedFacility(fac) {
@@ -8236,29 +8271,26 @@ async function _monBuildTree() {
     const user     = getUser();
     const isSenior = user && (user.superUserID === 1 || user.adminID === 1);
 
-    // ── Senior / admin users: always read from server ─────────────────────
-    if (isSenior && _reallyOnline) {
-      _monUseServer = true;
-      treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
-      if (summaryEl) summaryEl.textContent = 'All facilities';
+    // Senior users are always in server mode; show offline error immediately.
+    if (isSenior && !_reallyOnline) {
+      treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⚠ Offline — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_monBuildTree()">Retry</button></div>`;
       _monFacilityIDs = [];
-      _monRefreshAll();
       return;
     }
 
-    // ── Data entry users: local DB first, server fallback when empty ──────
-    // Get only facilities that have TB patients (local DB, works offline)
-    let activeFacs = getMonitoringFacilities(null, null);
-    _monUseServer = false;
+    // Local DB first; senior users have no local TB data so skip straight to server.
+    let activeFacs = isSenior ? [] : getMonitoringFacilities(null, null);
+    _monUseServer = isSenior;
 
     // No local data — try to get facility list from server
+    let _monFacFetchFailed = false;
     if (!activeFacs.length) {
       const token = getToken();
       if (token && _reallyOnline) {
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-facilities`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(20000),
           });
           if (resp.ok) {
             const serverFacs = await resp.json();
@@ -8267,13 +8299,17 @@ async function _monBuildTree() {
               activeFacs = serverFacs.map(f => ({ HealthFacilityID: f.HealthFacilityID }));
               _monUseServer = true;
             }
-          }
-        } catch (_) { /* stay offline */ }
+          } else { _monFacFetchFailed = true; }
+        } catch (_) { _monFacFetchFailed = true; }
       }
     }
 
     if (!activeFacs.length) {
-      treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      if (_monFacFetchFailed) {
+        treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⏱ Couldn't load facilities — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_monBuildTree()">Retry</button></div>`;
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      }
       _monFacilityIDs = [];
       _monRefreshAll();
       return;
@@ -8302,7 +8338,12 @@ async function _monBuildTree() {
     }
 
     if (!stateMap.size) {
-      treeEl.innerHTML = '<div class="tree-empty">No facilities found.</div>';
+      if (_monUseServer) {
+        treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
+        if (summaryEl) summaryEl.textContent = 'All facilities';
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No facilities found.</div>';
+      }
       _monFacilityIDs = [];
       _monRefreshAll();
       return;
@@ -8964,27 +9005,25 @@ async function _dqBuildTree() {
     const user     = getUser();
     const isSenior = user && (user.superUserID === 1 || user.adminID === 1);
 
-    // ── Senior / admin users: always read from server (no local TB data) ──
-    if (isSenior && _reallyOnline) {
-      _dqUseServer = true;
-      treeEl.innerHTML = '<div class="tree-empty" style="color:#059669;font-weight:500;">Showing all accessible facilities</div>';
-      if (summaryEl) summaryEl.textContent = 'All facilities';
+    // Senior users are always in server mode; show offline error immediately.
+    if (isSenior && !_reallyOnline) {
+      treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⚠ Offline — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_dqBuildTree()">Retry</button></div>`;
       _dqFacilityIDs = [];
-      _dqRefreshAll();
       return;
     }
 
-    // ── Data entry users: local DB first, server fallback when empty ──────
-    let activeFacs = getMonitoringFacilities(null, null);
-    _dqUseServer = false;
+    // Local DB first; senior users have no local TB data so skip straight to server.
+    let activeFacs = isSenior ? [] : getMonitoringFacilities(null, null);
+    _dqUseServer = isSenior;
 
+    let _dqFacFetchFailed = false;
     if (!activeFacs.length) {
       const token = getToken();
       if (token && _reallyOnline) {
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-facilities`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(20000),
           });
           if (resp.ok) {
             const serverFacs = await resp.json();
@@ -8995,13 +9034,17 @@ async function _dqBuildTree() {
               }));
               _dqUseServer = true;
             }
-          }
-        } catch (_) {}
+          } else { _dqFacFetchFailed = true; }
+        } catch (_) { _dqFacFetchFailed = true; }
       }
     }
 
     if (!activeFacs.length) {
-      treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      if (_dqFacFetchFailed) {
+        treeEl.innerHTML = `<div class="tree-empty" style="color:#d97706">⏱ Couldn't load facilities — <button type="button" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit" onclick="_dqBuildTree()">Retry</button></div>`;
+      } else {
+        treeEl.innerHTML = '<div class="tree-empty">No TB patients found in this database.</div>';
+      }
       _dqFacilityIDs = [];
       _dqRefreshAll();
       return;
@@ -9335,6 +9378,12 @@ async function _dqRefreshAll() {
 
 async function _dqSelectCategory(cat) {
   _dqCategory = cat;
+  // Reset paging state for new category
+  if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+  document.getElementById('dq-page-sentinel')?.remove();
+  _dqIsPaging = false;
+  _dqTotalCount = 0;
+
   document.querySelectorAll('.dq-stat-row').forEach(r => {
     const active = r.dataset.dqcat === cat;
     r.classList.toggle('dq-stat-row--active', active);
@@ -9366,20 +9415,22 @@ async function _dqSelectCategory(cat) {
         if (fetchErr) {
           const isTimeout = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
           if (tbody) tbody.innerHTML = isTimeout
-            ? `<tr><td colspan="12" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — too many records to stream. Use <strong>Export to Excel</strong> to get the full list.</td></tr>`
+            ? `<tr><td colspan="12" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — too many records. Use <strong>Export to Excel</strong> for the full list.</td></tr>`
             : `<tr><td colspan="12" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
           return;
         }
-        // Show truncation note if the server capped the results
+        // Track total so paging knows when we've loaded everything
         const totalBadge = parseInt(
           document.getElementById(`dq-count-${cat}`)?.textContent?.replace(/\D/g, '') || '0', 10);
+        _dqTotalCount = totalBadge;
         if (rows.length >= DQ_ROW_LIMIT && totalBadge > rows.length) {
           _dqRenderList(cat, rows);
+          _dqSetupPagingSentinel(cat);
           const hintEl = document.getElementById('dq-list-hint');
           if (hintEl) {
             hintEl.innerHTML =
-              `⚠\u202fShowing first <strong>${rows.length.toLocaleString()}</strong> of <strong>${totalBadge.toLocaleString()}</strong> patients. Use <strong>Export&nbsp;to&nbsp;Excel</strong> for the complete list.`;
-            hintEl.style.cssText = 'color:#d97706;font-weight:500;margin-top:0.3rem;display:block';
+              `Loaded <strong>${rows.length.toLocaleString()}</strong> of <strong>${totalBadge.toLocaleString()}</strong> — scroll down for more, or use <strong>Export to Excel</strong> for the full list.`;
+            hintEl.style.cssText = 'color:#64748b;font-size:0.84rem;margin-top:0.3rem;display:block';
           }
           return;
         }
@@ -9433,6 +9484,187 @@ function _dqCatHint(cat, n) {
     case 'futuredates': return 'HINT: Correct the registration date — it cannot be in the future.';
     case 'deleted':     return 'HINT: Click the Restore button on any row to undelete a patient record that was removed in error.';
     default:            return '';
+  }
+}
+
+// ── Row HTML helper — shared by initial render and paging appends ─────────
+function _dqBuildRowHtml(cat, r) {
+  const esc     = escHtml;
+  const fmtDate = d => {
+    if (!d) return '—';
+    const p = d.split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
+  };
+  const dqVal = v => (!v || v === 'Select One') ? '—' : String(v);
+
+  let notes = '';
+  if (cat === 'missingreg' && r.MissingFields) {
+    notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields)}</span>`;
+  } else if (cat === 'smearcured' && r.Outcome) {
+    notes = `<span class="dq-issue-badge">Outcome: ${esc(r.Outcome)}</span>`;
+  } else if (cat === 'nooutcome' || cat === 'notevaluated') {
+    const info = _tbExpectedEndInfo(r);
+    if (info) {
+      notes = `<span class="dq-issue-badge">Due: ${info.endFmt}<br><span style="color:#dc2626">&#9650; ${info.daysOver}d overdue</span></span>`;
+    } else if (r.DaysSinceStart != null) {
+      notes = `<span class="dq-issue-badge">${r.DaysSinceStart}d on Rx</span>`;
+    }
+  } else if (cat === 'norxstart' && r.DaysSinceReg != null) {
+    notes = `<span class="dq-issue-badge">${r.DaysSinceReg}d since reg.</span>`;
+  } else if (cat === 'futuredates') {
+    notes = `<span class="dq-issue-badge">Future date</span>`;
+  } else if (cat === 'duplicates') {
+    notes = `<span class="dq-issue-badge">Possible duplicate</span>`;
+  } else if (cat === 'sametbno' && r.UnitTBNo) {
+    notes = `<span class="dq-issue-badge">TB No: ${esc(r.UnitTBNo)}</span>`;
+  } else if (cat === 'deleted') {
+    notes = `<button class="btn btn-success dq-undelete-btn" data-tid="${esc(String(r.PtDetailsTID))}" data-name="${esc(r.PtName || '')}" onclick="event.stopPropagation()" style="white-space:nowrap;font-size:0.78rem;display:block;height:85%;width:100%;">\u21a9 Restore</button>`;
+  }
+  const ageDisplay = r.AgeMonths && r.Age === 0 ? `${r.AgeMonths}m` : (r.Age ? String(r.Age) : '—');
+  const notesTd = (cat === 'deleted' && notes)
+    ? `<td style="padding:0;">${notes}</td>`
+    : `<td>${notes || '—'}</td>`;
+  return `<tr data-tid="${esc(String(r.PtDetailsTID))}" data-hfid="${r.NearestHFID || 0}" data-hfname="${esc(r.HealthFacility || '')}">
+      <td>${esc(r.UnitTBNo || '—')}</td>
+      <td>${fmtDate(r.RegDate)}</td>
+      <td title="${esc(r.PtName || '')}">${esc(truncateDisplayName(r.PtName))}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${esc(String(r.PtDetailsTID))}" aria-label="Select ${esc(r.PtName || '')}"></td>
+      <td>${esc(ageDisplay)}</td>
+      <td>${r.SexID === 1 ? 'M' : r.SexID === 2 ? 'F' : '—'}</td>
+      <td>${esc(dqVal(r.TbType))}</td>
+      <td>${esc(dqVal(r.PtTypeShort))}</td>
+      ${notesTd}
+      <td>${esc(dqVal((r.DiagMethod || '').replace(/Smear Microscopy/gi, 'Microscopy')))}</td>
+      <td>${esc(r.PtPhone || '—')}</td>
+      <td>${esc(r.HealthFacility || '—')}</td>
+    </tr>`;
+}
+
+// Attach row-click and undelete handlers; skips rows already marked data-dq-click.
+function _dqAttachRowHandlers(tbody, cat) {
+  tbody.querySelectorAll('tr[data-tid]:not([data-dq-click])').forEach(tr => {
+    tr.dataset.dqClick = '1';
+    tr.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
+      const tid    = tr.dataset.tid;
+      const hfid   = Number(tr.dataset.hfid);
+      const hfname = tr.dataset.hfname || '';
+      if (!tid || !hfid) return;
+      const facInfo = getMonitoringFacilityInfo(hfid);
+      _fromDQScreen = true;
+      if (tbQualityScreen)   tbQualityScreen.hidden   = true;
+      if (artRegisterScreen) artRegisterScreen.hidden = false;
+      _saveSelectedFacility({ id: hfid, name: hfname,
+        county: facInfo ? (facInfo.County   || '') : '',
+        state:  facInfo ? (facInfo.State    || '') : '',
+        countyId: facInfo ? (facInfo.CountyID || 0) : 0,
+        stateId:  facInfo ? (facInfo.StateID  || 0) : 0 });
+      _selectedRegister = 'tb';
+      updateFacilityBanner(); applyFacilityGate();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      loadAndRenderGeoTree();
+      const backBtn = document.getElementById('back-to-dashboard-btn');
+      if (backBtn) backBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Quality Check`;
+      const bbBtn = document.getElementById('tb-back-to-monitoring-btn');
+      if (bbBtn) { bbBtn.hidden = false; bbBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Back to Data Quality Check`; }
+      if (userCanWrite()) { _pendingDQCategory = cat; await _fetchAndUpsertTBPatientIfNeeded(tid); startEditTBPatient(tid); }
+      else { await _fetchAndUpsertTBPatientIfNeeded(tid); startViewTBPatient(tid); }
+    });
+  });
+  if (cat === 'deleted') {
+    tbody.querySelectorAll('.dq-undelete-btn:not([data-dq-click])').forEach(btn => {
+      btn.dataset.dqClick = '1';
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const tid  = btn.dataset.tid;
+        const name = _xlTitleCase(btn.dataset.name) || 'This patient';
+        const confirmed = await showGenericConfirmModal('Restore Patient Record',
+          `Restore <strong>${name}</strong> back to the active register?`, 'Restore');
+        if (!confirmed) return;
+        try {
+          await undeletePtDetailsTB(tid);
+          { const _u = getUser(); await insertAuditLog({ action: 'UNDELETE_TB', ptDetailsTID: tid, notes: `Restored TB patient from Data Quality screen: ${name}`, userTID: _u?.userTID, userName: _u?.fullName ?? _u?.userName }); }
+          showToast(`${name} has been restored.`, 'success');
+          logSync('INFO', 'Auto-sync: dq-undelete', { online: navigator.onLine });
+          if (navigator.onLine) triggerTBSync(true, false, 'dq-undelete');
+          _dqRefreshAll(); _dqSelectCategory('deleted');
+        } catch (err) { console.error('[DQ] Undelete failed:', err); showToast('Could not restore patient. Please try again.', 'error'); }
+      });
+    });
+  }
+}
+
+// Set up IntersectionObserver sentinel at the bottom of the DQ table for auto-paging.
+function _dqSetupPagingSentinel(cat) {
+  if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+  document.getElementById('dq-page-sentinel')?.remove();
+  if (!_dqUseServer || cat === 'skipped' || _dqCurrentRows.length >= _dqTotalCount || !_dqTotalCount) return;
+  const tbody    = document.getElementById('dq-patient-tbody');
+  const tableWrap = document.querySelector('.table-wrap--dq-scroll');
+  if (!tbody || !tableWrap) return;
+  const sentinel = document.createElement('tr');
+  sentinel.id = 'dq-page-sentinel';
+  sentinel.innerHTML = `<td colspan="12" style="text-align:center;padding:0.5rem;background:#f8fafc;color:#64748b;font-size:0.82rem">
+    <span id="dq-page-spinner" hidden>Loading more…</span>
+    <span id="dq-page-more">${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more ↓</span></td>`;
+  tbody.appendChild(sentinel);
+  _dqPageObserver = new IntersectionObserver(async entries => {
+    if (!entries[0].isIntersecting || _dqIsPaging) return;
+    await _dqLoadNextPage(cat);
+  }, { root: tableWrap, rootMargin: '80px', threshold: 0 });
+  _dqPageObserver.observe(sentinel);
+}
+
+async function _dqLoadNextPage(cat) {
+  if (_dqIsPaging || !_dqUseServer) return;
+  const token = getToken();
+  if (!token || !_reallyOnline) return;
+  _dqIsPaging = true;
+  const spinner = document.getElementById('dq-page-spinner');
+  const moreEl  = document.getElementById('dq-page-more');
+  if (spinner) spinner.hidden = false;
+  if (moreEl)  moreEl.hidden  = true;
+  try {
+    const DQ_PAGE = 500;
+    const qs = new URLSearchParams({ category: cat, limit: String(DQ_PAGE), offset: String(_dqCurrentRows.length) });
+    _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
+    const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const newRows = await resp.json();
+    if (!newRows.length) {
+      document.getElementById('dq-page-sentinel')?.remove();
+      if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+      return;
+    }
+    _dqCurrentRows = [..._dqCurrentRows, ...newRows];
+    const tbody    = document.getElementById('dq-patient-tbody');
+    const sentinel = document.getElementById('dq-page-sentinel');
+    if (tbody && sentinel) {
+      sentinel.insertAdjacentHTML('beforebegin', newRows.map(r => _dqBuildRowHtml(cat, r)).join(''));
+      _dqAttachRowHandlers(tbody, cat);
+    }
+    // Update subtitle
+    const subEl = document.getElementById('dq-list-subtitle');
+    if (subEl) subEl.textContent = `Found ${String(_dqCurrentRows.length).padStart(2, '0')} Patients` +
+      (_dqCurrentRows.length < _dqTotalCount ? ` (of ${_dqTotalCount.toLocaleString()})` : '');
+    if (_dqCurrentRows.length >= _dqTotalCount) {
+      document.getElementById('dq-page-sentinel')?.remove();
+      if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+      const hintEl = document.getElementById('dq-list-hint');
+      if (hintEl) hintEl.style.display = 'none';
+    } else {
+      if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more \u2193`; }
+      if (spinner) spinner.hidden = true;
+      const hintEl = document.getElementById('dq-list-hint');
+      if (hintEl) hintEl.innerHTML = `Loaded <strong>${_dqCurrentRows.length.toLocaleString()}</strong> of <strong>${_dqTotalCount.toLocaleString()}</strong> — scroll down for more.`;
+    }
+  } catch (e) {
+    console.error('[DQ] loadNextPage:', e);
+    if (spinner) spinner.hidden = true;
+    if (moreEl)  { moreEl.hidden = false; moreEl.textContent = '\u26a0 Error loading — scroll to retry'; }
+  } finally {
+    _dqIsPaging = false;
   }
 }
 
@@ -9490,144 +9722,8 @@ function _dqRenderList(cat, rows) {
     return;
   }
 
-  const fmtDate = d => {
-    if (!d) return '—';
-    const parts = d.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return d;
-  };
-  const esc = escHtml;
-  // Treat null/empty/"Select One" as not recorded → show dash
-  const dqVal = v => (!v || v === 'Select One') ? '—' : String(v);
-
-  tbody.innerHTML = rows.map(r => {
-    // Build notes cell content based on category
-    let notes = '';
-    if (cat === 'missingreg' && r.MissingFields) {
-      notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields)}</span>`;
-    } else if (cat === 'smearcured' && r.Outcome) {
-      notes = `<span class="dq-issue-badge">Outcome: ${esc(r.Outcome)}</span>`;
-    } else if (cat === 'nooutcome' || cat === 'notevaluated') {
-      const info = _tbExpectedEndInfo(r);
-      if (info) {
-        notes = `<span class="dq-issue-badge">Due: ${info.endFmt}<br><span style="color:#dc2626">&#9650; ${info.daysOver}d overdue</span></span>`;
-      } else if (r.DaysSinceStart != null) {
-        notes = `<span class="dq-issue-badge">${r.DaysSinceStart}d on Rx</span>`;
-      }
-    } else if (cat === 'norxstart' && r.DaysSinceReg != null) {
-      notes = `<span class="dq-issue-badge">${r.DaysSinceReg}d since reg.</span>`;
-    } else if (cat === 'futuredates') {
-      notes = `<span class="dq-issue-badge">Future date</span>`;
-    } else if (cat === 'duplicates') {
-      notes = `<span class="dq-issue-badge">Possible duplicate</span>`;
-    } else if (cat === 'sametbno' && r.UnitTBNo) {
-      notes = `<span class="dq-issue-badge">TB No: ${esc(r.UnitTBNo)}</span>`;
-    } else if (cat === 'deleted') {
-      notes = `<button class="btn btn-success dq-undelete-btn" data-tid="${esc(String(r.PtDetailsTID))}" data-name="${esc(r.PtName || '')}" onclick="event.stopPropagation()" style="white-space:nowrap;font-size:0.78rem;display:block;height:85%;width:100%;">↩ Restore</button>`;
-    }
-
-    const ageDisplay = r.AgeMonths && r.Age === 0
-      ? `${r.AgeMonths}m`
-      : (r.Age ? String(r.Age) : '—');
-
-    // For the deleted category the notes td has no padding so the Restore
-    // button can fill the full row height without expanding it.
-    const notesTd = (cat === 'deleted' && notes)
-      ? `<td style="padding:0;">${notes}</td>`
-      : `<td>${notes || '—'}</td>`;
-
-    return `<tr data-tid="${esc(String(r.PtDetailsTID))}" data-hfid="${r.NearestHFID || 0}" data-hfname="${esc(r.HealthFacility || '')}">
-      <td>${esc(r.UnitTBNo || '—')}</td>
-      <td>${fmtDate(r.RegDate)}</td>
-      <td title="${esc(r.PtName || '')}">${esc(truncateDisplayName(r.PtName))}</td>
-      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${esc(String(r.PtDetailsTID))}" aria-label="Select ${esc(r.PtName || '')}"></td>
-      <td>${esc(ageDisplay)}</td>
-      <td>${r.SexID === 1 ? 'M' : r.SexID === 2 ? 'F' : '—'}</td>
-      <td>${esc(dqVal(r.TbType))}</td>
-      <td>${esc(dqVal(r.PtTypeShort))}</td>
-      ${notesTd}
-      <td>${esc(dqVal((r.DiagMethod || '').replace(/Smear Microscopy/gi, 'Microscopy')))}</td>
-      <td>${esc(r.PtPhone || '—')}</td>
-      <td>${esc(r.HealthFacility || '—')}</td>
-    </tr>`;
-  }).join('');
-
-  // Row click: open patient record (edit for writers, view-only for read-only users)
-  document.getElementById('dq-patient-table')?.querySelectorAll('tr[data-tid]').forEach(tr => {
-    tr.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
-      const tid    = tr.dataset.tid;
-      const hfid   = Number(tr.dataset.hfid);
-      const hfname = tr.dataset.hfname || '';
-      if (!tid || !hfid) return;
-
-      const facInfo = getMonitoringFacilityInfo(hfid);
-      _fromDQScreen = true;
-
-      if (tbQualityScreen)  tbQualityScreen.hidden  = true;
-      if (artRegisterScreen) artRegisterScreen.hidden = false;
-
-      _saveSelectedFacility({
-        id:       hfid,
-        name:     hfname,
-        county:   facInfo ? (facInfo.County   || '') : '',
-        state:    facInfo ? (facInfo.State    || '') : '',
-        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
-        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
-      });
-      _selectedRegister = 'tb';
-      updateFacilityBanner();
-      applyFacilityGate();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      loadAndRenderGeoTree();
-      const backBtn = document.getElementById('back-to-dashboard-btn');
-      if (backBtn) backBtn.innerHTML =
-        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Quality Check`;
-      const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
-      if (bottomBackBtn) {
-        bottomBackBtn.hidden = false;
-        bottomBackBtn.innerHTML =
-          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Back to Data Quality Check`;
-      }
-      if (userCanWrite()) {
-        _pendingDQCategory = cat;
-        await _fetchAndUpsertTBPatientIfNeeded(tid);
-        startEditTBPatient(tid);
-      } else {
-        await _fetchAndUpsertTBPatientIfNeeded(tid);
-        startViewTBPatient(tid);
-      }
-    });
-  });
-
-  // Restore (undelete) handler — DQ deleted category only
-  if (cat === 'deleted') {
-    tbody.querySelectorAll('.dq-undelete-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const tid  = btn.dataset.tid;
-        const name = _xlTitleCase(btn.dataset.name) || 'This patient';
-        const confirmed = await showGenericConfirmModal(
-          'Restore Patient Record',
-          `Restore <strong>${name}</strong> back to the active register?`,
-          'Restore'
-        );
-        if (!confirmed) return;
-        try {
-          await undeletePtDetailsTB(tid);
-          { const _u = getUser(); await insertAuditLog({ action: 'UNDELETE_TB', ptDetailsTID: tid, notes: `Restored TB patient from Data Quality screen: ${name}`, userTID: _u?.userTID, userName: _u?.fullName ?? _u?.userName }); }
-          showToast(`${name} has been restored.`, 'success');
-          logSync('INFO', 'Auto-sync: dq-undelete', { online: navigator.onLine });
-          if (navigator.onLine) triggerTBSync(true, false, 'dq-undelete');
-          _dqRefreshAll();          // update sidebar counts
-          _dqSelectCategory('deleted'); // refresh the patient list
-        } catch (err) {
-          console.error('[DQ] Undelete failed:', err);
-          showToast('Could not restore patient. Please try again.', 'error');
-        }
-      });
-    });
-  }
+  tbody.innerHTML = rows.map(r => _dqBuildRowHtml(cat, r)).join('');
+  _dqAttachRowHandlers(tbody, cat);
 }
 
 // ── Quality screen event listeners ─────────────────────────────────────────
