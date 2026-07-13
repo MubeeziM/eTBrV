@@ -2519,7 +2519,7 @@ async function exportDQPatientsToExcel() {
 
       // Reconstruct plain-text issue note
       let issue = '';
-      if      (cat === 'missingreg'   && r.MissingFields)          issue = `Missing: ${r.MissingFields}`;
+      if      (cat === 'missingreg'   && r.MissingFields)          issue = `Missing: ${r.MissingFields.replace(/,\s*$/, '')}`;
       else if (cat === 'smearcured'   && r.Outcome)                issue = `Outcome: ${r.Outcome}`;
       else if (cat === 'nooutcome' || cat === 'notevaluated') {
         const _ei = _tbExpectedEndInfo(r);
@@ -9583,7 +9583,7 @@ function _dqBuildRowHtml(cat, r) {
 
   let notes = '';
   if (cat === 'missingreg' && r.MissingFields) {
-    notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields)}</span>`;
+    notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields.replace(/,\s*$/, ''))}</span>`;
   } else if (cat === 'smearcured' && r.Outcome) {
     notes = `<span class="dq-issue-badge">Outcome: ${esc(r.Outcome)}</span>`;
   } else if (cat === 'nooutcome' || cat === 'notevaluated') {
@@ -12042,7 +12042,7 @@ function resolveGeoScope(user, geo) {
             }
 
             const noteFor = r => {
-              if (cat === 'missingreg' && r.MissingFields)    return esc(r.MissingFields);
+              if (cat === 'missingreg' && r.MissingFields)    return esc(r.MissingFields.replace(/,\s*$/, ''));
               if (cat === 'smearcured' && r.Outcome)          return `Outcome: ${esc(r.Outcome)}`;
               if (cat === 'nooutcome' || cat === 'notevaluated') {
                 const info = _tbExpectedEndInfo(r);
