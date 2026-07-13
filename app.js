@@ -9377,7 +9377,7 @@ function _dqSetSidebarCollapsed(collapsed) {
 
 // ── Counts and list rendering ──────────────────────────────────────────────
 
-async function _dqRefreshAll(skipList = false) {
+async function _dqRefreshAll(skipList = false, _retried = false) {
   // Show skeleton shimmer on all count badges while the server call is in flight.
   const countIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
     'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
@@ -9405,15 +9405,23 @@ async function _dqRefreshAll(skipList = false) {
           if (resp.ok) counts = await resp.json();
           else cntErr = new Error(`Server error ${resp.status}`);
         } catch (e) { cntErr = e; }
+        console[cntErr ? 'error' : 'debug']('[DQ] quality-counts', cntErr ? cntErr.message : 'ok');
         if (cntErr) {
-          // Show a visible error on every badge instead of silent zeros
           const isTimeout = cntErr.name === 'TimeoutError' || cntErr.name === 'AbortError';
+          // Auto-retry once after 3 s on server errors (pool exhaustion / cold start).
+          // Don't retry timeouts — those are slow queries the user should retry manually.
+          if (!isTimeout && !_retried) {
+            console.warn('[DQ] Counts failed, auto-retrying in 3 s…');
+            setTimeout(() => _dqRefreshAll(skipList, true), 3000);
+            return;
+          }
+          // Show a visible error on every badge instead of silent zeros
           countIds.forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.classList.remove('dq-stat-count--loading');
             el.textContent = '—';
-            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : cntErr.message;
+            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : `Error — click to retry (${cntErr.message})`;
             el.style.cssText = 'color:#d97706;font-weight:600;cursor:pointer';
             el.onclick = () => { el.onclick = null; el.style.cssText = ''; _dqRefreshAll(); };
           });
