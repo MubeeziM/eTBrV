@@ -1303,15 +1303,19 @@ public sealed class TBPatientsController : ControllerBase
 
             async Task<int> MonCount(string extraWhere, int offset, int grace, bool sputum)
             {
-                string modeFilter = sputum
-                    ? (missed
-                        ? $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} > 0 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= {grace}"
-                        : $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= 0")
-                    : string.Empty;
-
-                string sputumBase = sputum
-                    ? "AND (COALESCE(fu.Mon0LabResultID,0) IN (1,4,5,6) OR COALESCE(fu.Mon0XpertResultID,0) IN (3,4,5))"
-                    : string.Empty;
+                string modeFilter    = string.Empty;
+                string sputumBase    = string.Empty;
+                string qualityFilter = string.Empty;
+                if (sputum)
+                {
+                    string wkAdj  = $"CASE DATENAME(WEEKDAY,DATEADD(DAY,{offset},p.DateRxStarted)) WHEN 'Saturday' THEN 2 WHEN 'Sunday' THEN 1 ELSE 0 END";
+                    string dl     = $"DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} - ({wkAdj})";
+                    modeFilter    = missed
+                        ? $"AND ({dl}) > 0 AND ({dl}) <= {grace}"
+                        : $"AND ({dl}) <= 0";
+                    sputumBase    = "AND (COALESCE(fu.Mon0LabResultID,0) IN (1,4,5,6) OR COALESCE(fu.Mon0XpertResultID,0) IN (3,4,5))";
+                    qualityFilter = "AND p.TbTypeID IN (1, 2) AND p.PtTypeID <> 5 AND p.Age > 4 AND p.PtName IS NOT NULL";
+                }
 
                 var sql = $"""
                     SELECT COUNT(*)
@@ -1320,7 +1324,8 @@ public sealed class TBPatientsController : ControllerBase
                     LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0, 7))
+                      {qualityFilter}
                       {sputumBase}
                       {extraWhere}
                       {facP}
@@ -1351,7 +1356,7 @@ public sealed class TBPatientsController : ControllerBase
                 return r == null || r == DBNull.Value ? 0 : Convert.ToInt32(r);
             }
 
-            int sputum2  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL)",                            56, 28, sputum: true);
+            int sputum2  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR COALESCE(fu.Mon2LabResultID,0) IN (0,3,7)) AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID,0) IN (0,3,7))", 56, 28, sputum: true);
             int sputum3  = await MonCount("AND COALESCE(fu.Mon2LabResultID,0) IN (1,4,5,6) AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL)", 84, 56, sputum: true);
             int sputum5  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon5Date IS NULL)",                           140, 28, sputum: true);
             int sputum6  = await MonCount("AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)",                           168, 56, sputum: true);
@@ -1443,22 +1448,28 @@ public sealed class TBPatientsController : ControllerBase
             case "2month": case "3month": case "5month": case "6month": case "8month":
             {
                 (int offset, int grace, string extra) = category switch {
-                    "2month" => (56,  28, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL)"),
+                    "2month" => (56,  28, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR COALESCE(fu.Mon2LabResultID,0) IN (0,3,7)) AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID,0) IN (0,3,7))"),
                     "3month" => (84,  56, "AND COALESCE(fu.Mon2LabResultID,0) IN (1,4,5,6) AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL)"),
                     "5month" => (140, 28, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon5Date IS NULL)"),
                     "6month" => (168, 56, "AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)"),
                     _        => (224, 56, "AND p.PtTypeID IN (2,3,4) AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL)"),
                 };
+                string weekendAdj = $"CASE DATENAME(WEEKDAY,DATEADD(DAY,{offset},p.DateRxStarted)) WHEN 'Saturday' THEN 2 WHEN 'Sunday' THEN 1 ELSE 0 END";
+                string daysLate   = $"DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} - ({weekendAdj})";
                 string modeFilter = missed
-                    ? $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} > 0 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= {grace}"
-                    : $"AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} <= 0";
+                    ? $"AND ({daysLate}) > 0 AND ({daysLate}) <= {grace}"
+                    : $"AND ({daysLate}) <= 0";
                 querySql = $"""
                     SELECT {baseColsSputum},
-                           DATEDIFF(DAY,p.DateRxStarted,GETDATE()) - {offset} AS DaysLate
+                           {daysLate} AS DaysLate
                     {leftJoins}
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
+                      AND p.TbTypeID IN (1, 2)
+                      AND p.PtTypeID <> 5
+                      AND p.Age > 4
+                      AND p.PtName IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0, 7))
                       AND (COALESCE(fu.Mon0LabResultID,0) IN (1,4,5,6) OR COALESCE(fu.Mon0XpertResultID,0) IN (3,4,5))
                       {extra}
                       {facP}

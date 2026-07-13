@@ -1172,7 +1172,12 @@ function _monRows(r) {
 function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere) {
   if (!_db) return [];
   var hf = _monFacilityFilter(facilityIDs);
-  var dayExpr = "CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) - " + reviewDayOffset;
+  var offsetStr = String(reviewDayOffset);
+  // Weekend adjustment: if the ideal review date (DateRxStarted + offset) falls on
+  // Saturday (%w=6) shift to Monday (+2); if Sunday (%w=0) shift to Monday (+1).
+  var dayExpr = "CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) - " + offsetStr
+    + " - CASE strftime('%w', date(p.DateRxStarted, '+" + offsetStr + " days'))"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
   var modeFilter = mode === 'missed'
     ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= ' + gracePeriod
     : 'AND (' + dayExpr + ') <= 0';
@@ -1190,7 +1195,11 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) = 0)',
+    '  AND p.TbTypeID IN (1, 2)',
+    '  AND p.PtTypeID <> 5',
+    '  AND p.Age > 4',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
     '  AND (COALESCE(fu.Mon0LabResultID, 0) IN (1,4,5,6)',
     '       OR COALESCE(fu.Mon0XpertResultID, 0) IN (3,4,5))',
     '  ' + extraWhere,
@@ -1210,7 +1219,9 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
 /** Sputum @ 2 months (56 days): bacteriologically confirmed, no Mon2 smear yet. */
 function getTBMonSputum2(mode, facilityIDs) {
   return _tbMonSputumQuery(56, 28, mode, facilityIDs,
-    "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR fu.Mon2Date = '')");
+    "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR fu.Mon2Date = ''"
+    + " OR COALESCE(fu.Mon2LabResultID, 0) IN (0, 3, 7))"
+    + " AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))");
 }
 
 /**
