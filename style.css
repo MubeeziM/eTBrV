@@ -3508,16 +3508,16 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
   white-space: nowrap;
 }
 #dq-patient-table tr.dq-row--gap td:nth-child(3) {
+  text-align: left;
+}
+#dq-patient-table tr.dq-row--gap td:nth-child(4) {
   width: 36px;
   text-align: center;
 }
-#dq-patient-table tr.dq-row--gap td:nth-child(4) {
-  text-align: left;
-}
 #dq-thead-skipped th:nth-child(1) { width: 2.5rem; text-align: center; }
 #dq-thead-skipped th:nth-child(2) { width: 130px; }
-#dq-thead-skipped th:nth-child(3) { width: 36px; text-align: center; }
-#dq-thead-skipped th:nth-child(4) { text-align: left; }
+#dq-thead-skipped th:nth-child(3) { text-align: left; }
+#dq-thead-skipped th:nth-child(4) { width: 36px; text-align: center; }
 
 /* Print */
 @media print {
