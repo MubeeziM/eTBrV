@@ -1418,7 +1418,7 @@ public sealed class TBPatientsController : ControllerBase
             // 8-month: COALESCE(Mon6Date+56, DateRxStarted+224), Mon6LabResultID check
             int sputum8;
             {
-                string s8Ideal = "COALESCE(DATEADD(DAY,56,fu.Mon6Date),DATEADD(DAY,224,p.DateRxStarted))";
+                string s8Ideal = "COALESCE(DATEADD(DAY,56,NULLIF(fu.Mon6Date,'')),DATEADD(DAY,224,p.DateRxStarted))";
                 string s8Dl    = $"DATEDIFF(DAY,{s8Ideal},GETDATE()) - (CASE DATENAME(WEEKDAY,{s8Ideal}) WHEN 'Saturday' THEN 2 WHEN 'Sunday' THEN 1 ELSE 0 END)";
                 string s8Mode  = missed ? $"AND ({s8Dl}) > 0 AND ({s8Dl}) <= 56" : $"AND ({s8Dl}) <= 0";
                 var sql8 = $"""
@@ -1610,7 +1610,7 @@ public sealed class TBPatientsController : ControllerBase
             }
             case "8month":
             {
-                string ideal8    = "COALESCE(DATEADD(DAY,56,fu.Mon6Date),DATEADD(DAY,224,p.DateRxStarted))";
+                string ideal8    = "COALESCE(DATEADD(DAY,56,NULLIF(fu.Mon6Date,'')),DATEADD(DAY,224,p.DateRxStarted))";
                 string wkAdj8    = $"CASE DATENAME(WEEKDAY,{ideal8}) WHEN 'Saturday' THEN 2 WHEN 'Sunday' THEN 1 ELSE 0 END";
                 string dl8       = $"DATEDIFF(DAY,{ideal8},GETDATE()) - ({wkAdj8})";
                 string modeFilter8 = missed
