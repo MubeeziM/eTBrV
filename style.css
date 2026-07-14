@@ -2849,7 +2849,7 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
   color: var(--text);
 }
 .mon-stat-row:last-child { border-bottom: none; }
-.mon-stat-row:hover:not(.mon-stat-row--active) {
+.mon-stat-row:hover:not(.mon-stat-row--active):not(.mon-stat-row--disabled) {
   background: var(--primary-light);
   color: var(--primary);
 }
@@ -2857,6 +2857,11 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
 .mon-stat-row--active {
   background: var(--primary);
   color: #fff;
+}
+
+.mon-stat-row--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .mon-stat-label { flex: 1; line-height: 1.3; }

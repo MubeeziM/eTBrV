@@ -1456,9 +1456,11 @@ public sealed class TBPatientsController : ControllerBase
                     LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
-                      AND ((p.PtTypeID NOT IN (2,3,4) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 168)
-                        OR (p.PtTypeID IN (2,3,4)     AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 252))
+                      AND p.PtName IS NOT NULL
+                      AND p.PtTypeID <> 5
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
+                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
+                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600))
                       {facP}
                     """;
                 await using var cmd = new SqlCommand(sql, conn);
@@ -1717,9 +1719,11 @@ public sealed class TBPatientsController : ControllerBase
                     {leftJoins}
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
-                      AND ((p.PtTypeID NOT IN (2,3,4) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 168)
-                        OR (p.PtTypeID IN (2,3,4)     AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) > 252))
+                      AND p.PtName IS NOT NULL
+                      AND p.PtTypeID <> 5
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
+                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
+                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600))
                       {facP}
                     ORDER BY DaysSinceStart DESC, p.PtName
                     """;
