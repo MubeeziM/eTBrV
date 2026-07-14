@@ -1493,7 +1493,9 @@ public sealed class TBPatientsController : ControllerBase
     public async Task<IActionResult> GetMonitorPatients(
         [FromQuery] int[]?  facilityIds = null,
         [FromQuery] string  mode        = "missed",
-        [FromQuery] string  category    = "2month")
+        [FromQuery] string  category    = "2month",
+        [FromQuery] int     limit       = 500,
+        [FromQuery] int     offset      = 0)
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
@@ -1509,7 +1511,8 @@ public sealed class TBPatientsController : ControllerBase
             CONVERT(nvarchar(10), p.RegDate, 23) AS RegDate,
             p.PtName, p.Age, p.Village, p.Payam, p.PtPhone, p.PtTypeID, p.NearestHFID,
             ISNULL(s.Sex,'') AS Sex, ISNULL(pt.PtTypeShort,'') AS PtTypeShort,
-            ISNULL(hf.HealthFacility,'') AS HealthFacility
+            ISNULL(hf.HealthFacility,'') AS HealthFacility,
+            COUNT(*) OVER () AS TotalCount
             """;
 
         const string leftJoins = """
@@ -1734,15 +1737,19 @@ public sealed class TBPatientsController : ControllerBase
                 return BadRequest(new { error = $"Unknown category '{category}'." });
         }
 
+        querySql += $"\nOFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY";
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
-            await using var cmd = new SqlCommand(querySql, conn);
+            await using var cmd = new SqlCommand(querySql, conn) { CommandTimeout = 60 };
             AddFacParams(cmd, facPrms);
             await using var rdr = await cmd.ExecuteReaderAsync();
             var rows = await ReadRowsAsync(rdr);
-            return Ok(rows);
+            int total = rows.Count > 0 && rows[0].TryGetValue("TotalCount", out var tc)
+                ? Convert.ToInt32(tc) : rows.Count + offset;
+            foreach (var r in rows) r.Remove("TotalCount");
+            return Ok(new { total, rows });
         }
         catch (Exception ex)
         {

@@ -7074,7 +7074,8 @@ let _sidebarAutoCollapsed = false;
 
 // ─── Cached rows for monitoring / DQ export ──────────────────────────────
 /** Last-rendered rows in the TB Monitoring list — used by the Excel export. */
-let _monCurrentRows = [];
+let _monCurrentRows   = [];
+let _monTotalCount    = 0;
 /** Last-rendered rows in the Data Quality list — used by the Excel export. */
 let _dqCurrentRows  = [];
 let _dqSkippedRows  = [];  // gap rows for the skipped category (used by Excel export)
@@ -8769,20 +8770,20 @@ async function _monSelectCategory(cat) {
       if (token && _reallyOnline) {
         let fetchErr = null;
         try {
-          const qs = new URLSearchParams({ mode: _monMode, category: cat });
+          const qs = new URLSearchParams({ mode: _monMode, category: cat, limit: '500', offset: '0' });
           _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-patients?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(25000),
           });
-          if (resp.ok) rows = await resp.json();
+          if (resp.ok) { const pd = await resp.json(); _monTotalCount = pd.total ?? 0; rows = pd.rows ?? pd; }
           else fetchErr = new Error(`Server returned ${resp.status}`);
         } catch (e) { fetchErr = e; }
         if (_loadBar) _loadBar.hidden = true;
         if (fetchErr) {
           const isTimeout = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
           if (tbody) tbody.innerHTML = isTimeout
-            ? `<tr><td colspan="11" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — try a more specific facility filter.</td></tr>`
+            ? `<tr><td colspan="11" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — refresh the page or try a more specific facility filter.</td></tr>`
             : `<tr><td colspan="11" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
           return;
         }
@@ -8791,6 +8792,7 @@ async function _monSelectCategory(cat) {
       }
     } else {
       rows = getTBMonList(cat, _monMode, _monFacilityIDs);
+      _monTotalCount = rows.length;
     }
     _monRenderList(cat, rows);
   } catch (err) {
@@ -8889,26 +8891,31 @@ function _monAttachRowHandlers(tbody) {
 function _monSetupPagingSentinel(cat) {
   if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
   document.getElementById('mon-page-sentinel')?.remove();
-  if (_monRenderedCount >= _monCurrentRows.length) return;
+  const hasMore = _monUseServer
+    ? _monCurrentRows.length < _monTotalCount
+    : _monRenderedCount < _monCurrentRows.length;
+  if (!hasMore) return;
   const tbody     = document.getElementById('mon-patient-tbody');
   const tableWrap = document.querySelector('.table-wrap--mon-scroll');
   if (!tbody || !tableWrap) return;
-  const remaining = _monCurrentRows.length - _monRenderedCount;
+  const remaining = _monUseServer
+    ? _monTotalCount - _monCurrentRows.length
+    : _monCurrentRows.length - _monRenderedCount;
   const sentinel  = document.createElement('tr');
   sentinel.id = 'mon-page-sentinel';
   sentinel.innerHTML = `<td colspan="11" style="text-align:center;padding:0.6rem;background:#f0fdf4;font-size:0.82rem">
     <span id="mon-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em"><span class="dq-spin-icon">↻</span> Loading more…</span>
     <span id="mon-page-more" style="color:#0f766e;font-weight:600">${remaining.toLocaleString()} more ↓</span></td>`;
   tbody.appendChild(sentinel);
-  _monPageObserver = new IntersectionObserver(entries => {
+  _monPageObserver = new IntersectionObserver(async entries => {
     if (!entries[0].isIntersecting || _monIsPaging) return;
-    _monLoadNextPage(cat);
+    await _monLoadNextPage(cat);
   }, { root: tableWrap, rootMargin: '80px', threshold: 0 });
   _monPageObserver.observe(sentinel);
 }
 
 /** Append the next batch of rows from _monCurrentRows into the monitoring table. */
-function _monLoadNextPage(cat) {
+async function _monLoadNextPage(cat) {
   if (_monIsPaging) return;
   _monIsPaging = true;
   const spinner = document.getElementById('mon-page-spinner');
@@ -8918,28 +8925,77 @@ function _monLoadNextPage(cat) {
   try {
     const isSputum  = ['2month','3month','5month','6month','8month'].includes(cat);
     const isOutcome = cat === 'outcome';
-    const nextBatch = _monCurrentRows.slice(_monRenderedCount, _monRenderedCount + MON_PAGE);
-    const tbody     = document.getElementById('mon-patient-tbody');
-    const sentinel  = document.getElementById('mon-page-sentinel');
-    if (tbody && sentinel && nextBatch.length) {
-      sentinel.insertAdjacentHTML('beforebegin', nextBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join(''));
-      _monAttachRowHandlers(tbody);
-      _monRenderedCount += nextBatch.length;
-      const selectAll = document.getElementById('mon-select-all');
-      if (selectAll?.checked) {
-        tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+    if (_monUseServer) {
+      // Online: fetch next page from API
+      const token = getToken();
+      if (!token || !_reallyOnline) return;
+      const qs = new URLSearchParams({ mode: _monMode, category: cat, limit: '500', offset: String(_monCurrentRows.length) });
+      _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
+      const resp = await fetch(`${API_BASE}/tb-patients/monitor-patients?${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const pd = await resp.json();
+      const newRows = pd.rows ?? pd;
+      if (pd.total != null) _monTotalCount = pd.total;
+      if (!newRows.length) {
+        document.getElementById('mon-page-sentinel')?.remove();
+        if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+        return;
+      }
+      _monCurrentRows = [..._monCurrentRows, ...newRows];
+      _monRenderedCount = _monCurrentRows.length;
+      const tbody    = document.getElementById('mon-patient-tbody');
+      const sentinel = document.getElementById('mon-page-sentinel');
+      if (tbody && sentinel) {
+        sentinel.insertAdjacentHTML('beforebegin', newRows.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join(''));
+        _monAttachRowHandlers(tbody);
+        const selectAll = document.getElementById('mon-select-all');
+        if (selectAll?.checked) {
+          tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+        }
+      }
+      const hintEl = document.getElementById('mon-list-hint');
+      if (_monCurrentRows.length >= _monTotalCount) {
+        document.getElementById('mon-page-sentinel')?.remove();
+        if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+        if (hintEl) hintEl.textContent = 'HINT: Click any patient row to view or update their medical record';
+      } else {
+        const remaining = _monTotalCount - _monCurrentRows.length;
+        if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${remaining.toLocaleString()} more ↓`; }
+        if (spinner) spinner.hidden = true;
+        if (hintEl) hintEl.innerHTML = `Loaded <strong>${_monCurrentRows.length.toLocaleString()}</strong> of <strong>${_monTotalCount.toLocaleString()}</strong> — scroll down for more.`;
+      }
+    } else {
+      // Offline: slice from in-memory array
+      const nextBatch = _monCurrentRows.slice(_monRenderedCount, _monRenderedCount + MON_PAGE);
+      const tbody     = document.getElementById('mon-patient-tbody');
+      const sentinel  = document.getElementById('mon-page-sentinel');
+      if (tbody && sentinel && nextBatch.length) {
+        sentinel.insertAdjacentHTML('beforebegin', nextBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join(''));
+        _monAttachRowHandlers(tbody);
+        _monRenderedCount += nextBatch.length;
+        const selectAll = document.getElementById('mon-select-all');
+        if (selectAll?.checked) {
+          tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+        }
+      }
+      const hintEl = document.getElementById('mon-list-hint');
+      if (_monRenderedCount >= _monCurrentRows.length) {
+        document.getElementById('mon-page-sentinel')?.remove();
+        if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+        if (hintEl) hintEl.textContent = 'HINT: Click any patient row to view or update their medical record';
+      } else {
+        const remaining = _monCurrentRows.length - _monRenderedCount;
+        if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${remaining.toLocaleString()} more ↓`; }
+        if (spinner) spinner.hidden = true;
       }
     }
-    if (_monRenderedCount >= _monCurrentRows.length) {
-      document.getElementById('mon-page-sentinel')?.remove();
-      if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
-      const hintEl = document.getElementById('mon-list-hint');
-      if (hintEl) hintEl.textContent = 'HINT: Click any patient row to view or update their medical record';
-    } else {
-      const remaining = _monCurrentRows.length - _monRenderedCount;
-      if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${remaining.toLocaleString()} more ↓`; }
-      if (spinner) spinner.hidden = true;
-    }
+  } catch (e) {
+    console.error('[Monitoring] loadNextPage:', e);
+    if (spinner) spinner.hidden = true;
+    if (moreEl)  { moreEl.hidden = false; moreEl.textContent = '⚠ Error loading — scroll to retry'; }
   } finally {
     _monIsPaging = false;
   }
@@ -8983,11 +9039,11 @@ function _monRenderList(cat, rows) {
 
   if (titleEl) titleEl.textContent = _monCatTitle(cat, _monMode);
 
-  const n = rows.length;
+  const n = _monTotalCount || rows.length;
   if (subEl) {
     if (n === 0)      subEl.textContent = 'No TB Patients Found';
     else if (n === 1) subEl.textContent = 'Found 01 TB Patient';
-    else              subEl.textContent = `Found ${String(n).padStart(2, '0')} TB Patients`;
+    else              subEl.textContent = `Found ${n.toLocaleString()} TB Patients`;
   }
   if (hintEl) {
     hintEl.textContent = n > 0 ? 'HINT: Click any patient row to view or update their medical record' : '';
@@ -8998,8 +9054,8 @@ function _monRenderList(cat, rows) {
     return;
   }
 
-  // Render first batch (up to MON_PAGE rows)
-  const firstBatch = rows.slice(0, MON_PAGE);
+  // Online: API already limits to 500 — render all. Offline: slice first MON_PAGE.
+  const firstBatch = _monUseServer ? rows : rows.slice(0, MON_PAGE);
   tbody.innerHTML = firstBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join('');
   _monRenderedCount = firstBatch.length;
   _monAttachRowHandlers(tbody);
@@ -9007,9 +9063,11 @@ function _monRenderList(cat, rows) {
   // Set up scroll sentinel for any remaining rows
   _monSetupPagingSentinel(cat);
 
-  // Update hint if rows are deferred
-  if (_monRenderedCount < n && hintEl) {
-    hintEl.innerHTML = `Loaded <strong>${_monRenderedCount.toLocaleString()}</strong> of <strong>${n.toLocaleString()}</strong> — scroll down for more.`;
+  // Update hint if more remain
+  const _totalAll = _monUseServer ? _monTotalCount : _monCurrentRows.length;
+  const _loaded   = _monUseServer ? _monCurrentRows.length : _monRenderedCount;
+  if (_loaded < _totalAll && hintEl) {
+    hintEl.innerHTML = `Loaded <strong>${_loaded.toLocaleString()}</strong> of <strong>${_totalAll.toLocaleString()}</strong> — scroll down for more.`;
   }
 }
 
