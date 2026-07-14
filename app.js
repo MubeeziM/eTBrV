@@ -8665,10 +8665,10 @@ function _monSetSidebarCollapsed(collapsed) {
 }
 
 /** Recompute all category counts and re-render the active list. */
-async function _monRefreshAll(skipList = false) {
+async function _monRefreshAll(skipList = false, _retried = false) {
   const countIds = ['mon-count-2month','mon-count-3month','mon-count-5month',
     'mon-count-6month','mon-count-8month','mon-count-hiv','mon-count-cpt',
-    'mon-count-art','mon-count-hhp','mon-count-outcome'];
+    'mon-count-art','mon-count-outcome'];
   if (_monUseServer) {
     countIds.forEach(id => {
       const el = document.getElementById(id);
@@ -8680,6 +8680,7 @@ async function _monRefreshAll(skipList = false) {
     if (_monUseServer) {
       const token = getToken();
       if (token && _reallyOnline) {
+        let cntErr = null;
         try {
           const qs = new URLSearchParams({ mode: _monMode });
           _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
@@ -8688,7 +8689,26 @@ async function _monRefreshAll(skipList = false) {
             signal: AbortSignal.timeout(10000),
           });
           if (resp.ok) counts = await resp.json();
-        } catch (_) {}
+          else cntErr = new Error(`Server error ${resp.status}`);
+        } catch (e) { cntErr = e; }
+        if (cntErr) {
+          const isTimeout = cntErr.name === 'TimeoutError' || cntErr.name === 'AbortError';
+          if (!isTimeout && !_retried) {
+            console.warn('[Monitoring] Counts failed, auto-retrying in 3 s…');
+            setTimeout(() => _monRefreshAll(skipList, true), 3000);
+            return;
+          }
+          countIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('mon-stat-count--loading');
+            el.textContent = '—';
+            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : `Error — click to retry (${cntErr.message})`;
+            el.style.cssText = 'color:#d97706;font-weight:600;cursor:pointer';
+            el.onclick = () => { el.onclick = null; el.style.cssText = ''; _monRefreshAll(); };
+          });
+          return;
+        }
       }
       if (!counts) counts = { sputum2:0, sputum3:0, sputum5:0, sputum6:0, sputum8:0, hiv:0, cpt:0, art:0, hhp:0, outcome:0 };
     } else {
@@ -8700,7 +8720,9 @@ async function _monRefreshAll(skipList = false) {
       const e = document.getElementById(id);
       if (!e) return;
       e.classList.remove('mon-stat-count--loading');
+      e.style.cssText = ''; e.onclick = null;
       e.textContent = fmt(n);
+      e.classList.toggle('mon-stat-count--issue', n > 0);
     };
 
     setCount('mon-count-2month',  counts.sputum2);
@@ -8745,6 +8767,7 @@ async function _monSelectCategory(cat) {
       rows = [];
       const token = getToken();
       if (token && _reallyOnline) {
+        let fetchErr = null;
         try {
           const qs = new URLSearchParams({ mode: _monMode, category: cat });
           _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
@@ -8753,11 +8776,31 @@ async function _monSelectCategory(cat) {
             signal: AbortSignal.timeout(15000),
           });
           if (resp.ok) rows = await resp.json();
-        } catch (_) {}
+          else fetchErr = new Error(`Server returned ${resp.status}`);
+        } catch (e) { fetchErr = e; }
+        if (_loadBar) _loadBar.hidden = true;
+        if (fetchErr) {
+          const isTimeout = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
+          if (tbody) tbody.innerHTML = isTimeout
+            ? `<tr><td colspan="11" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — try a more specific facility filter.</td></tr>`
+            : `<tr><td colspan="11" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
+          return;
+        }
+      } else {
+        if (_loadBar) _loadBar.hidden = true;
       }
-      if (_loadBar) _loadBar.hidden = true;
     } else {
       rows = getTBMonList(cat, _monMode, _monFacilityIDs);
+    }
+    _monRenderList(cat, rows);
+  } catch (err) {
+    document.getElementById('mon-load-bar')?.setAttribute('hidden', '');
+    const tbody = document.getElementById('mon-patient-tbody');
+    if (tbody) tbody.innerHTML =
+      `<tr><td colspan="11" class="text-danger text-center py-3">Error: ${escHtml(err.message)}</td></tr>`;
+    console.error('[Monitoring] _monSelectCategory:', err);
+  }
+}
     }
     _monRenderList(cat, rows);
   } catch (err) {

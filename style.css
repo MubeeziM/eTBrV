@@ -2874,6 +2874,9 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
   flex-shrink: 0;
 }
 
+.mon-stat-count--issue { color: #dc2626; }
+.mon-stat-row--active .mon-stat-count--issue { color: #fff; }
+
 /* Skeleton shimmer on count badges while server data is loading */
 .mon-stat-count--loading {
   display: inline-block;
