@@ -8631,7 +8631,7 @@ function _monTreeChanged() {
     cIds.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.classList.remove('mon-stat-count--loading');
+      el.classList.remove('mon-stat-count--loading', 'mon-stat-count--issue');
       el.style.cssText = ''; el.onclick = null; el.textContent = '00';
     });
     if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
