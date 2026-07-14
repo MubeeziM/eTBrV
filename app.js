@@ -8686,7 +8686,7 @@ async function _monRefreshAll(skipList = false, _retried = false) {
           _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-counts?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(45000),
           });
           if (resp.ok) counts = await resp.json();
           else cntErr = new Error(`Server error ${resp.status}`);
