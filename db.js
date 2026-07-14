@@ -1346,13 +1346,53 @@ function getTBMonSputum6(mode, facilityIDs) {
 }
 
 /**
- * Sputum @ 8 months (224 days): retreatment cases only (PtTypeID 2/3/4),
- * bacteriologically confirmed, no end-of-treatment smear yet.
+ * Sputum @ 8 months. TbTypeID IN (1, 2).
+ * Ideal date = COALESCE(Mon6Date + 56, DateRxStarted + 224) with weekend adjustment.
+ * Includes patients where Mon6 result is null or "Not Done" (3).
  */
 function getTBMonSputum8(mode, facilityIDs) {
-  return _tbMonSputumQuery(224, 56, mode, facilityIDs,
-    "AND p.PtTypeID IN (2,3,4)" +
-    " AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL OR fu.Mon6Date = '')");
+  if (!_db) return [];
+  var hf    = _monFacilityFilter(facilityIDs);
+  var ideal = "COALESCE(date(fu.Mon6Date, '+56 days'), date(p.DateRxStarted, '+224 days'))";
+  var dayExpr = "CAST(julianday('now') - julianday(" + ideal + ") AS INTEGER)"
+    + " - CASE strftime('%w', " + ideal + ")"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  var modeFilter = mode === 'missed'
+    ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= 56'
+    : 'AND (' + dayExpr + ') <= 0';
+
+  var sql = [
+    'SELECT p.PtDetailsTID, p.UnitTBNo, p.RegDate, p.PtName, p.Age,',
+    '       p.Village, p.Payam, p.PtPhone, p.PtTypeID, p.NearestHFID,',
+    '       s.Sex, pt.PtTypeShort,',
+    "       COALESCE(hf.HealthFacility,'') AS HealthFacility,",
+    '       (' + dayExpr + ') AS DaysLate',
+    'FROM PtDetailsT p',
+    'LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0',
+    'LEFT JOIN SexT         s  ON p.SexID  = s.SexID',
+    'LEFT JOIN PtTypeT      pt ON p.PtTypeID = pt.PtTypeID',
+    'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
+    'WHERE p.Deleted = 0',
+    "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
+    '  AND p.TbTypeID IN (1, 2)',
+    '  AND p.PtTypeID <> 5',
+    '  AND p.Age > 4',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
+    '  AND (COALESCE(fu.Mon0LabResultID, 0) IN (1,4,5,6)',
+    '       OR COALESCE(fu.Mon0XpertResultID, 0) IN (3,4,5))',
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID, 0) IN (0, 3))',
+    '  ' + hf,
+    '  ' + modeFilter,
+    'ORDER BY DaysLate ASC, p.PtName'
+  ].join('\n');
+
+  try {
+    return _monRows(_db.exec(sql));
+  } catch (e) {
+    console.error('[MonDB] sputum8 query error:', e.message);
+    return [];
+  }
 }
 
 /** HIV testing due: active TB patients not yet tested (HIVTestResultID 0, 4 or missing). */
