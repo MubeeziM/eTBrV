@@ -8623,6 +8623,26 @@ function _monTreeChanged() {
     }
   }
 
+  if (n === 0) {
+    // No facility selected — clear counts and list immediately, no API calls
+    const cIds = ['mon-count-2month','mon-count-3month','mon-count-5month',
+      'mon-count-6month','mon-count-8month','mon-count-hiv','mon-count-cpt',
+      'mon-count-art','mon-count-outcome'];
+    cIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('mon-stat-count--loading');
+      el.style.cssText = ''; el.onclick = null; el.textContent = '00';
+    });
+    if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+    document.getElementById('mon-page-sentinel')?.remove();
+    const tbody = document.getElementById('mon-patient-tbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="text-center py-4" style="color:#64748b">Select a facility in the filter panel to view patients.</td></tr>`;
+    const hintEl = document.getElementById('mon-list-hint');
+    if (hintEl) hintEl.textContent = '';
+    return;
+  }
+
   _monSelectCategory(_monCategory);
   _monRefreshAll(true);
 }
