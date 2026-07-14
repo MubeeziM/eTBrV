@@ -1504,12 +1504,13 @@ function getTBMonOutcomeMissing(facilityIDs) {
     '  AND p.PtTypeID <> 5',
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
     '  AND (',
-    "    (p.PtTypeID = 1 AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)",
+    // TODO(user-prefs): day bounds for outcome — make configurable in user preferences
+    "    (p.PtTypeID = 1 AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) BETWEEN 168 AND 270)",
     '    OR',
-    "    (p.PtTypeID <> 1 AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600)",
+    "    (p.PtTypeID <> 1 AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) BETWEEN 224 AND 320)",
     '  )',
     '  ' + hf,
-    'ORDER BY DaysSinceStart DESC, p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] outcome query:', e.message); return []; }
 }

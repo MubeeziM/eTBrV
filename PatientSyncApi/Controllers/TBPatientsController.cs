@@ -1459,8 +1459,9 @@ public sealed class TBPatientsController : ControllerBase
                       AND p.PtName IS NOT NULL
                       AND p.PtTypeID <> 5
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
-                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
-                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600))
+                      -- TODO(user-prefs): day bounds for outcome — make configurable in user preferences
+                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 168 AND 270)
+                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 224 AND 320))
                       {facP}
                     """;
                 await using var cmd = new SqlCommand(sql, conn);
@@ -1722,10 +1723,11 @@ public sealed class TBPatientsController : ControllerBase
                       AND p.PtName IS NOT NULL
                       AND p.PtTypeID <> 5
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
-                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
-                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600))
+                      -- TODO(user-prefs): day bounds for outcome — make configurable in user preferences
+                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 168 AND 270)
+                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 224 AND 320))
                       {facP}
-                    ORDER BY DaysSinceStart DESC, p.PtName
+                    ORDER BY p.RegDate DESC, p.PtName
                     """;
                 break;
             default:
