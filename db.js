@@ -1210,7 +1210,7 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
     '  ' + extraWhere,
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY ' + (orderByOverride || 'DaysLate ASC, p.PtName')
+    'ORDER BY ' + (orderByOverride || ('DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'))
   ].join('\n');
 
   try {
@@ -1284,7 +1284,7 @@ function getTBMonSputum5(mode, facilityIDs) {
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon5LabResultID, 0) IN (0, 3))',
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY DaysLate ASC, p.PtName'
+    'ORDER BY DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'
   ].join('\n');
 
   try {
@@ -1334,7 +1334,7 @@ function getTBMonSputum6(mode, facilityIDs) {
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID, 0) IN (0, 3))',
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY DaysLate ASC, p.PtName'
+    'ORDER BY DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'
   ].join('\n');
 
   try {
@@ -1384,7 +1384,7 @@ function getTBMonSputum8(mode, facilityIDs) {
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID, 0) IN (0, 3))',
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY DaysLate ASC, p.PtName'
+    'ORDER BY DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'
   ].join('\n');
 
   try {

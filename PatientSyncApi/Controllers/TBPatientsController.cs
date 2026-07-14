@@ -1555,7 +1555,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL OR COALESCE(fu.Mon3LabResultID,0) IN (0,3,7))
                       {facP}
                       {modeFilter3}
-                    ORDER BY DaysLate ASC, p.PtName
+                    ORDER BY DaysLate {(missed ? "ASC" : "DESC")}, p.PtName
                     """;
                 break;
             }
@@ -1581,7 +1581,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon5LabResultID,0) IN (0, 3))
                       {facP}
                       {modeFilter5}
-                    ORDER BY DaysLate ASC, p.PtName
+                    ORDER BY DaysLate {(missed ? "ASC" : "DESC")}, p.PtName
                     """;
                 break;
             }
@@ -1608,7 +1608,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID,0) IN (0, 3))
                       {facP}
                       {modeFilter6}
-                    ORDER BY DaysLate ASC, p.PtName
+                    ORDER BY DaysLate {(missed ? "ASC" : "DESC")}, p.PtName
                     """;
                 break;
             }
@@ -1635,7 +1635,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID,0) IN (0, 3))
                       {facP}
                       {modeFilter8}
-                    ORDER BY DaysLate ASC, p.PtName
+                    ORDER BY DaysLate {(missed ? "ASC" : "DESC")}, p.PtName
                     """;
                 break;
             }
@@ -1662,7 +1662,7 @@ public sealed class TBPatientsController : ControllerBase
                       {extra2}
                       {facP}
                       {modeFilter2}
-                    ORDER BY DaysLate ASC, p.PtName
+                    ORDER BY DaysLate {(missed ? "ASC" : "DESC")}, p.PtName
                     """;
                 break;
             }
