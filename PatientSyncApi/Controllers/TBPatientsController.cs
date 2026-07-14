@@ -1675,7 +1675,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))
                       {facP}
-                    ORDER BY p.PtName
+                    ORDER BY p.RegDate DESC
                     """;
                 break;
             case "cpt":
@@ -1691,7 +1691,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnCPT,0) = 0
                       {facP}
-                    ORDER BY p.PtName
+                    ORDER BY p.RegDate DESC
                     """;
                 break;
             case "art":
@@ -1707,7 +1707,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnART,0) = 0
                       {facP}
-                    ORDER BY p.PtName
+                    ORDER BY p.RegDate DESC
                     """;
                 break;
             case "outcome":

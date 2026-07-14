@@ -1418,7 +1418,7 @@ function getTBMonHIV(facilityIDs) {
     '  AND (fu.PtFollowUpTID IS NULL',
     '       OR COALESCE(fu.HIVTestResultID, 0) IN (0, 3, 4))',
     '  ' + hf,
-    'ORDER BY p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] HIV query:', e.message); return []; }
 }
@@ -1446,7 +1446,7 @@ function getTBMonCPT(facilityIDs) {
     '  AND fu.HIVTestResultID = 2',
     '  AND COALESCE(fu.OnCPT, 0) = 0',
     '  ' + hf,
-    'ORDER BY p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] CPT query:', e.message); return []; }
 }
@@ -1474,7 +1474,7 @@ function getTBMonART(facilityIDs) {
     '  AND fu.HIVTestResultID = 2',
     '  AND COALESCE(fu.OnART, 0) = 0',
     '  ' + hf,
-    'ORDER BY p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] ART query:', e.message); return []; }
 }
