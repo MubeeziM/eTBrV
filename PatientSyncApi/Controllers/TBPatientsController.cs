@@ -1324,7 +1324,7 @@ public sealed class TBPatientsController : ControllerBase
                     LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0, 7))
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0, 7))
                       {qualityFilter}
                       {sputumBase}
                       {extraWhere}
