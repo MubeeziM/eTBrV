@@ -1428,7 +1428,7 @@ public sealed class TBPatientsController : ControllerBase
                     LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND p.TbTypeID IN (1, 2)
+                      AND p.TbTypeID = 1
                       AND p.PtTypeID <> 5
                       AND p.Age > 4
                       AND p.PtName IS NOT NULL
@@ -1622,7 +1622,7 @@ public sealed class TBPatientsController : ControllerBase
                     {leftJoins}
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND p.TbTypeID IN (1, 2)
+                      AND p.TbTypeID = 1
                       AND p.PtTypeID <> 5
                       AND p.Age > 4
                       AND p.PtName IS NOT NULL

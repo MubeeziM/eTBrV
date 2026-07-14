@@ -1346,7 +1346,7 @@ function getTBMonSputum6(mode, facilityIDs) {
 }
 
 /**
- * Sputum @ 8 months. TbTypeID IN (1, 2).
+ * Sputum @ 8 months. TbTypeID = 1 (Pulmonary only — EP cases do not have sputum smears).
  * Ideal date = COALESCE(Mon6Date + 56, DateRxStarted + 224) with weekend adjustment.
  * Includes patients where Mon6 result is null or "Not Done" (3).
  */
@@ -1374,7 +1374,7 @@ function getTBMonSputum8(mode, facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND p.TbTypeID IN (1, 2)',
+    '  AND p.TbTypeID = 1',
     '  AND p.PtTypeID <> 5',
     '  AND p.Age > 4',
     "  AND p.PtName IS NOT NULL AND p.PtName != ''",
