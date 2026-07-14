@@ -8801,16 +8801,6 @@ async function _monSelectCategory(cat) {
     console.error('[Monitoring] _monSelectCategory:', err);
   }
 }
-    }
-    _monRenderList(cat, rows);
-  } catch (err) {
-    document.getElementById('mon-load-bar')?.setAttribute('hidden', '');
-    const tbody = document.getElementById('mon-patient-tbody');
-    if (tbody) tbody.innerHTML =
-      `<tr><td colspan="11" class="text-danger text-center py-3">Error: ${escHtml(err.message)}</td></tr>`;
-    console.error('[Monitoring] _monSelectCategory:', err);
-  }
-}
 
 /** Human-readable title for a monitoring category + mode. */
 function _monCatTitle(cat, mode) {
