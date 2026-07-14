@@ -1443,9 +1443,9 @@ public sealed class TBPatientsController : ControllerBase
                 var r8 = await cmd8.ExecuteScalarAsync();
                 sputum8 = r8 == null || r8 == DBNull.Value ? 0 : Convert.ToInt32(r8);
             }
-            int hiv      = await MonCount("AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.HIVTestResultID,0) IN (0,4) OR fu.HIVTestDate IS NULL)", 0, 0, sputum: false);
-            int cpt      = await MonCountInner("AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
-            int art      = await MonCountInner("AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
+            int hiv      = await MonCount("AND p.PtName IS NOT NULL AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.HIVTestResultID,0) IN (0,3,4))", 0, 0, sputum: false);
+            int cpt      = await MonCountInner("AND p.PtName IS NOT NULL AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
+            int art      = await MonCountInner("AND p.PtName IS NOT NULL AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
             int outcome;
             {
                 var sql = $"""
@@ -1668,8 +1668,9 @@ public sealed class TBPatientsController : ControllerBase
                     {leftJoins}
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) = 0)
-                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.HIVTestResultID,0) IN (0,4) OR fu.HIVTestDate IS NULL)
+                      AND p.PtName IS NOT NULL
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
+                      AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.HIVTestResultID,0) IN (0,3,4))
                       {facP}
                     ORDER BY p.PtName
                     """;
@@ -1680,6 +1681,7 @@ public sealed class TBPatientsController : ControllerBase
                     {innerJoins}
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
+                      AND p.PtName IS NOT NULL
                       AND COALESCE(fu.OutcomeID,0) = 0
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnCPT,0) = 0
@@ -1693,6 +1695,7 @@ public sealed class TBPatientsController : ControllerBase
                     {innerJoins}
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
+                      AND p.PtName IS NOT NULL
                       AND COALESCE(fu.OutcomeID,0) = 0
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnART,0) = 0
