@@ -3304,20 +3304,28 @@ public sealed class ReportsController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    //  GET /api/reports/tb-lfa-progress
-    //      ?cfStartDate=2026-01-01&cfEndDate=2026-03-31[&facilityIds[]=n...]
+    //  POST /api/reports/tb-lfa-progress
+    //       Body: { "cfStartDate": "2026-01-01", "cfEndDate": "2026-03-31", "facilityIds": [n...] }
     //
-    //  Streams SSE progress events while querying the eTBr database per
-    //  facility and building the DS-TB LFA Verification Excel workbook.
-    //  One CF row and one TO row is written per facility, matching the
-    //  layout of the original eTBr Web Forms lfa.aspx report.
+    //  Streams SSE progress events while building the DS-TB LFA Verification
+    //  Excel workbook.  Patient data is pre-loaded in three batch queries
+    //  (one CF, one TO, one presumptive) so DB round-trips are O(1)
+    //  regardless of how many facilities are selected — fixes the timeout
+    //  and URL-length failures that occur when selecting South Sudan (185+).
     // ──────────────────────────────────────────────────────────────────────
-    [HttpGet("tb-lfa-progress")]
-    public async Task TbLfaProgress(
-        [FromQuery] string cfStartDate,
-        [FromQuery] string cfEndDate,
-        [FromQuery] int[]? facilityIds = null)
+    public sealed class LfaProgressBody
     {
+        public string CfStartDate { get; init; } = "";
+        public string CfEndDate   { get; init; } = "";
+        public int[]  FacilityIds { get; init; } = [];
+    }
+
+    [HttpPost("tb-lfa-progress")]
+    public async Task TbLfaProgress([FromBody] LfaProgressBody body)
+    {
+        string cfStartDate = body.CfStartDate;
+        string cfEndDate   = body.CfEndDate;
+        int[]? facilityIds = body.FacilityIds;
         var ct = HttpContext.RequestAborted;
 
         // ── Input validation ─────────────────────────────────────────────
@@ -3475,56 +3483,102 @@ public sealed class ReportsController : ControllerBase
         string[] artAgColsM = ["CE", "CF", "CG", "CH", "CI", "CJ", "CK", "CL", "CM", "CN"];
         string[] artAgColsF = ["CO", "CP", "CQ", "CR", "CS", "CT", "CU", "CV", "CW", "CX"];
 
-        // Per-facility SQL (no geo scope needed — facility comes from scope-filtered list)
-        const string cfSqlPf = """
-            SELECT
-                pd.PtTypeID, pd.TbTypeID, pd.SexID, pd.Age, pd.DiagMethodID,
-                COALESCE(fu.Mon0LabResultID,0)   AS Mon0LabResultID,
-                COALESCE(fu.Mon0XpertResultID,0) AS Mon0XpertResultID,
-                COALESCE(fu.HIVTestResultID,0)   AS HIVTestResultID,
-                COALESCE(fu.OnART,0)             AS OnART,
-                COALESCE(fu.OnCPT,0)             AS OnCPT
-            FROM PtDetailsT pd
-            LEFT JOIN PtFollowUpT fu ON fu.PtDetailsTID = pd.PtDetailsTID
-            JOIN HealthFacilityT hf ON hf.HealthFacilityID = pd.NearestHFID
-            WHERE pd.Deleted = 0
-              AND pd.PtTypeID IN (1, 2, 3, 4, 6)
-              AND pd.RegDate BETWEEN @CfStart AND @CfEnd
-              AND hf.HealthFacilityID = @FacilityId
-            """;
-
-        const string toSqlPf = """
-            SELECT
-                pd.PtTypeID, pd.TbTypeID, pd.SexID, pd.Age,
-                COALESCE(fu.Mon0LabResultID,0)   AS Mon0LabResultID,
-                COALESCE(fu.Mon0XpertResultID,0) AS Mon0XpertResultID,
-                COALESCE(fu.HIVTestResultID,0)   AS HIVTestResultID,
-                COALESCE(fu.OnART,0)             AS OnART,
-                COALESCE(fu.OutcomeID,0)         AS OutcomeID
-            FROM PtDetailsT pd
-            LEFT JOIN PtFollowUpT fu ON fu.PtDetailsTID = pd.PtDetailsTID
-            JOIN HealthFacilityT hf ON hf.HealthFacilityID = pd.NearestHFID
-            WHERE pd.Deleted = 0
-              AND pd.PtTypeID IN (1, 2, 3, 4, 6)
-              AND pd.RegDate BETWEEN @ToStart AND @ToEnd
-              AND hf.HealthFacilityID = @FacilityId
-            """;
-
-        const string presumptiveSqlPf = """
-            SELECT COALESCE(SUM(pc.PresumptiveCase), 0) AS Total
-            FROM PresumptiveCaseT pc
-            JOIN YearT y ON y.YearID = pc.YearID
-            JOIN HealthFacilityT hf ON hf.HealthFacilityID = pc.NearestHFID
-            WHERE pc.MonthID IS NOT NULL
-              AND pc.YearID  IS NOT NULL
-              AND DATEFROMPARTS(y.YearName, pc.MonthID, 15) BETWEEN @CfStart AND @CfEnd
-              AND hf.HealthFacilityID = @FacilityId
-            """;
-
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync(ct);
+
+            // ── Three batch queries (O(1) round-trips regardless of facility count) ──
+            // Builds one IN-clause shared by all three queries.
+            var bFacIds = facilities.Select(f => f.Id).ToArray();
+            var bPNames = bFacIds.Select((_, i) => $"@BF{i}").ToArray();
+            string bIn  = string.Join(", ", bPNames);
+
+            // CF batch — one query for all selected facilities
+            string batchCfSql = $"""
+                SELECT hf.HealthFacilityID,
+                    pd.PtTypeID, pd.TbTypeID, pd.SexID, pd.Age, pd.DiagMethodID,
+                    COALESCE(fu.Mon0LabResultID,0)   AS Lab,
+                    COALESCE(fu.Mon0XpertResultID,0) AS Xpert,
+                    COALESCE(fu.HIVTestResultID,0)   AS HivRes,
+                    COALESCE(fu.OnART,0)             AS OnART,
+                    COALESCE(fu.OnCPT,0)             AS OnCPT
+                FROM PtDetailsT pd
+                LEFT JOIN PtFollowUpT fu ON fu.PtDetailsTID = pd.PtDetailsTID
+                JOIN HealthFacilityT hf  ON hf.HealthFacilityID = pd.NearestHFID
+                WHERE pd.Deleted = 0
+                  AND pd.PtTypeID IN (1, 2, 3, 4, 6)
+                  AND pd.RegDate BETWEEN @CfStart AND @CfEnd
+                  AND hf.HealthFacilityID IN ({bIn})
+                """;
+            var cfBatch = new List<(int FacId, int PtType, int TbType, int Sex, int Age, int DiagMethod, int Lab, int Xpert, int HivRes, int OnART, int OnCPT)>();
+            await using (var cmd = new SqlCommand(batchCfSql, conn) { CommandTimeout = 300 })
+            {
+                cmd.Parameters.AddWithValue("@CfStart", cfStart.ToDateTime(TimeOnly.MinValue));
+                cmd.Parameters.AddWithValue("@CfEnd",   cfEnd.ToDateTime(TimeOnly.MinValue));
+                for (int i = 0; i < bFacIds.Length; i++) cmd.Parameters.AddWithValue(bPNames[i], bFacIds[i]);
+                await using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                    cfBatch.Add((rdr.GetInt32(0), rdr.GetInt32(1), rdr.GetInt32(2), rdr.GetInt32(3),
+                        rdr.IsDBNull(4) ? 0 : rdr.GetInt32(4), rdr.GetInt32(5),
+                        rdr.GetInt32(6), rdr.GetInt32(7), rdr.GetInt32(8), rdr.GetInt32(9), rdr.GetInt32(10)));
+            }
+            var cfByFacility = cfBatch.GroupBy(r => r.FacId).ToDictionary(g => g.Key, g => g.ToList());
+
+            // TO batch — one query for all selected facilities
+            string batchToSql = $"""
+                SELECT hf.HealthFacilityID,
+                    pd.PtTypeID, pd.TbTypeID, pd.SexID, pd.Age,
+                    COALESCE(fu.Mon0LabResultID,0)   AS Lab,
+                    COALESCE(fu.Mon0XpertResultID,0) AS Xpert,
+                    COALESCE(fu.HIVTestResultID,0)   AS HivRes,
+                    COALESCE(fu.OnART,0)             AS OnART,
+                    COALESCE(fu.OutcomeID,0)         AS Outcome
+                FROM PtDetailsT pd
+                LEFT JOIN PtFollowUpT fu ON fu.PtDetailsTID = pd.PtDetailsTID
+                JOIN HealthFacilityT hf  ON hf.HealthFacilityID = pd.NearestHFID
+                WHERE pd.Deleted = 0
+                  AND pd.PtTypeID IN (1, 2, 3, 4, 6)
+                  AND pd.RegDate BETWEEN @ToStart AND @ToEnd
+                  AND hf.HealthFacilityID IN ({bIn})
+                """;
+            var toBatch = new List<(int FacId, int PtType, int TbType, int Sex, int Age, int Lab, int Xpert, int HivRes, int OnART, int Outcome)>();
+            await using (var cmd = new SqlCommand(batchToSql, conn) { CommandTimeout = 300 })
+            {
+                cmd.Parameters.AddWithValue("@ToStart", toStart.ToDateTime(TimeOnly.MinValue));
+                cmd.Parameters.AddWithValue("@ToEnd",   toEnd.ToDateTime(TimeOnly.MinValue));
+                for (int i = 0; i < bFacIds.Length; i++) cmd.Parameters.AddWithValue(bPNames[i], bFacIds[i]);
+                await using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                    toBatch.Add((rdr.GetInt32(0), rdr.GetInt32(1), rdr.GetInt32(2), rdr.GetInt32(3),
+                        rdr.IsDBNull(4) ? 0 : rdr.GetInt32(4),
+                        rdr.GetInt32(5), rdr.GetInt32(6), rdr.GetInt32(7), rdr.GetInt32(8), rdr.GetInt32(9)));
+            }
+            var toByFacility = toBatch.GroupBy(r => r.FacId).ToDictionary(g => g.Key, g => g.ToList());
+
+            // Presumptive batch — aggregate per facility
+            string batchPresumptiveSql = $"""
+                SELECT hf.HealthFacilityID, COALESCE(SUM(pc.PresumptiveCase), 0) AS Total
+                FROM PresumptiveCaseT pc
+                JOIN YearT y            ON y.YearID            = pc.YearID
+                JOIN HealthFacilityT hf ON hf.HealthFacilityID = pc.NearestHFID
+                WHERE pc.MonthID IS NOT NULL
+                  AND pc.YearID  IS NOT NULL
+                  AND DATEFROMPARTS(y.YearName, pc.MonthID, 15) BETWEEN @CfStart AND @CfEnd
+                  AND hf.HealthFacilityID IN ({bIn})
+                GROUP BY hf.HealthFacilityID
+                """;
+            var presumptiveByFacility = new Dictionary<int, int>();
+            await using (var cmd = new SqlCommand(batchPresumptiveSql, conn) { CommandTimeout = 300 })
+            {
+                cmd.Parameters.AddWithValue("@CfStart", cfStart.ToDateTime(TimeOnly.MinValue));
+                cmd.Parameters.AddWithValue("@CfEnd",   cfEnd.ToDateTime(TimeOnly.MinValue));
+                for (int i = 0; i < bFacIds.Length; i++) cmd.Parameters.AddWithValue(bPNames[i], bFacIds[i]);
+                await using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                    presumptiveByFacility[rdr.GetInt32(0)] = rdr.GetInt32(1);
+            }
+            // ─────────────────────────────────────────────────────────────────
 
             await using var ts = new FileStream(templatePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var wb = new XLWorkbook(ts);
@@ -3553,26 +3607,10 @@ public sealed class ReportsController : ControllerBase
                 int[,] cfHIVPos        = new int[10, 2];
                 int[,] cfARTHIVPos     = new int[10, 2];
 
-                // CF query
+                // CF data (from pre-loaded batch)
+                foreach (var (_, ptType, tbType, sexId, age, diagMeth, lab, xpert, hivRes, onART, onCPT)
+                    in cfByFacility.GetValueOrDefault(facId) ?? [])
                 {
-                    await using var cmd = new SqlCommand(cfSqlPf, conn);
-                    cmd.CommandTimeout = 120;
-                    cmd.Parameters.AddWithValue("@CfStart",    cfStart.ToDateTime(TimeOnly.MinValue));
-                    cmd.Parameters.AddWithValue("@CfEnd",      cfEnd.ToDateTime(TimeOnly.MinValue));
-                    cmd.Parameters.AddWithValue("@FacilityId", facId);
-                    await using var rdr = await cmd.ExecuteReaderAsync(ct);
-                    while (await rdr.ReadAsync(ct))
-                    {
-                        int ptType   = rdr.GetInt32(rdr.GetOrdinal("PtTypeID"));
-                        int tbType   = rdr.GetInt32(rdr.GetOrdinal("TbTypeID"));
-                        int sexId    = rdr.GetInt32(rdr.GetOrdinal("SexID"));
-                        int age      = rdr.IsDBNull(rdr.GetOrdinal("Age")) ? 0 : rdr.GetInt32(rdr.GetOrdinal("Age"));
-                        int diagMeth = rdr.GetInt32(rdr.GetOrdinal("DiagMethodID"));
-                        int lab      = rdr.GetInt32(rdr.GetOrdinal("Mon0LabResultID"));
-                        int xpert    = rdr.GetInt32(rdr.GetOrdinal("Mon0XpertResultID"));
-                        int hivRes   = rdr.GetInt32(rdr.GetOrdinal("HIVTestResultID"));
-                        int onART    = rdr.GetInt32(rdr.GetOrdinal("OnART"));
-                        int onCPT    = rdr.GetInt32(rdr.GetOrdinal("OnCPT"));
 
                         bool pbc = LfaIsTbPBC(tbType, lab, xpert);
                         bool pcd = !pbc && tbType == 1;
@@ -3626,18 +3664,10 @@ public sealed class ReportsController : ControllerBase
                             if (onART == 1) { cfTestedHIVART++; cfARTHIVPos[ag, si]++; }
                             if (onCPT == 1)  cfTestedHIVCPT++;
                         }
-                    }
                 }
 
-                // Presumptive cases
-                {
-                    await using var cmd = new SqlCommand(presumptiveSqlPf, conn);
-                    cmd.Parameters.AddWithValue("@CfStart",    cfStart.ToDateTime(TimeOnly.MinValue));
-                    cmd.Parameters.AddWithValue("@CfEnd",      cfEnd.ToDateTime(TimeOnly.MinValue));
-                    cmd.Parameters.AddWithValue("@FacilityId", facId);
-                    var result = await cmd.ExecuteScalarAsync(ct);
-                    cfSuspectsSeen = result is not null and not DBNull ? Convert.ToInt32(result) : 0;
-                }
+                // Presumptive cases (from pre-loaded batch)
+                cfSuspectsSeen = presumptiveByFacility.GetValueOrDefault(facId);
 
                 // TO counters
                 int toNewPBCM = 0, toNewPBCF = 0;
@@ -3671,25 +3701,10 @@ public sealed class ReportsController : ControllerBase
                 int toAdol = 0,  toAdol_Cured = 0,  toAdol_Completed = 0,
                     toAdol_Died = 0, toAdol_Failed = 0, toAdol_LostToFP = 0, toAdol_NotEval = 0;
 
-                // TO query
+                // TO data (from pre-loaded batch)
+                foreach (var (_, ptType, tbType, sexId, age, lab, xpert, hivRes, onART, outcome)
+                    in toByFacility.GetValueOrDefault(facId) ?? [])
                 {
-                    await using var cmd = new SqlCommand(toSqlPf, conn);
-                    cmd.CommandTimeout = 120;
-                    cmd.Parameters.AddWithValue("@ToStart",    toStart.ToDateTime(TimeOnly.MinValue));
-                    cmd.Parameters.AddWithValue("@ToEnd",      toEnd.ToDateTime(TimeOnly.MinValue));
-                    cmd.Parameters.AddWithValue("@FacilityId", facId);
-                    await using var rdr = await cmd.ExecuteReaderAsync(ct);
-                    while (await rdr.ReadAsync(ct))
-                    {
-                        int ptType  = rdr.GetInt32(rdr.GetOrdinal("PtTypeID"));
-                        int tbType  = rdr.GetInt32(rdr.GetOrdinal("TbTypeID"));
-                        int sexId   = rdr.GetInt32(rdr.GetOrdinal("SexID"));
-                        int age     = rdr.IsDBNull(rdr.GetOrdinal("Age")) ? 0 : rdr.GetInt32(rdr.GetOrdinal("Age"));
-                        int lab     = rdr.GetInt32(rdr.GetOrdinal("Mon0LabResultID"));
-                        int xpert   = rdr.GetInt32(rdr.GetOrdinal("Mon0XpertResultID"));
-                        int hivRes  = rdr.GetInt32(rdr.GetOrdinal("HIVTestResultID"));
-                        int onART   = rdr.GetInt32(rdr.GetOrdinal("OnART"));
-                        int outcome = rdr.GetInt32(rdr.GetOrdinal("OutcomeID"));
 
                         bool pbc   = LfaIsTbPBC(tbType, lab, xpert);
                         bool pcdEP = !pbc && (tbType == 1 || tbType == 3);
@@ -3752,7 +3767,6 @@ public sealed class ReportsController : ControllerBase
                             if (isLostToFP)  toAdol_LostToFP++;
                             if (isNotEval)   toAdol_NotEval++;
                         }
-                    }
                 }
 
                 // ── Write CF row ────────────────────────────────────────────

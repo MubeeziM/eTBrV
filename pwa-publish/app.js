@@ -13,7 +13,7 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v130720261104';
+const APP_VERSION = 'v140720261931';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
@@ -1403,20 +1403,12 @@ function _applyDQFieldFocus() {
     mark('tb-dateRxStarted', 'Date treatment started is required.');
     _openAndFocus(document.getElementById('tb-dateRxStarted'));
 
-  } else if (cat === 'futuredates') {
-    flag('tb-regDate', 'Registration date is in the future — please correct.');
-    _openAndFocus(document.getElementById('tb-regDate'));
-
   } else if (cat === 'smearcured') {
     flag('tb-outcomeID', 'Outcome is "Cured" but no positive smear was recorded at baseline — please verify.');
     _openAndFocus(document.getElementById('tb-outcomeID'));
 
   } else if (cat === 'nooutcome') {
     mark('tb-outcomeID', 'Please record a treatment outcome.');
-    _openAndFocus(document.getElementById('tb-outcomeID'));
-
-  } else if (cat === 'notevaluated') {
-    mark('tb-outcomeID', 'Outcome is "Not Evaluated" — please update to the correct DOTS outcome.');
     _openAndFocus(document.getElementById('tb-outcomeID'));
 
   } else if (cat === 'duplicates') {
@@ -2432,29 +2424,90 @@ async function exportDQPatientsToExcel() {
     return;
   }
 
+  const cat = typeof _dqCategory !== 'undefined' ? _dqCategory : '';
+
+  // ── Special path for skipped (gap) rows — no patient TIDs, simple 3-col export ──
+  if (cat === 'skipped') {
+    const checkedIdxs = [...document.querySelectorAll('#dq-patient-tbody .row-check-gap:checked')]
+      .map(cb => parseInt(cb.value, 10));
+    if (!checkedIdxs.length) { showToast('Please select the rows you want to export.', 'error'); return; }
+    const gapRows = checkedIdxs.map(i => _dqSkippedRows[i]).filter(Boolean);
+    if (!gapRows.length) { showToast('No rows to export.', 'error'); return; }
+    const confirmed = await showGenericConfirmModal('Export to Excel',
+      `Export ${gapRows.length.toLocaleString()} skipped TB number${gapRows.length !== 1 ? 's' : ''} to Excel?\n\nProceed?`, 'Export');
+    if (!confirmed) return;
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.created = new Date(); wb.modified = new Date();
+      const ws = wb.addWorksheet('Skipped TB Numbers');
+      ws.columns = [{ key: 's', width: 6 }, { key: 'n', width: 14 }, { key: 'f', width: 36 }];
+      ['#', 'Unit TB Number', 'Health Facility'].forEach((h, i) => { ws.getCell(1, i + 1).value = h; });
+      _xlStyleHeader(ws, 1, 3);
+      gapRows.forEach((r, i) => {
+        ws.getCell(i + 2, 1).value = i + 1;
+        ws.getCell(i + 2, 2).value = `${String(r.MissingTBNo).padStart(3, '0')}/${r.RegYear}`;
+        ws.getCell(i + 2, 3).value = r.HealthFacility || '';
+        _xlStyleDataRow(ws, i + 2, 3, [0]);
+      });
+      ws.views = [{ state: 'frozen', ySplit: 1 }];
+      const user = getUser();
+      const exportedBy = user?.fullName ?? user?.userName ?? 'Unknown User';
+      ws.headerFooter.oddFooter = `&LExported from eTBr on ${new Date().toDateString()} by ${exportedBy}`;
+      await _xlDownload(wb, `DataQuality_SkippedTBNumbers_${_xlTimestamp()}.xlsx`);
+      showToast(`Exported ${gapRows.length} skipped TB number${gapRows.length !== 1 ? 's' : ''} to Excel.`, 'success');
+    } catch (err) {
+      console.error('[Excel Export DQ Skipped]', err);
+      showToast('Failed to export to Excel.', 'error');
+    }
+    return;
+  }
+
   const checkedTIDs = _getCheckedTIDs('dq-patient-tbody');
   if (!checkedTIDs) {
     showToast('Please select the patients you want to export to Excel.', 'error');
     return;
   }
-  const rows = _dqCurrentRows.filter(r => checkedTIDs.has(String(r.PtDetailsTID)));
 
-  if (!rows.length) {
-    showToast('No patients in this list to export.', 'error');
-    return;
+  // If in server mode and the user selected rows that represent the full page (Select All)
+  // but the server has more rows, fetch ALL rows from the server before exporting.
+  let exportRows = _dqCurrentRows.filter(r => checkedTIDs.has(String(r.PtDetailsTID)));
+  if (_dqUseServer && _dqTotalCount > _dqCurrentRows.length && checkedTIDs.size >= _dqCurrentRows.length) {
+    const ok = await showGenericConfirmModal(
+      'Export All Records',
+      `This category has <strong>${_dqTotalCount.toLocaleString()}</strong> patients but only <strong>${_dqCurrentRows.length.toLocaleString()}</strong> are currently loaded.\n\nAll ${_dqTotalCount.toLocaleString()} records will be fetched from the server and exported. This may take a moment.\n\nPatient data is sensitive — store the file securely.\n\nProceed?`,
+      'Export All'
+    );
+    if (!ok) return;
+    const token = getToken();
+    if (token && _reallyOnline) {
+      showToast(`Fetching all ${_dqTotalCount.toLocaleString()} records…`, '');
+      try {
+        const qs = new URLSearchParams({ category: cat, limit: String(Math.min(_dqTotalCount + 100, 50000)), export: 'true' });
+        _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
+        const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(120000),
+        });
+        if (resp.ok) { const ed = await resp.json(); exportRows = ed.rows ?? ed; }
+        else showToast('Could not fetch all records — exporting loaded rows only.', 'error');
+      } catch (e) {
+        showToast('Fetch timed out — exporting loaded rows only.', 'error');
+      }
+    }
+  } else {
+    const confirmed = await showGenericConfirmModal(
+      'Export to Excel',
+      `You are about to export ${exportRows.length.toLocaleString()} patient record${exportRows.length !== 1 ? 's' : ''} to Excel.\n\nPatient data is sensitive \u2014 only export when necessary and store the file securely.\n\nProceed?`,
+      'Export'
+    );
+    if (!confirmed) return;
   }
 
-  const confirmed = await showGenericConfirmModal(
-    'Export to Excel',
-    `You are about to export ${rows.length} patient record${rows.length !== 1 ? 's' : ''} to Excel.\n\nPatient data is sensitive \u2014 only export when necessary and store the file securely.\n\nProceed?`,
-    'Export'
-  );
-  if (!confirmed) return;
-
+  if (!exportRows.length) { showToast('No patients to export.', 'error'); return; }
+  const rows = exportRows;
   const user = getUser();
   const exportedBy = user?.fullName ?? user?.userName ?? 'Unknown User';
 
-  const cat       = typeof _dqCategory !== 'undefined' ? _dqCategory : '';
   const listTitle = document.getElementById('dq-list-title')?.textContent || 'Data Quality';
 
   try {
@@ -2494,14 +2547,13 @@ async function exportDQPatientsToExcel() {
 
       // Reconstruct plain-text issue note
       let issue = '';
-      if      (cat === 'missingreg'   && r.MissingFields)          issue = `Missing: ${r.MissingFields}`;
+      if      (cat === 'missingreg'   && r.MissingFields)          issue = `Missing: ${r.MissingFields.replace(/,\s*$/, '')}`;
       else if (cat === 'smearcured'   && r.Outcome)                issue = `Outcome: ${r.Outcome}`;
-      else if (cat === 'nooutcome' || cat === 'notevaluated') {
+      else if (cat === 'nooutcome') {
         const _ei = _tbExpectedEndInfo(r);
         issue = _ei ? `Due: ${_ei.endFmt} (+${_ei.daysOver}d overdue)` : r.DaysSinceStart != null ? `${r.DaysSinceStart}d on Rx` : '';
       }
       else if (cat === 'norxstart'    && r.DaysSinceReg != null)   issue = `${r.DaysSinceReg}d since reg.`;
-      else if (cat === 'futuredates')                               issue = 'Future date';
       else if (cat === 'duplicates')                                issue = 'Possible duplicate';
       else if (cat === 'sametbno'     && r.UnitTBNo)               issue = `TB No: ${r.UnitTBNo}`;
       else if (cat === 'deleted')                                   issue = 'Deleted';
@@ -7022,9 +7074,18 @@ let _sidebarAutoCollapsed = false;
 
 // ─── Cached rows for monitoring / DQ export ──────────────────────────────
 /** Last-rendered rows in the TB Monitoring list — used by the Excel export. */
-let _monCurrentRows = [];
+let _monCurrentRows   = [];
+let _monTotalCount    = 0;
 /** Last-rendered rows in the Data Quality list — used by the Excel export. */
 let _dqCurrentRows  = [];
+let _dqSkippedRows  = [];  // gap rows for the skipped category (used by Excel export)
+let _dqTotalCount   = 0;    // server total for current category (used by paging)
+let _dqIsPaging     = false; // guard: one page load at a time
+let _dqPageObserver = null;  // IntersectionObserver on the load-more sentinel
+let _monIsPaging      = false; // guard: one page load at a time
+let _monPageObserver  = null;  // IntersectionObserver on the load-more sentinel
+let _monRenderedCount = 0;     // rows rendered so far (for batch paging)
+const MON_PAGE        = 500;   // rows per batch
 
 /** Persist the selected facility to localStorage so it survives page reloads. */
 function _saveSelectedFacility(fac) {
@@ -8338,7 +8399,8 @@ async function _monBuildTree() {
       toggleEl.classList.toggle('open', open);
     };
 
-    const sortedStates = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const sortedStates    = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const countryChildren = mkEl('div', 'rpt-tree-children open');
 
     for (const [stateId, stateData] of sortedStates) {
       const stateNode     = mkEl('div', 'rpt-tree-node rpt-tree-state');
@@ -8395,6 +8457,7 @@ async function _monBuildTree() {
           if (!cb.disabled) { cb.checked = stateCb.checked; cb.indeterminate = false; }
         });
         stateCb.indeterminate = false;
+        _monRefreshAncestors();
         _monTreeChanged();
       });
       stateLabel.addEventListener('click', () => { if (!stateCb.disabled) stateCb.click(); });
@@ -8404,8 +8467,29 @@ async function _monBuildTree() {
       stateNode.appendChild(stateCb);
       stateNode.appendChild(stateLabel);
       stateNode.appendChild(stateChildren);
-      treeEl.appendChild(stateNode);
+      countryChildren.appendChild(stateNode);
     }
+
+    const countryCb    = document.createElement('input');
+    countryCb.type = 'checkbox'; countryCb.className = 'rpt-tree-cb';
+    countryCb.dataset.level = 'country'; countryCb.dataset.id = '0';
+    const countryLabel  = mkEl('span', 'rpt-tree-label', 'South Sudan');
+    const countryToggle = mkEl('span', 'rpt-tree-toggle open');
+    const countryNode   = mkEl('div', 'rpt-tree-node rpt-tree-country');
+    countryCb.addEventListener('change', () => {
+      countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+        if (!cb.disabled) { cb.checked = countryCb.checked; cb.indeterminate = false; }
+      });
+      countryCb.indeterminate = false;
+      _monTreeChanged();
+    });
+    countryLabel.addEventListener('click', () => { if (!countryCb.disabled) countryCb.click(); });
+    countryToggle.addEventListener('click', () => toggle(countryChildren, countryToggle));
+    countryNode.appendChild(countryToggle);
+    countryNode.appendChild(countryCb);
+    countryNode.appendChild(countryLabel);
+    countryNode.appendChild(countryChildren);
+    treeEl.appendChild(countryNode);
 
     // Apply user scope (same logic as reports): pre-check and expand relevant nodes
     _monApplyScope(scope);
@@ -8485,6 +8569,11 @@ function _monRefreshAncestors() {
     const ccbs = [...sn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
     setParent(scb, ccbs);
   }
+  for (const rn of treeEl.querySelectorAll('.rpt-tree-country')) {
+    const ccb  = rn.querySelector(':scope > .rpt-tree-cb');
+    const scbs = [...rn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+    setParent(ccb, scbs);
+  }
 }
 
 /**
@@ -8535,7 +8624,28 @@ function _monTreeChanged() {
     }
   }
 
-  _monRefreshAll();
+  if (n === 0) {
+    // No facility selected — clear counts and list immediately, no API calls
+    const cIds = ['mon-count-2month','mon-count-3month','mon-count-5month',
+      'mon-count-6month','mon-count-8month','mon-count-hiv','mon-count-cpt',
+      'mon-count-art','mon-count-outcome'];
+    cIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('mon-stat-count--loading', 'mon-stat-count--issue');
+      el.style.cssText = ''; el.onclick = null; el.textContent = '00';
+    });
+    if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+    document.getElementById('mon-page-sentinel')?.remove();
+    const tbody = document.getElementById('mon-patient-tbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="text-center py-4" style="color:#64748b">Select a facility in the filter panel to view patients.</td></tr>`;
+    const hintEl = document.getElementById('mon-list-hint');
+    if (hintEl) hintEl.textContent = '';
+    return;
+  }
+
+  _monSelectCategory(_monCategory);
+  _monRefreshAll(true);
 }
 
 /** Collapse or expand the monitoring sidebar. */
@@ -8556,40 +8666,76 @@ function _monSetSidebarCollapsed(collapsed) {
 }
 
 /** Recompute all category counts and re-render the active list. */
-async function _monRefreshAll() {
+async function _monRefreshAll(skipList = false, _retried = false) {
+  const countIds = ['mon-count-2month','mon-count-3month','mon-count-5month',
+    'mon-count-6month','mon-count-8month','mon-count-hiv','mon-count-cpt',
+    'mon-count-art','mon-count-outcome'];
+  if (_monUseServer) {
+    countIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = ''; el.classList.add('mon-stat-count--loading'); }
+    });
+  }
   try {
     let counts;
     if (_monUseServer) {
       const token = getToken();
       if (token && _reallyOnline) {
+        let cntErr = null;
         try {
           const qs = new URLSearchParams({ mode: _monMode });
           _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-counts?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(45000),
           });
           if (resp.ok) counts = await resp.json();
-        } catch (_) {}
+          else cntErr = new Error(`Server error ${resp.status}`);
+        } catch (e) { cntErr = e; }
+        if (cntErr) {
+          const isTimeout = cntErr.name === 'TimeoutError' || cntErr.name === 'AbortError';
+          if (!isTimeout && !_retried) {
+            console.warn('[Monitoring] Counts failed, auto-retrying in 3 s…');
+            setTimeout(() => _monRefreshAll(skipList, true), 3000);
+            return;
+          }
+          countIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('mon-stat-count--loading');
+            el.textContent = '—';
+            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : `Error — click to retry (${cntErr.message})`;
+            el.style.cssText = 'color:#d97706;font-weight:600;cursor:pointer';
+            el.onclick = () => { el.onclick = null; el.style.cssText = ''; _monRefreshAll(); };
+          });
+          return;
+        }
       }
       if (!counts) counts = { sputum2:0, sputum3:0, sputum5:0, sputum6:0, sputum8:0, hiv:0, cpt:0, art:0, hhp:0, outcome:0 };
     } else {
       counts = getTBMonCounts(_monFacilityIDs, _monMode);
     }
 
-    const fmt    = n => String(n).padStart(2, '0');
-    const el     = id => document.getElementById(id);
+    const fmt = n => String(n).padStart(2, '0');
+    const setCount = (id, n) => {
+      const e = document.getElementById(id);
+      if (!e) return;
+      e.classList.remove('mon-stat-count--loading');
+      e.style.cssText = ''; e.onclick = null;
+      e.textContent = fmt(n);
+      e.classList.toggle('mon-stat-count--issue', n > 0);
+    };
 
-    el('mon-count-2month')  && (el('mon-count-2month').textContent  = fmt(counts.sputum2));
-    el('mon-count-3month')  && (el('mon-count-3month').textContent  = fmt(counts.sputum3));
-    el('mon-count-5month')  && (el('mon-count-5month').textContent  = fmt(counts.sputum5));
-    el('mon-count-6month')  && (el('mon-count-6month').textContent  = fmt(counts.sputum6));
-    el('mon-count-8month')  && (el('mon-count-8month').textContent  = fmt(counts.sputum8));
-    el('mon-count-hiv')     && (el('mon-count-hiv').textContent     = fmt(counts.hiv));
-    el('mon-count-cpt')     && (el('mon-count-cpt').textContent     = fmt(counts.cpt));
-    el('mon-count-art')     && (el('mon-count-art').textContent     = fmt(counts.art));
-    el('mon-count-hhp')     && (el('mon-count-hhp').textContent     = fmt(counts.hhp));
-    el('mon-count-outcome') && (el('mon-count-outcome').textContent = fmt(counts.outcome));
+    setCount('mon-count-2month',  counts.sputum2);
+    setCount('mon-count-3month',  counts.sputum3);
+    setCount('mon-count-5month',  counts.sputum5);
+    setCount('mon-count-6month',  counts.sputum6);
+    setCount('mon-count-8month',  counts.sputum8);
+    setCount('mon-count-hiv',     counts.hiv);
+    setCount('mon-count-cpt',     counts.cpt);
+    setCount('mon-count-art',     counts.art);
+    setCount('mon-count-hhp',     counts.hhp);
+    setCount('mon-count-outcome', counts.outcome);
 
     const sputumHd = document.getElementById('mon-sputum-hd');
     if (sputumHd) {
@@ -8598,8 +8744,9 @@ async function _monRefreshAll() {
         : 'TB Patients Due For Sputum Examination';
     }
 
-    _monSelectCategory(_monCategory);
+    if (!skipList) _monSelectCategory(_monCategory);
   } catch (err) {
+    countIds.forEach(id => document.getElementById(id)?.classList.remove('mon-stat-count--loading'));
     console.error('[Monitoring] _monRefreshAll:', err);
   }
 }
@@ -8613,27 +8760,43 @@ async function _monSelectCategory(cat) {
   });
   try {
     let rows;
+    const _loadBar = document.getElementById('mon-load-bar');
     if (_monUseServer) {
+      if (_loadBar) _loadBar.hidden = false;
       const tbody = document.getElementById('mon-patient-tbody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from the eTBr server…</td></tr>';
+      if (tbody) tbody.innerHTML = '';
       rows = [];
       const token = getToken();
       if (token && _reallyOnline) {
+        let fetchErr = null;
         try {
-          const qs = new URLSearchParams({ mode: _monMode, category: cat });
+          const qs = new URLSearchParams({ mode: _monMode, category: cat, limit: '500', offset: '0' });
           _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/monitor-patients?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(25000),
           });
-          if (resp.ok) rows = await resp.json();
-        } catch (_) {}
+          if (resp.ok) { const pd = await resp.json(); _monTotalCount = pd.total ?? 0; rows = pd.rows ?? pd; }
+          else fetchErr = new Error(`Server returned ${resp.status}`);
+        } catch (e) { fetchErr = e; }
+        if (_loadBar) _loadBar.hidden = true;
+        if (fetchErr) {
+          const isTimeout = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
+          if (tbody) tbody.innerHTML = isTimeout
+            ? `<tr><td colspan="11" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — refresh the page or try a more specific facility filter.</td></tr>`
+            : `<tr><td colspan="11" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
+          return;
+        }
+      } else {
+        if (_loadBar) _loadBar.hidden = true;
       }
     } else {
       rows = getTBMonList(cat, _monMode, _monFacilityIDs);
+      _monTotalCount = rows.length;
     }
     _monRenderList(cat, rows);
   } catch (err) {
+    document.getElementById('mon-load-bar')?.setAttribute('hidden', '');
     const tbody = document.getElementById('mon-patient-tbody');
     if (tbody) tbody.innerHTML =
       `<tr><td colspan="11" class="text-danger text-center py-3">Error: ${escHtml(err.message)}</td></tr>`;
@@ -8659,7 +8822,185 @@ function _monCatTitle(cat, mode) {
   }
 }
 
-/** Render the patient table. */
+/** Build a single monitoring patient row HTML string. */
+function _monBuildRowHtml(cat, p, isSputum, isOutcome) {
+  let daysCell = '';
+  if (isSputum) {
+    const d   = p.DaysLate;
+    const cls = d > 0 ? 'mon-days-late' : d === 0 ? 'mon-days-today' : 'mon-days-due';
+    const lbl = _monMode === 'missed' ? (d > 0 ? '+' + d : '0') : Math.abs(d);
+    daysCell = `<td class="${cls}">${lbl}</td>`;
+  } else if (isOutcome) {
+    daysCell = `<td>${p.DaysSinceStart != null ? p.DaysSinceStart : ''}</td>`;
+  }
+  return `<tr data-tid="${escHtml(p.PtDetailsTID)}" data-hfid="${p.NearestHFID || 0}" data-hfname="${escHtml(p.HealthFacility || '')}">
+      <td>${escHtml(p.UnitTBNo || '')}</td>
+      <td>${p.RegDate ? fmtDate(p.RegDate.slice(0, 10)) : ''}</td>
+      <td>${escHtml(truncateDisplayName(p.PtName))}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${escHtml(String(p.PtDetailsTID))}" aria-label="Select ${escHtml(p.PtName || '')}"></td>
+      <td>${p.Age != null ? p.Age : ''}</td>
+      <td>${escHtml(p.Sex === 'Male' ? 'M' : p.Sex === 'Female' ? 'F' : (p.Sex || ''))}</td>
+      <td>${escHtml(p.Village || '')}</td>
+      <td>${escHtml(p.PtPhone || '')}</td>
+      <td>${escHtml(p.HealthFacility || '')}</td>
+      <td>${escHtml(p.PtTypeShort || '')}</td>
+      ${daysCell}
+    </tr>`;
+}
+
+/** Attach row-click handlers; uses data-mon-click to skip already-wired rows. */
+function _monAttachRowHandlers(tbody) {
+  tbody.querySelectorAll('tr[data-tid]:not([data-mon-click])').forEach(tr => {
+    tr.dataset.monClick = '1';
+    tr.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
+      const tid    = tr.dataset.tid;
+      const hfid   = Number(tr.dataset.hfid);
+      const hfname = tr.dataset.hfname || '';
+      if (!tid || !hfid) return;
+      const facInfo = getMonitoringFacilityInfo(hfid);
+      _fromMonitoring = true;
+      if (tbMonitoringScreen) tbMonitoringScreen.hidden = true;
+      if (artRegisterScreen)  artRegisterScreen.hidden  = false;
+      _saveSelectedFacility({
+        id:       hfid,
+        name:     hfname,
+        county:   facInfo ? (facInfo.County   || '') : '',
+        state:    facInfo ? (facInfo.State    || '') : '',
+        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
+        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
+      });
+      _selectedRegister = 'tb';
+      updateFacilityBanner();
+      applyFacilityGate();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      loadAndRenderGeoTree();
+      const backBtn = document.getElementById('back-to-dashboard-btn');
+      if (backBtn) backBtn.innerHTML =
+        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Monitoring`;
+      const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
+      if (bottomBackBtn) bottomBackBtn.hidden = false;
+      _pendingMonCategory = _monCategory;
+      await _fetchAndUpsertTBPatientIfNeeded(tid);
+      startEditTBPatient(tid);
+    });
+  });
+}
+
+/** Set up (or reset) an IntersectionObserver sentinel at the bottom of the monitoring list. */
+function _monSetupPagingSentinel(cat) {
+  if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+  document.getElementById('mon-page-sentinel')?.remove();
+  const hasMore = _monUseServer
+    ? _monCurrentRows.length < _monTotalCount
+    : _monRenderedCount < _monCurrentRows.length;
+  if (!hasMore) return;
+  const tbody     = document.getElementById('mon-patient-tbody');
+  const tableWrap = document.querySelector('.table-wrap--mon-scroll');
+  if (!tbody || !tableWrap) return;
+  const remaining = _monUseServer
+    ? _monTotalCount - _monCurrentRows.length
+    : _monCurrentRows.length - _monRenderedCount;
+  const sentinel  = document.createElement('tr');
+  sentinel.id = 'mon-page-sentinel';
+  sentinel.innerHTML = `<td colspan="11" style="text-align:center;padding:0.6rem;background:#f0fdf4;font-size:0.82rem">
+    <span id="mon-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em"><span class="dq-spin-icon">↻</span> Loading more…</span>
+    <span id="mon-page-more" style="color:#0f766e;font-weight:600">${remaining.toLocaleString()} more ↓</span></td>`;
+  tbody.appendChild(sentinel);
+  _monPageObserver = new IntersectionObserver(async entries => {
+    if (!entries[0].isIntersecting || _monIsPaging) return;
+    await _monLoadNextPage(cat);
+  }, { root: tableWrap, rootMargin: '80px', threshold: 0 });
+  _monPageObserver.observe(sentinel);
+}
+
+/** Append the next batch of rows from _monCurrentRows into the monitoring table. */
+async function _monLoadNextPage(cat) {
+  if (_monIsPaging) return;
+  _monIsPaging = true;
+  const spinner = document.getElementById('mon-page-spinner');
+  const moreEl  = document.getElementById('mon-page-more');
+  if (spinner) spinner.hidden = false;
+  if (moreEl)  moreEl.hidden  = true;
+  try {
+    const isSputum  = ['2month','3month','5month','6month','8month'].includes(cat);
+    const isOutcome = cat === 'outcome';
+    if (_monUseServer) {
+      // Online: fetch next page from API
+      const token = getToken();
+      if (!token || !_reallyOnline) return;
+      const qs = new URLSearchParams({ mode: _monMode, category: cat, limit: '500', offset: String(_monCurrentRows.length) });
+      _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
+      const resp = await fetch(`${API_BASE}/tb-patients/monitor-patients?${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const pd = await resp.json();
+      const newRows = pd.rows ?? pd;
+      if (pd.total != null) _monTotalCount = pd.total;
+      if (!newRows.length) {
+        document.getElementById('mon-page-sentinel')?.remove();
+        if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+        return;
+      }
+      _monCurrentRows = [..._monCurrentRows, ...newRows];
+      _monRenderedCount = _monCurrentRows.length;
+      const tbody    = document.getElementById('mon-patient-tbody');
+      const sentinel = document.getElementById('mon-page-sentinel');
+      if (tbody && sentinel) {
+        sentinel.insertAdjacentHTML('beforebegin', newRows.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join(''));
+        _monAttachRowHandlers(tbody);
+        const selectAll = document.getElementById('mon-select-all');
+        if (selectAll?.checked) {
+          tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+        }
+      }
+      const hintEl = document.getElementById('mon-list-hint');
+      if (_monCurrentRows.length >= _monTotalCount) {
+        document.getElementById('mon-page-sentinel')?.remove();
+        if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+        if (hintEl) hintEl.textContent = 'HINT: Click any patient row to view or update their medical record';
+      } else {
+        const remaining = _monTotalCount - _monCurrentRows.length;
+        if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${remaining.toLocaleString()} more ↓`; }
+        if (spinner) spinner.hidden = true;
+        if (hintEl) hintEl.innerHTML = `Loaded <strong>${_monCurrentRows.length.toLocaleString()}</strong> of <strong>${_monTotalCount.toLocaleString()}</strong> — scroll down for more.`;
+      }
+    } else {
+      // Offline: slice from in-memory array
+      const nextBatch = _monCurrentRows.slice(_monRenderedCount, _monRenderedCount + MON_PAGE);
+      const tbody     = document.getElementById('mon-patient-tbody');
+      const sentinel  = document.getElementById('mon-page-sentinel');
+      if (tbody && sentinel && nextBatch.length) {
+        sentinel.insertAdjacentHTML('beforebegin', nextBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join(''));
+        _monAttachRowHandlers(tbody);
+        _monRenderedCount += nextBatch.length;
+        const selectAll = document.getElementById('mon-select-all');
+        if (selectAll?.checked) {
+          tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+        }
+      }
+      const hintEl = document.getElementById('mon-list-hint');
+      if (_monRenderedCount >= _monCurrentRows.length) {
+        document.getElementById('mon-page-sentinel')?.remove();
+        if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+        if (hintEl) hintEl.textContent = 'HINT: Click any patient row to view or update their medical record';
+      } else {
+        const remaining = _monCurrentRows.length - _monRenderedCount;
+        if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${remaining.toLocaleString()} more ↓`; }
+        if (spinner) spinner.hidden = true;
+      }
+    }
+  } catch (e) {
+    console.error('[Monitoring] loadNextPage:', e);
+    if (spinner) spinner.hidden = true;
+    if (moreEl)  { moreEl.hidden = false; moreEl.textContent = '⚠ Error loading — scroll to retry'; }
+  } finally {
+    _monIsPaging = false;
+  }
+}
+
 function _monRenderList(cat, rows) {
   const tbody   = document.getElementById('mon-patient-tbody');
   const titleEl = document.getElementById('mon-list-title');
@@ -8668,8 +9009,14 @@ function _monRenderList(cat, rows) {
   const colHdEl = document.getElementById('mon-late-col-hd');
   if (!tbody) return;
 
-  // Store current rows for export
+  // Clean up any previous paging state
+  if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+  document.getElementById('mon-page-sentinel')?.remove();
+  _monIsPaging = false;
+
+  // Store all rows for export and batch paging
   _monCurrentRows = rows;
+  _monRenderedCount = 0;
 
   // Select-all checkbox starts unchecked — user must explicitly choose records to export
   const monSelectAll = document.getElementById('mon-select-all');
@@ -8692,11 +9039,11 @@ function _monRenderList(cat, rows) {
 
   if (titleEl) titleEl.textContent = _monCatTitle(cat, _monMode);
 
-  const n = rows.length;
+  const n = _monTotalCount || rows.length;
   if (subEl) {
     if (n === 0)      subEl.textContent = 'No TB Patients Found';
     else if (n === 1) subEl.textContent = 'Found 01 TB Patient';
-    else              subEl.textContent = `Found ${String(n).padStart(2, '0')} TB Patients`;
+    else              subEl.textContent = `Found ${n.toLocaleString()} TB Patients`;
   }
   if (hintEl) {
     hintEl.textContent = n > 0 ? 'HINT: Click any patient row to view or update their medical record' : '';
@@ -8707,71 +9054,21 @@ function _monRenderList(cat, rows) {
     return;
   }
 
-  tbody.innerHTML = rows.map(p => {
-    let daysCell = '';
-    if (isSputum) {
-      const d   = p.DaysLate;
-      const cls = d > 0 ? 'mon-days-late' : d === 0 ? 'mon-days-today' : 'mon-days-due';
-      const lbl = _monMode === 'missed' ? (d > 0 ? '+' + d : '0') : Math.abs(d);
-      daysCell = `<td class="${cls}">${lbl}</td>`;
-    } else if (isOutcome) {
-      daysCell = `<td>${p.DaysSinceStart != null ? p.DaysSinceStart : ''}</td>`;
-    }
-    return `<tr data-tid="${escHtml(p.PtDetailsTID)}" data-hfid="${p.NearestHFID || 0}" data-hfname="${escHtml(p.HealthFacility || '')}">
-      <td>${escHtml(p.UnitTBNo || '')}</td>
-      <td>${p.RegDate ? fmtDate(p.RegDate.slice(0, 10)) : ''}</td>
-      <td>${escHtml(truncateDisplayName(p.PtName))}</td>
-      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${escHtml(String(p.PtDetailsTID))}" aria-label="Select ${escHtml(p.PtName || '')}"></td>
-      <td>${p.Age != null ? p.Age : ''}</td>
-      <td>${escHtml(p.Sex === 'Male' ? 'M' : p.Sex === 'Female' ? 'F' : (p.Sex || ''))}</td>
-      <td>${escHtml(p.Village || '')}</td>
-      <td>${escHtml(p.PtPhone || '')}</td>
-      <td>${escHtml(p.HealthFacility || '')}</td>
-      <td>${escHtml(p.PtTypeShort || '')}</td>
-      ${daysCell}
-    </tr>`;
-  }).join('');
+  // Online: API already limits to 500 — render all. Offline: slice first MON_PAGE.
+  const firstBatch = _monUseServer ? rows : rows.slice(0, MON_PAGE);
+  tbody.innerHTML = firstBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join('');
+  _monRenderedCount = firstBatch.length;
+  _monAttachRowHandlers(tbody);
 
-  // Row click: open patient record in edit mode; track origin so back-btn can return here
-  tbody.querySelectorAll('tr[data-tid]').forEach(tr => {
-    tr.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
-      const tid    = tr.dataset.tid;
-      const hfid   = Number(tr.dataset.hfid);
-      const hfname = tr.dataset.hfname || '';
-      if (!tid || !hfid) return;
+  // Set up scroll sentinel for any remaining rows
+  _monSetupPagingSentinel(cat);
 
-      const facInfo = getMonitoringFacilityInfo(hfid);
-      _fromMonitoring = true;
-
-      if (tbMonitoringScreen) tbMonitoringScreen.hidden = true;
-      if (artRegisterScreen)  artRegisterScreen.hidden  = false;
-
-      _saveSelectedFacility({
-        id:       hfid,
-        name:     hfname,
-        county:   facInfo ? (facInfo.County   || '') : '',
-        state:    facInfo ? (facInfo.State    || '') : '',
-        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
-        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
-      });
-      _selectedRegister = 'tb';
-      updateFacilityBanner();
-      applyFacilityGate();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      loadAndRenderGeoTree();   // populate the facility tree (empty when coming from monitoring)
-      // Relabel the back button so it's clear where it leads
-      const backBtn = document.getElementById('back-to-dashboard-btn');
-      if (backBtn) backBtn.innerHTML =
-        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Monitoring`;
-      // Show the bottom back-to-monitoring button
-      const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
-      if (bottomBackBtn) bottomBackBtn.hidden = false;
-      _pendingMonCategory = _monCategory;
-      await _fetchAndUpsertTBPatientIfNeeded(tid);
-      startEditTBPatient(tid);  // editable — not read-only
-    });
-  });
+  // Update hint if more remain
+  const _totalAll = _monUseServer ? _monTotalCount : _monCurrentRows.length;
+  const _loaded   = _monUseServer ? _monCurrentRows.length : _monRenderedCount;
+  if (_loaded < _totalAll && hintEl) {
+    hintEl.innerHTML = `Loaded <strong>${_loaded.toLocaleString()}</strong> of <strong>${_totalAll.toLocaleString()}</strong> — scroll down for more.`;
+  }
 }
 
 // ── Monitoring event listeners ────────────────────────────────────────────
@@ -8896,6 +9193,20 @@ _wireSelectAll('patients-table',    'art-select-all', 'patients-tbody');
 _wireSelectAll('tb-patient-table',  'tb-select-all',  'tb-patient-tbody');
 _wireSelectAll('mon-patient-table', 'mon-select-all', 'mon-patient-tbody');
 _wireSelectAll('dq-patient-table',  'dq-select-all',  'dq-patient-tbody');
+
+// Wire select-all checkbox for the skipped (gap) category rows
+document.getElementById('dq-patient-table')?.addEventListener('change', e => {
+  if (e.target.id === 'dq-select-all-gap') {
+    document.querySelectorAll('#dq-patient-tbody .row-check-gap').forEach(cb => { cb.checked = e.target.checked; });
+  } else if (e.target.classList.contains('row-check-gap')) {
+    const sa = document.getElementById('dq-select-all-gap');
+    if (!sa) return;
+    const all = [...document.querySelectorAll('#dq-patient-tbody .row-check-gap')];
+    const cnt = all.filter(cb => cb.checked).length;
+    sa.checked = cnt === all.length;
+    sa.indeterminate = cnt > 0 && cnt < all.length;
+  }
+});
 
 /** Returns the TIDs of the currently checked rows in a tbody,
  *  or null if none are checked (caller should export all rows). */
@@ -9072,7 +9383,8 @@ async function _dqBuildTree() {
       toggleEl.classList.toggle('open', open);
     };
 
-    const sortedStates = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const sortedStates    = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const countryChildren = mkEl('div', 'rpt-tree-children open');
 
     for (const [stateId, stateData] of sortedStates) {
       const stateNode     = mkEl('div', 'rpt-tree-node rpt-tree-state');
@@ -9129,6 +9441,7 @@ async function _dqBuildTree() {
           if (!cb.disabled) { cb.checked = stateCb.checked; cb.indeterminate = false; }
         });
         stateCb.indeterminate = false;
+        _dqRefreshAncestors();
         _dqTreeChanged();
       });
       stateLabel.addEventListener('click', () => { if (!stateCb.disabled) stateCb.click(); });
@@ -9138,8 +9451,29 @@ async function _dqBuildTree() {
       stateNode.appendChild(stateCb);
       stateNode.appendChild(stateLabel);
       stateNode.appendChild(stateChildren);
-      treeEl.appendChild(stateNode);
+      countryChildren.appendChild(stateNode);
     }
+
+    const countryCb    = document.createElement('input');
+    countryCb.type = 'checkbox'; countryCb.className = 'rpt-tree-cb';
+    countryCb.dataset.level = 'country'; countryCb.dataset.id = '0';
+    const countryLabel  = mkEl('span', 'rpt-tree-label', 'South Sudan');
+    const countryToggle = mkEl('span', 'rpt-tree-toggle open');
+    const countryNode   = mkEl('div', 'rpt-tree-node rpt-tree-country');
+    countryCb.addEventListener('change', () => {
+      countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+        if (!cb.disabled) { cb.checked = countryCb.checked; cb.indeterminate = false; }
+      });
+      countryCb.indeterminate = false;
+      _dqTreeChanged();
+    });
+    countryLabel.addEventListener('click', () => { if (!countryCb.disabled) countryCb.click(); });
+    countryToggle.addEventListener('click', () => toggle(countryChildren, countryToggle));
+    countryNode.appendChild(countryToggle);
+    countryNode.appendChild(countryCb);
+    countryNode.appendChild(countryLabel);
+    countryNode.appendChild(countryChildren);
+    treeEl.appendChild(countryNode);
 
     _dqApplyScope(scope);
     _dqTreeChanged();
@@ -9213,6 +9547,11 @@ function _dqRefreshAncestors() {
     const ccbs = [...sn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
     setParent(scb, ccbs);
   }
+  for (const rn of treeEl.querySelectorAll('.rpt-tree-country')) {
+    const ccb  = rn.querySelector(':scope > .rpt-tree-cb');
+    const scbs = [...rn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+    setParent(ccb, scbs);
+  }
 }
 
 function _dqTreeChanged() {
@@ -9249,7 +9588,29 @@ function _dqTreeChanged() {
     else              showLabel.textContent = `${n} Facilities Selected`;
   }
 
-  _dqRefreshAll();
+  if (n === 0) {
+    // No facility selected — clear counts and list immediately, no API calls
+    const cIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
+      'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
+      'dq-count-nooutcome','dq-count-diagmethod',
+      'dq-count-norxstart','dq-count-deleted'];
+    cIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('dq-stat-count--loading');
+      el.style.cssText = ''; el.onclick = null; el.textContent = '00';
+    });
+    if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+    document.getElementById('dq-page-sentinel')?.remove();
+    const tbody = document.getElementById('dq-patient-tbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="text-center py-4" style="color:#64748b">Select a facility in the filter panel to view patients.</td></tr>`;
+    const hintEl = document.getElementById('dq-list-hint');
+    if (hintEl) hintEl.style.display = 'none';
+    return;
+  }
+
+  _dqSelectCategory(_dqCategory);
+  _dqRefreshAll(true);
 }
 
 function _dqSetSidebarCollapsed(collapsed) {
@@ -9270,12 +9631,12 @@ function _dqSetSidebarCollapsed(collapsed) {
 
 // ── Counts and list rendering ──────────────────────────────────────────────
 
-async function _dqRefreshAll() {
+async function _dqRefreshAll(skipList = false, _retried = false) {
   // Show skeleton shimmer on all count badges while the server call is in flight.
   const countIds = ['dq-count-all','dq-count-duplicates','dq-count-skipped',
     'dq-count-sametbno','dq-count-smearcured','dq-count-missingreg',
-    'dq-count-nooutcome','dq-count-notevaluated','dq-count-diagmethod',
-    'dq-count-norxstart','dq-count-futuredates','dq-count-deleted'];
+    'dq-count-nooutcome','dq-count-diagmethod',
+    'dq-count-norxstart','dq-count-deleted'];
   if (_dqUseServer) {
     countIds.forEach(id => {
       const el = document.getElementById(id);
@@ -9298,22 +9659,30 @@ async function _dqRefreshAll() {
           if (resp.ok) counts = await resp.json();
           else cntErr = new Error(`Server error ${resp.status}`);
         } catch (e) { cntErr = e; }
+        console[cntErr ? 'error' : 'debug']('[DQ] quality-counts', cntErr ? cntErr.message : 'ok');
         if (cntErr) {
-          // Show a visible error on every badge instead of silent zeros
           const isTimeout = cntErr.name === 'TimeoutError' || cntErr.name === 'AbortError';
+          // Auto-retry once after 3 s on server errors (pool exhaustion / cold start).
+          // Don't retry timeouts — those are slow queries the user should retry manually.
+          if (!isTimeout && !_retried) {
+            console.warn('[DQ] Counts failed, auto-retrying in 3 s…');
+            setTimeout(() => _dqRefreshAll(skipList, true), 3000);
+            return;
+          }
+          // Show a visible error on every badge instead of silent zeros
           countIds.forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.classList.remove('dq-stat-count--loading');
             el.textContent = '—';
-            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : cntErr.message;
+            el.title = isTimeout ? 'Timed out — click ⟳ to retry' : `Error — click to retry (${cntErr.message})`;
             el.style.cssText = 'color:#d97706;font-weight:600;cursor:pointer';
             el.onclick = () => { el.onclick = null; el.style.cssText = ''; _dqRefreshAll(); };
           });
           return;
         }
       }
-      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, futuredates:0, deleted:0 };
+      if (!counts) counts = { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, diagmethod:0, norxstart:0, deleted:0 };
     } else {
       counts = getDQCounts(_dqFacilityIDs);
     }
@@ -9334,13 +9703,11 @@ async function _dqRefreshAll() {
     setCount('dq-count-smearcured',  counts.smearcured,  true);
     setCount('dq-count-missingreg',  counts.missingreg,  true);
     setCount('dq-count-nooutcome',    counts.nooutcome,    true);
-    setCount('dq-count-notevaluated',  counts.notevaluated, true);
     setCount('dq-count-diagmethod',  counts.diagmethod,  true);
     setCount('dq-count-norxstart',   counts.norxstart,   true);
-    setCount('dq-count-futuredates', counts.futuredates, true);
     setCount('dq-count-deleted',     counts.deleted,     true);
 
-    _dqSelectCategory(_dqCategory);
+    if (!skipList) _dqSelectCategory(_dqCategory);
   } catch (err) {
     // Remove skeletons on error too
     countIds.forEach(id => document.getElementById(id)?.classList.remove('dq-stat-count--loading'));
@@ -9350,6 +9717,12 @@ async function _dqRefreshAll() {
 
 async function _dqSelectCategory(cat) {
   _dqCategory = cat;
+  // Reset paging state for new category
+  if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+  document.getElementById('dq-page-sentinel')?.remove();
+  _dqIsPaging = false;
+  _dqTotalCount = 0;
+
   document.querySelectorAll('.dq-stat-row').forEach(r => {
     const active = r.dataset.dqcat === cat;
     r.classList.toggle('dq-stat-row--active', active);
@@ -9368,33 +9741,35 @@ async function _dqSelectCategory(cat) {
       if (token && _reallyOnline) {
         let fetchErr = null;
         try {
-          const qs = new URLSearchParams({ category: cat, limit: String(DQ_ROW_LIMIT) });
+          const rowLimit = cat === 'skipped' ? 10000 : 500;
+          const qs = new URLSearchParams({ category: cat, limit: String(rowLimit) });
           _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
           const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
             signal: AbortSignal.timeout(60000),
           });
-          if (resp.ok) rows = await resp.json();
+          if (resp.ok) { const d = await resp.json(); rows = d.rows ?? d; _dqTotalCount = d.total ?? 0; }
           else fetchErr = new Error(`Server returned ${resp.status}`);
         } catch (e) { fetchErr = e; }
         if (_loadBar) _loadBar.hidden = true;
         if (fetchErr) {
           const isTimeout = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
           if (tbody) tbody.innerHTML = isTimeout
-            ? `<tr><td colspan="12" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — too many records to stream. Use <strong>Export to Excel</strong> to get the full list.</td></tr>`
+            ? `<tr><td colspan="12" class="text-center py-4" style="color:#d97706;font-weight:500">⏱ Query timed out — too many records. Use <strong>Export to Excel</strong> for the full list.</td></tr>`
             : `<tr><td colspan="12" class="text-center py-4 text-danger">Network error. Check your connection and try again.</td></tr>`;
           return;
         }
-        // Show truncation note if the server capped the results
-        const totalBadge = parseInt(
-          document.getElementById(`dq-count-${cat}`)?.textContent?.replace(/\D/g, '') || '0', 10);
-        if (rows.length >= DQ_ROW_LIMIT && totalBadge > rows.length) {
+        // Total comes directly from the server — no need to read the badge
+        if (_dqTotalCount > rows.length) {
           _dqRenderList(cat, rows);
-          const hintEl = document.getElementById('dq-list-hint');
-          if (hintEl) {
-            hintEl.innerHTML =
-              `⚠\u202fShowing first <strong>${rows.length.toLocaleString()}</strong> of <strong>${totalBadge.toLocaleString()}</strong> patients. Use <strong>Export&nbsp;to&nbsp;Excel</strong> for the complete list.`;
-            hintEl.style.cssText = 'color:#d97706;font-weight:500;margin-top:0.3rem;display:block';
+          if (cat !== 'skipped') {
+            _dqSetupPagingSentinel(cat);
+            const hintEl = document.getElementById('dq-list-hint');
+            if (hintEl) {
+              hintEl.innerHTML =
+                `Loaded <strong>${rows.length.toLocaleString()}</strong> of <strong>${_dqTotalCount.toLocaleString()}</strong> — scroll down for more, or use <strong>Export to Excel</strong> for the full list.`;
+              hintEl.style.cssText = 'color:#64748b;font-size:0.84rem;margin-top:0.3rem;display:block';
+            }
           }
           return;
         }
@@ -9423,10 +9798,8 @@ function _dqCatTitle(cat) {
     case 'smearcured':  return 'Smear Negative Patients Declared Cured';
     case 'missingreg':  return 'Patients With Missing Registration Info';
     case 'nooutcome':    return 'Patients With No DOTS Outcome';
-    case 'notevaluated': return 'Patients Marked Not Evaluated';
     case 'diagmethod':  return 'Patients With No TB Diagnostic Method Recorded';
     case 'norxstart':   return 'Patients With No Treatment Start Date (Registered >14 Days Ago)';
-    case 'futuredates': return 'Patients With Registration Date In The Future';
     case 'deleted':     return 'Deleted Patients — Click Any Row To Restore';
     default:            return cat;
   }
@@ -9442,12 +9815,194 @@ function _dqCatHint(cat, n) {
     case 'smearcured':  return 'HINT: Change the outcome to "Treatment Completed" for patients who were not bacteriologically confirmed.';
     case 'missingreg':  return 'HINT: Open each patient record and fill in the highlighted missing fields.';
     case 'nooutcome':    return 'HINT: Record the correct DOTS outcome for each patient shown.';
-    case 'notevaluated': return 'HINT: Review each patient and update the outcome from "Not Evaluated" to the correct DOTS outcome.';
     case 'diagmethod':  return 'HINT: Open each patient record and select the method used to diagnose TB.';
     case 'norxstart':   return 'HINT: Enter the date treatment was started, or verify whether the patient began treatment.';
-    case 'futuredates': return 'HINT: Correct the registration date — it cannot be in the future.';
     case 'deleted':     return 'HINT: Click the Restore button on any row to undelete a patient record that was removed in error.';
     default:            return '';
+  }
+}
+
+// ── Row HTML helper — shared by initial render and paging appends ─────────
+function _dqBuildRowHtml(cat, r) {
+  const esc     = escHtml;
+  const fmtDate = d => {
+    if (!d) return '—';
+    const p = d.split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
+  };
+  const dqVal = v => (!v || v === 'Select One') ? '—' : String(v);
+
+  let notes = '';
+  if (cat === 'missingreg' && r.MissingFields) {
+    notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields.replace(/,\s*$/, ''))}</span>`;
+  } else if (cat === 'smearcured' && r.Outcome) {
+    notes = `<span class="dq-issue-badge">Outcome: ${esc(r.Outcome)}</span>`;
+  } else if (cat === 'nooutcome') {
+    const info = _tbExpectedEndInfo(r);
+    if (info) {
+      notes = `<span class="dq-issue-badge">Due: ${info.endFmt}<br><span style="color:#dc2626">&#9650; ${info.daysOver}d overdue</span></span>`;
+    } else if (r.DaysSinceStart != null) {
+      notes = `<span class="dq-issue-badge">${r.DaysSinceStart}d on Rx</span>`;
+    }
+  } else if (cat === 'norxstart' && r.DaysSinceReg != null) {
+    notes = `<span class="dq-issue-badge">${r.DaysSinceReg}d since reg.</span>`;
+  } else if (cat === 'duplicates') {
+    notes = `<span class="dq-issue-badge">Possible duplicate</span>`;
+  } else if (cat === 'sametbno' && r.UnitTBNo) {
+    notes = `<span class="dq-issue-badge">TB No: ${esc(r.UnitTBNo)}</span>`;
+  } else if (cat === 'deleted') {
+    notes = `<button class="btn btn-success dq-undelete-btn" data-tid="${esc(String(r.PtDetailsTID))}" data-name="${esc(r.PtName || '')}" onclick="event.stopPropagation()" style="white-space:nowrap;font-size:0.78rem;display:block;height:85%;width:100%;">\u21a9 Restore</button>`;
+  }
+  const ageDisplay = r.AgeMonths && r.Age === 0 ? `${r.AgeMonths}m` : (r.Age ? String(r.Age) : '—');
+  const notesTd = (cat === 'deleted' && notes)
+    ? `<td style="padding:0;">${notes}</td>`
+    : `<td>${notes || '—'}</td>`;
+  return `<tr data-tid="${esc(String(r.PtDetailsTID))}" data-hfid="${r.NearestHFID || 0}" data-hfname="${esc(r.HealthFacility || '')}">
+      <td>${esc(r.UnitTBNo || '—')}</td>
+      <td>${fmtDate(r.RegDate)}</td>
+      <td title="${esc(r.PtName || '')}">${esc(truncateDisplayName(r.PtName))}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${esc(String(r.PtDetailsTID))}" aria-label="Select ${esc(r.PtName || '')}"></td>
+      <td>${esc(ageDisplay)}</td>
+      <td>${r.SexID === 1 ? 'M' : r.SexID === 2 ? 'F' : '—'}</td>
+      <td>${esc(dqVal(r.TbType))}</td>
+      <td>${esc(dqVal(r.PtTypeShort))}</td>
+      ${notesTd}
+      <td>${esc(dqVal((r.DiagMethod || '').replace(/Smear Microscopy/gi, 'Microscopy')))}</td>
+      <td>${esc(r.PtPhone || '—')}</td>
+      <td>${esc(r.HealthFacility || '—')}</td>
+    </tr>`;
+}
+
+// Attach row-click and undelete handlers; skips rows already marked data-dq-click.
+function _dqAttachRowHandlers(tbody, cat) {
+  tbody.querySelectorAll('tr[data-tid]:not([data-dq-click])').forEach(tr => {
+    tr.dataset.dqClick = '1';
+    tr.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
+      const tid    = tr.dataset.tid;
+      const hfid   = Number(tr.dataset.hfid);
+      const hfname = tr.dataset.hfname || '';
+      if (!tid || !hfid) return;
+      const facInfo = getMonitoringFacilityInfo(hfid);
+      _fromDQScreen = true;
+      if (tbQualityScreen)   tbQualityScreen.hidden   = true;
+      if (artRegisterScreen) artRegisterScreen.hidden = false;
+      _saveSelectedFacility({ id: hfid, name: hfname,
+        county: facInfo ? (facInfo.County   || '') : '',
+        state:  facInfo ? (facInfo.State    || '') : '',
+        countyId: facInfo ? (facInfo.CountyID || 0) : 0,
+        stateId:  facInfo ? (facInfo.StateID  || 0) : 0 });
+      _selectedRegister = 'tb';
+      updateFacilityBanner(); applyFacilityGate();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      loadAndRenderGeoTree();
+      const backBtn = document.getElementById('back-to-dashboard-btn');
+      if (backBtn) backBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Quality Check`;
+      const bbBtn = document.getElementById('tb-back-to-monitoring-btn');
+      if (bbBtn) { bbBtn.hidden = false; bbBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Back to Data Quality Check`; }
+      if (userCanWrite()) { _pendingDQCategory = cat; await _fetchAndUpsertTBPatientIfNeeded(tid); startEditTBPatient(tid); }
+      else { await _fetchAndUpsertTBPatientIfNeeded(tid); startViewTBPatient(tid); }
+    });
+  });
+  if (cat === 'deleted') {
+    tbody.querySelectorAll('.dq-undelete-btn:not([data-dq-click])').forEach(btn => {
+      btn.dataset.dqClick = '1';
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const tid  = btn.dataset.tid;
+        const name = _xlTitleCase(btn.dataset.name) || 'This patient';
+        const confirmed = await showGenericConfirmModal('Restore Patient Record',
+          `Restore <strong>${name}</strong> back to the active register?`, 'Restore');
+        if (!confirmed) return;
+        try {
+          await undeletePtDetailsTB(tid);
+          { const _u = getUser(); await insertAuditLog({ action: 'UNDELETE_TB', ptDetailsTID: tid, notes: `Restored TB patient from Data Quality screen: ${name}`, userTID: _u?.userTID, userName: _u?.fullName ?? _u?.userName }); }
+          showToast(`${name} has been restored.`, 'success');
+          logSync('INFO', 'Auto-sync: dq-undelete', { online: navigator.onLine });
+          if (navigator.onLine) triggerTBSync(true, false, 'dq-undelete');
+          _dqRefreshAll(); _dqSelectCategory('deleted');
+        } catch (err) { console.error('[DQ] Undelete failed:', err); showToast('Could not restore patient. Please try again.', 'error'); }
+      });
+    });
+  }
+}
+
+// Set up IntersectionObserver sentinel at the bottom of the DQ table for auto-paging.
+function _dqSetupPagingSentinel(cat) {
+  if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+  document.getElementById('dq-page-sentinel')?.remove();
+  if (!_dqUseServer || cat === 'skipped' || _dqCurrentRows.length >= _dqTotalCount || !_dqTotalCount) return;
+  const tbody    = document.getElementById('dq-patient-tbody');
+  const tableWrap = document.querySelector('.table-wrap--dq-scroll');
+  if (!tbody || !tableWrap) return;
+  const sentinel = document.createElement('tr');
+  sentinel.id = 'dq-page-sentinel';
+  sentinel.innerHTML = `<td colspan="12" style="text-align:center;padding:0.6rem;background:#f0fdf4;font-size:0.82rem">
+    <span id="dq-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em"><span class="dq-spin-icon">↻</span> Loading more…</span>
+    <span id="dq-page-more" style="color:#0f766e;font-weight:600">${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more ↓</span></td>`;
+  tbody.appendChild(sentinel);
+  _dqPageObserver = new IntersectionObserver(async entries => {
+    if (!entries[0].isIntersecting || _dqIsPaging) return;
+    await _dqLoadNextPage(cat);
+  }, { root: tableWrap, rootMargin: '80px', threshold: 0 });
+  _dqPageObserver.observe(sentinel);
+}
+
+async function _dqLoadNextPage(cat) {
+  if (_dqIsPaging || !_dqUseServer) return;
+  const token = getToken();
+  if (!token || !_reallyOnline) return;
+  _dqIsPaging = true;
+  const spinner = document.getElementById('dq-page-spinner');
+  const moreEl  = document.getElementById('dq-page-more');
+  if (spinner) spinner.hidden = false;
+  if (moreEl)  moreEl.hidden  = true;
+  try {
+    const DQ_PAGE = 500;
+    const qs = new URLSearchParams({ category: cat, limit: String(DQ_PAGE), offset: String(_dqCurrentRows.length) });
+    _dqFacilityIDs.forEach(id => qs.append('facilityIds', id));
+    const resp = await fetch(`${API_BASE}/tb-patients/quality-patients?${qs}`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const _pd = await resp.json();
+    const newRows = _pd.rows ?? _pd;
+    if (_pd.total != null) _dqTotalCount = _pd.total;
+    if (!newRows.length) {
+      document.getElementById('dq-page-sentinel')?.remove();
+      if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+      return;
+    }
+    _dqCurrentRows = [..._dqCurrentRows, ...newRows];
+    const tbody    = document.getElementById('dq-patient-tbody');
+    const sentinel = document.getElementById('dq-page-sentinel');
+    if (tbody && sentinel) {
+      sentinel.insertAdjacentHTML('beforebegin', newRows.map(r => _dqBuildRowHtml(cat, r)).join(''));
+      _dqAttachRowHandlers(tbody, cat);
+      const selectAll = document.getElementById('dq-select-all');
+      if (selectAll?.checked) {
+        tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+      }
+    }
+    // Update subtitle — always show the server total, not the loaded page count
+    const subEl = document.getElementById('dq-list-subtitle');
+    if (subEl) subEl.textContent = `Found ${_dqTotalCount.toLocaleString()} Patients`;
+    if (_dqCurrentRows.length >= _dqTotalCount) {
+      document.getElementById('dq-page-sentinel')?.remove();
+      if (_dqPageObserver) { _dqPageObserver.disconnect(); _dqPageObserver = null; }
+      const hintEl = document.getElementById('dq-list-hint');
+      if (hintEl) hintEl.style.display = 'none';
+    } else {
+      if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${(_dqTotalCount - _dqCurrentRows.length).toLocaleString()} more \u2193`; }
+      if (spinner) spinner.hidden = true;
+      const hintEl = document.getElementById('dq-list-hint');
+      if (hintEl) hintEl.innerHTML = `Loaded <strong>${_dqCurrentRows.length.toLocaleString()}</strong> of <strong>${_dqTotalCount.toLocaleString()}</strong> — scroll down for more.`;
+    }
+  } catch (e) {
+    console.error('[DQ] loadNextPage:', e);
+    if (spinner) spinner.hidden = true;
+    if (moreEl)  { moreEl.hidden = false; moreEl.textContent = '\u26a0 Error loading — scroll to retry'; }
+  } finally {
+    _dqIsPaging = false;
   }
 }
 
@@ -9473,7 +10028,7 @@ function _dqRenderList(cat, rows) {
   if (theadSkipped) theadSkipped.hidden = (cat !== 'skipped');
 
   // Decide whether the Notes/Issue column is relevant for this category
-  const showNotes = ['missingreg', 'smearcured', 'nooutcome', 'notevaluated', 'norxstart', 'futuredates', 'duplicates', 'sametbno', 'deleted'].includes(cat);
+  const showNotes = ['missingreg', 'smearcured', 'nooutcome', 'norxstart', 'duplicates', 'sametbno', 'deleted'].includes(cat);
   if (notesHd) notesHd.hidden = !showNotes;
   const tbl = document.getElementById('dq-patient-table');
   if (tbl) tbl.classList.toggle('dq-hide-notes', !showNotes);
@@ -9483,9 +10038,13 @@ function _dqRenderList(cat, rows) {
   const n = rows.length;
   if (subEl) {
     if (n === 0)                subEl.textContent = cat === 'all' ? 'No Patients In The Database' : 'No Issues Found — Congratulations!';
-    else if (cat === 'skipped') subEl.textContent = n === 1 ? 'Found 01 TB patient skipped during data entry' : `Found ${String(n).padStart(2, '0')} TB patients skipped during data entry`;
+    else if (cat === 'skipped') {
+      const tot = (_dqUseServer && _dqTotalCount) ? _dqTotalCount : n;
+      subEl.textContent = tot === 1 ? 'Found 01 TB patient skipped during data entry' : `Found ${tot.toLocaleString()} TB patients skipped during data entry`;
+    }
     else if (n === 1)           subEl.textContent = 'Found 01 Patient';
-    else                        subEl.textContent = `Found ${String(n).padStart(2, '0')} Patients`;
+    else { const tot = (_dqUseServer && _dqTotalCount > n) ? _dqTotalCount : n;
+           subEl.textContent = `Found ${tot.toLocaleString()} Patients`; }
   }
   if (hintEl) hintEl.textContent = _dqCatHint(cat, n);
 
@@ -9496,153 +10055,20 @@ function _dqRenderList(cat, rows) {
 
   // ── Skipped gaps: missing sequence slots, not existing patient records ────
   if (cat === 'skipped') {
-    tbody.innerHTML = rows.map(r =>
+    _dqSkippedRows = rows;
+    tbody.innerHTML = rows.map((r, i) =>
       `<tr class="dq-row--gap">
+        <td style="text-align:center;color:#64748b;font-size:0.82rem">${i + 1}.</td>
         <td>${escHtml(String(r.MissingTBNo).padStart(3, '0'))}/${r.RegYear}</td>
-        <td colspan="11" style="text-align:left">${escHtml(r.HealthFacility || '—')}</td>
+        <td>${escHtml(r.HealthFacility || '—')}</td>
+        <td><input type="checkbox" class="row-check-gap" value="${i}"></td>
       </tr>`
     ).join('');
     return;
   }
 
-  const fmtDate = d => {
-    if (!d) return '—';
-    const parts = d.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return d;
-  };
-  const esc = escHtml;
-  // Treat null/empty/"Select One" as not recorded → show dash
-  const dqVal = v => (!v || v === 'Select One') ? '—' : String(v);
-
-  tbody.innerHTML = rows.map(r => {
-    // Build notes cell content based on category
-    let notes = '';
-    if (cat === 'missingreg' && r.MissingFields) {
-      notes = `<span class="dq-issue-badge">Missing: ${esc(r.MissingFields)}</span>`;
-    } else if (cat === 'smearcured' && r.Outcome) {
-      notes = `<span class="dq-issue-badge">Outcome: ${esc(r.Outcome)}</span>`;
-    } else if (cat === 'nooutcome' || cat === 'notevaluated') {
-      const info = _tbExpectedEndInfo(r);
-      if (info) {
-        notes = `<span class="dq-issue-badge">Due: ${info.endFmt}<br><span style="color:#dc2626">&#9650; ${info.daysOver}d overdue</span></span>`;
-      } else if (r.DaysSinceStart != null) {
-        notes = `<span class="dq-issue-badge">${r.DaysSinceStart}d on Rx</span>`;
-      }
-    } else if (cat === 'norxstart' && r.DaysSinceReg != null) {
-      notes = `<span class="dq-issue-badge">${r.DaysSinceReg}d since reg.</span>`;
-    } else if (cat === 'futuredates') {
-      notes = `<span class="dq-issue-badge">Future date</span>`;
-    } else if (cat === 'duplicates') {
-      notes = `<span class="dq-issue-badge">Possible duplicate</span>`;
-    } else if (cat === 'sametbno' && r.UnitTBNo) {
-      notes = `<span class="dq-issue-badge">TB No: ${esc(r.UnitTBNo)}</span>`;
-    } else if (cat === 'deleted') {
-      notes = `<button class="btn btn-success dq-undelete-btn" data-tid="${esc(String(r.PtDetailsTID))}" data-name="${esc(r.PtName || '')}" onclick="event.stopPropagation()" style="white-space:nowrap;font-size:0.78rem;display:block;height:85%;width:100%;">↩ Restore</button>`;
-    }
-
-    const ageDisplay = r.AgeMonths && r.Age === 0
-      ? `${r.AgeMonths}m`
-      : (r.Age ? String(r.Age) : '—');
-
-    // For the deleted category the notes td has no padding so the Restore
-    // button can fill the full row height without expanding it.
-    const notesTd = (cat === 'deleted' && notes)
-      ? `<td style="padding:0;">${notes}</td>`
-      : `<td>${notes || '—'}</td>`;
-
-    return `<tr data-tid="${esc(String(r.PtDetailsTID))}" data-hfid="${r.NearestHFID || 0}" data-hfname="${esc(r.HealthFacility || '')}">
-      <td>${esc(r.UnitTBNo || '—')}</td>
-      <td>${fmtDate(r.RegDate)}</td>
-      <td title="${esc(r.PtName || '')}">${esc(truncateDisplayName(r.PtName))}</td>
-      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${esc(String(r.PtDetailsTID))}" aria-label="Select ${esc(r.PtName || '')}"></td>
-      <td>${esc(ageDisplay)}</td>
-      <td>${r.SexID === 1 ? 'M' : r.SexID === 2 ? 'F' : '—'}</td>
-      <td>${esc(dqVal(r.TbType))}</td>
-      <td>${esc(dqVal(r.PtTypeShort))}</td>
-      ${notesTd}
-      <td>${esc(dqVal((r.DiagMethod || '').replace(/Smear Microscopy/gi, 'Microscopy')))}</td>
-      <td>${esc(r.PtPhone || '—')}</td>
-      <td>${esc(r.HealthFacility || '—')}</td>
-    </tr>`;
-  }).join('');
-
-  // Row click: open patient record (edit for writers, view-only for read-only users)
-  document.getElementById('dq-patient-table')?.querySelectorAll('tr[data-tid]').forEach(tr => {
-    tr.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
-      const tid    = tr.dataset.tid;
-      const hfid   = Number(tr.dataset.hfid);
-      const hfname = tr.dataset.hfname || '';
-      if (!tid || !hfid) return;
-
-      const facInfo = getMonitoringFacilityInfo(hfid);
-      _fromDQScreen = true;
-
-      if (tbQualityScreen)  tbQualityScreen.hidden  = true;
-      if (artRegisterScreen) artRegisterScreen.hidden = false;
-
-      _saveSelectedFacility({
-        id:       hfid,
-        name:     hfname,
-        county:   facInfo ? (facInfo.County   || '') : '',
-        state:    facInfo ? (facInfo.State    || '') : '',
-        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
-        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
-      });
-      _selectedRegister = 'tb';
-      updateFacilityBanner();
-      applyFacilityGate();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      loadAndRenderGeoTree();
-      const backBtn = document.getElementById('back-to-dashboard-btn');
-      if (backBtn) backBtn.innerHTML =
-        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Quality Check`;
-      const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
-      if (bottomBackBtn) {
-        bottomBackBtn.hidden = false;
-        bottomBackBtn.innerHTML =
-          `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Back to Data Quality Check`;
-      }
-      if (userCanWrite()) {
-        _pendingDQCategory = cat;
-        await _fetchAndUpsertTBPatientIfNeeded(tid);
-        startEditTBPatient(tid);
-      } else {
-        await _fetchAndUpsertTBPatientIfNeeded(tid);
-        startViewTBPatient(tid);
-      }
-    });
-  });
-
-  // Restore (undelete) handler — DQ deleted category only
-  if (cat === 'deleted') {
-    tbody.querySelectorAll('.dq-undelete-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const tid  = btn.dataset.tid;
-        const name = _xlTitleCase(btn.dataset.name) || 'This patient';
-        const confirmed = await showGenericConfirmModal(
-          'Restore Patient Record',
-          `Restore <strong>${name}</strong> back to the active register?`,
-          'Restore'
-        );
-        if (!confirmed) return;
-        try {
-          await undeletePtDetailsTB(tid);
-          { const _u = getUser(); await insertAuditLog({ action: 'UNDELETE_TB', ptDetailsTID: tid, notes: `Restored TB patient from Data Quality screen: ${name}`, userTID: _u?.userTID, userName: _u?.fullName ?? _u?.userName }); }
-          showToast(`${name} has been restored.`, 'success');
-          logSync('INFO', 'Auto-sync: dq-undelete', { online: navigator.onLine });
-          if (navigator.onLine) triggerTBSync(true, false, 'dq-undelete');
-          _dqRefreshAll();          // update sidebar counts
-          _dqSelectCategory('deleted'); // refresh the patient list
-        } catch (err) {
-          console.error('[DQ] Undelete failed:', err);
-          showToast('Could not restore patient. Please try again.', 'error');
-        }
-      });
-    });
-  }
+  tbody.innerHTML = rows.map(r => _dqBuildRowHtml(cat, r)).join('');
+  _dqAttachRowHandlers(tbody, cat);
 }
 
 // ── Quality screen event listeners ─────────────────────────────────────────
@@ -10870,7 +11296,8 @@ function resolveGeoScope(user, geo) {
       st.counties.get(r.CountyID).facilities.push({ id: r.HealthFacilityID, name: r.HealthFacility });
     }
 
-    const sortedStates = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const sortedStates    = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const countryChildren = _el('div', 'rpt-tree-children open');
 
     for (const [stateId, stateData] of sortedStates) {
       const stateNode     = _el('div', 'rpt-tree-node rpt-tree-state');
@@ -10927,6 +11354,7 @@ function resolveGeoScope(user, geo) {
           if (!cb.disabled) { cb.checked = checked; cb.indeterminate = false; }
         });
         stateCb.indeterminate = false;
+        refreshAncestors();
         updateSummary();
       });
       stateLabel.addEventListener('click', () => { if (!stateCb.disabled) stateCb.click(); });
@@ -10936,8 +11364,27 @@ function resolveGeoScope(user, geo) {
       stateNode.appendChild(stateCb);
       stateNode.appendChild(stateLabel);
       stateNode.appendChild(stateChildren);
-      treeEl.appendChild(stateNode);
+      countryChildren.appendChild(stateNode);
     }
+
+    const countryCb     = _checkbox('country', 0);
+    const countryLabel  = _el('span', 'rpt-tree-label', 'South Sudan');
+    const countryToggle = _el('span', 'rpt-tree-toggle open');
+    const countryNode   = _el('div', 'rpt-tree-node rpt-tree-country');
+    countryCb.addEventListener('change', () => {
+      countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+        if (!cb.disabled) { cb.checked = countryCb.checked; cb.indeterminate = false; }
+      });
+      countryCb.indeterminate = false;
+      updateSummary();
+    });
+    countryLabel.addEventListener('click', () => { if (!countryCb.disabled) countryCb.click(); });
+    countryToggle.addEventListener('click', () => _toggleChildren(countryChildren, countryToggle));
+    countryNode.appendChild(countryToggle);
+    countryNode.appendChild(countryCb);
+    countryNode.appendChild(countryLabel);
+    countryNode.appendChild(countryChildren);
+    treeEl.appendChild(countryNode);
 
     applyScope(scope);
     updateSummary(true);
@@ -10975,6 +11422,12 @@ function resolveGeoScope(user, geo) {
         if (ch && !ch.classList.contains('open')) { ch.classList.add('open'); tog?.classList.add('open'); }
       }
     }
+    // Show/hide country node based on whether any state children are visible
+    for (const countryNode of treeEl.querySelectorAll('.rpt-tree-country')) {
+      const visibleStates = [...countryNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state')]
+        .some(n => n.style.display !== 'none');
+      countryNode.style.display = visibleStates ? '' : 'none';
+    }
   }
 
   if (treeSearchEl) {
@@ -11009,7 +11462,7 @@ function resolveGeoScope(user, geo) {
   }
 
   // ── Ancestor state refresh ────────────────────────────────────────────
-  // Re-scans all county + state nodes and sets checked/indeterminate states.
+  // Re-scans all county + state + country nodes and sets checked/indeterminate states.
   function refreshAncestors() {
     for (const countyNode of treeEl.querySelectorAll('.rpt-tree-county')) {
       const countyCb  = countyNode.querySelector(':scope > .rpt-tree-cb');
@@ -11020,6 +11473,11 @@ function resolveGeoScope(user, geo) {
       const stateCb   = stateNode.querySelector(':scope > .rpt-tree-cb');
       const countyCbs = [...stateNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
       _setParentState(stateCb, countyCbs);
+    }
+    for (const countryNode of treeEl.querySelectorAll('.rpt-tree-country')) {
+      const countryCb = countryNode.querySelector(':scope > .rpt-tree-cb');
+      const stateCbs  = [...countryNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+      _setParentState(countryCb, stateCbs);
     }
   }
 
@@ -11537,9 +11995,9 @@ function resolveGeoScope(user, geo) {
       const closeDetailBtn = document.getElementById('pre-dq-close-detail-btn');
 
       const _THEAD_FULL    = '<tr><th>TB No</th><th>Reg Date</th><th>Patient Name</th><th>Age</th><th>Sex</th><th>Facility</th><th>Issue / Note</th></tr>';
-      const _THEAD_SKIPPED = '<tr><th style="width:16.666%">TB No</th><th>Facility</th></tr>';
+      const _THEAD_SKIPPED = '<tr><th style="width:2.5rem;text-align:center">#</th><th>TB Number</th><th>Facility</th></tr>';
       const _COL_FULL = 7;
-      const _COL_SKIP = 2;
+      const _COL_SKIP = 3;
 
       if (!modalEl) { resolve(true); return; }
 
@@ -11646,7 +12104,6 @@ function resolveGeoScope(user, geo) {
         { key: 'scmissed3',    label: 'Missed 3-Month Sputum Exam',                   period: 'sc'   },
         { key: 'nooutcome',    label: 'Missing TB Treatment Outcome',                 period: 'to'   },
         { key: 'smearcured',   label: 'Smear-Negative But Declared Cured',            period: 'to'   },
-        { key: 'notevaluated', label: 'Outcome Marked as "Not Evaluated"',            period: 'to'   },
         { key: 'skipped',      label: 'Skipped TB Numbers (Data Entry Gaps)',         period: 'year' },
       ];
       const PERIOD_LABEL = { cf: cfLabel, to: toLabel, sc: scLabel, year: `Year ${cfYear}` };
@@ -11862,8 +12319,9 @@ function resolveGeoScope(user, geo) {
 
             if (isSkipped) {
               detailTbody.innerHTML =
-                rows.slice(0, 250).map(r =>
-                  `<tr><td>${esc(String(r.MissingTBNo || '').padStart(3,'0'))}/${r.RegYear || ''}</td>` +
+                rows.slice(0, 250).map((r, i) =>
+                  `<tr><td style="text-align:center;color:#64748b;font-size:0.82rem">${i + 1}.</td>` +
+                  `<td>${esc(String(r.MissingTBNo || '').padStart(3,'0'))}/${r.RegYear || ''}</td>` +
                   `<td>${esc(r.HealthFacility || '—')}</td></tr>`
                 ).join('') +
                 (rows.length > 250 ? `<tr><td colspan="${_cols}" class="text-center text-muted fst-italic py-1">… and ${rows.length - 250} more</td></tr>` : '');
@@ -11871,9 +12329,9 @@ function resolveGeoScope(user, geo) {
             }
 
             const noteFor = r => {
-              if (cat === 'missingreg' && r.MissingFields)    return esc(r.MissingFields);
+              if (cat === 'missingreg' && r.MissingFields)    return esc(r.MissingFields.replace(/,\s*$/, ''));
               if (cat === 'smearcured' && r.Outcome)          return `Outcome: ${esc(r.Outcome)}`;
-              if (cat === 'nooutcome' || cat === 'notevaluated') {
+              if (cat === 'nooutcome') {
                 const info = _tbExpectedEndInfo(r);
                 if (info) return `Due: ${info.endFmt} <span style="color:#dc2626;white-space:nowrap">&#9650; ${info.daysOver}d overdue</span>`;
                 if (r.DaysSinceStart != null) return `${r.DaysSinceStart}d on Rx`;
@@ -12562,17 +13020,18 @@ function resolveGeoScope(user, geo) {
       return;
     }
 
-    const qs = new URLSearchParams({ cfStartDate: cfRange.startDate, cfEndDate: cfRange.endDate });
-    for (const id of facilityIds) qs.append('facilityIds', id);
-
-    const sseUrl = `${API_BASE}/reports/tb-lfa-progress?${qs}`;
+    const sseUrl = `${API_BASE}/reports/tb-lfa-progress`;
     setStatus('Generating DS-TB LFA Verification Report\u2026', 'info');
     clearProgress();
     generateBtn.disabled = true;
 
     const authToken = localStorage.getItem(AUTH_TOKEN_KEY);
     try {
-      const resp = await fetch(sseUrl, { headers: { Authorization: `Bearer ${authToken}` } });
+      const resp = await fetch(sseUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cfStartDate: cfRange.startDate, cfEndDate: cfRange.endDate, facilityIds }),
+      });
 
       if (!resp.ok) {
         let errMsg = `eTBr server error (${resp.status}).`;

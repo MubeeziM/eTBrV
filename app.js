@@ -13020,17 +13020,18 @@ function resolveGeoScope(user, geo) {
       return;
     }
 
-    const qs = new URLSearchParams({ cfStartDate: cfRange.startDate, cfEndDate: cfRange.endDate });
-    for (const id of facilityIds) qs.append('facilityIds', id);
-
-    const sseUrl = `${API_BASE}/reports/tb-lfa-progress?${qs}`;
+    const sseUrl = `${API_BASE}/reports/tb-lfa-progress`;
     setStatus('Generating DS-TB LFA Verification Report\u2026', 'info');
     clearProgress();
     generateBtn.disabled = true;
 
     const authToken = localStorage.getItem(AUTH_TOKEN_KEY);
     try {
-      const resp = await fetch(sseUrl, { headers: { Authorization: `Bearer ${authToken}` } });
+      const resp = await fetch(sseUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cfStartDate: cfRange.startDate, cfEndDate: cfRange.endDate, facilityIds }),
+      });
 
       if (!resp.ok) {
         let errMsg = `eTBr server error (${resp.status}).`;

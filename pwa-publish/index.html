@@ -2026,10 +2026,6 @@
                   <span class="mon-stat-label">No Treatment Start Date</span>
                   <span class="dq-stat-count" id="dq-count-norxstart">00</span>
                 </div>
-                <div class="dq-stat-row" id="dq-cat-futuredates" data-dqcat="futuredates" role="button" tabindex="0" aria-pressed="false">
-                  <span class="mon-stat-label">Registered In The Future</span>
-                  <span class="dq-stat-count" id="dq-count-futuredates">00</span>
-                </div>
               </div>
 
               <!-- Group 2: Inconsistencies -->
@@ -2059,10 +2055,6 @@
                 <div class="dq-stat-row" id="dq-cat-nooutcome" data-dqcat="nooutcome" role="button" tabindex="0" aria-pressed="false">
                   <span class="mon-stat-label">No DOTS Outcome</span>
                   <span class="dq-stat-count" id="dq-count-nooutcome">00</span>
-                </div>
-                <div class="dq-stat-row" id="dq-cat-notevaluated" data-dqcat="notevaluated" role="button" tabindex="0" aria-pressed="false">
-                  <span class="mon-stat-label">Not Evaluated</span>
-                  <span class="dq-stat-count" id="dq-count-notevaluated">00</span>
                 </div>
                 <div class="dq-stat-row" id="dq-cat-deleted" data-dqcat="deleted" role="button" tabindex="0" aria-pressed="false">
                   <span class="mon-stat-label">Deleted Patients (Restore)</span>
@@ -2098,8 +2090,10 @@
                       <th>Facility</th>
                     </tr>
                     <tr id="dq-thead-skipped" hidden>
+                      <th style="width:2.5rem;text-align:center">#</th>
                       <th>Unit TB Number</th>
-                      <th colspan="11">Health Facility</th>
+                      <th>Health Facility</th>
+                      <th><input type="checkbox" id="dq-select-all-gap" title="Select / deselect all" aria-label="Select all"></th>
                     </tr>
                   </thead>
                   <tbody id="dq-patient-tbody">
@@ -2232,7 +2226,7 @@
                   <span class="mon-stat-label">Due To Start ART</span>
                   <span class="mon-stat-count" id="mon-count-art">00</span>
                 </div>
-                <div class="mon-stat-row" id="mon-cat-hhp" data-cat="hhp" role="button" tabindex="0">
+                <div class="mon-stat-row mon-stat-row--disabled" id="mon-cat-hhp">
                   <span class="mon-stat-label">With No HHP For Support</span>
                   <span class="mon-stat-count" id="mon-count-hhp">00</span>
                 </div>
@@ -2245,6 +2239,7 @@
 
             <!-- Patient list area (right) -->
             <div class="mon-list-area">
+              <div id="mon-load-bar" class="mon-load-bar" hidden></div>
               <div id="mon-list-title" class="mon-list-title">MISSED Sputum Examination After 2 Months Of DOTS</div>
               <div id="mon-list-subtitle" class="mon-list-subtitle">No TB Patients Found</div>
               <div id="mon-list-hint" class="mon-list-hint"></div>

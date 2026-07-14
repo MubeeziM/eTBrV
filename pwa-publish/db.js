@@ -1169,10 +1169,20 @@ function _monRows(r) {
  * @param {number[]}       facilityIDs     - empty = all
  * @param {string}         extraWhere      - additional SQL fragments (internal, safe)
  */
-function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere) {
+function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere, dayExprOverride, orderByOverride) {
   if (!_db) return [];
   var hf = _monFacilityFilter(facilityIDs);
-  var dayExpr = "CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) - " + reviewDayOffset;
+  var dayExpr;
+  if (dayExprOverride) {
+    dayExpr = dayExprOverride;
+  } else {
+    var offsetStr = String(reviewDayOffset);
+    // Weekend adjustment: if the ideal review date (DateRxStarted + offset) falls on
+    // Saturday (%w=6) shift to Monday (+2); if Sunday (%w=0) shift to Monday (+1).
+    dayExpr = "CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) - " + offsetStr
+      + " - CASE strftime('%w', date(p.DateRxStarted, '+" + offsetStr + " days'))"
+      + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  }
   var modeFilter = mode === 'missed'
     ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= ' + gracePeriod
     : 'AND (' + dayExpr + ') <= 0';
@@ -1190,13 +1200,17 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) = 0)',
+    '  AND p.TbTypeID IN (1, 2)',
+    '  AND p.PtTypeID <> 5',
+    '  AND p.Age > 4',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
     '  AND (COALESCE(fu.Mon0LabResultID, 0) IN (1,4,5,6)',
     '       OR COALESCE(fu.Mon0XpertResultID, 0) IN (3,4,5))',
     '  ' + extraWhere,
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY DaysLate DESC, p.PtName'
+    'ORDER BY ' + (orderByOverride || ('DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'))
   ].join('\n');
 
   try {
@@ -1210,39 +1224,175 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
 /** Sputum @ 2 months (56 days): bacteriologically confirmed, no Mon2 smear yet. */
 function getTBMonSputum2(mode, facilityIDs) {
   return _tbMonSputumQuery(56, 28, mode, facilityIDs,
-    "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR fu.Mon2Date = '')");
+    "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR fu.Mon2Date = ''"
+    + " OR COALESCE(fu.Mon2LabResultID, 0) IN (0, 3, 7))"
+    + " AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
+    null);
 }
 
 /**
- * Sputum @ 3 months (84 days): still positive at 2-month check, no Mon3 smear yet.
- * Only applies to smear-positive cases who had a positive 2-month result.
+ * Sputum @ 3 months: ideal date = Mon2Date+28 when available, else DateRxStarted+84.
+ * Includes patients where 2-month smear was positive, not done, or unrecorded
+ * (excludes only smear-negative (2) or contaminated (7) 2-month results).
  */
 function getTBMonSputum3(mode, facilityIDs) {
+  var ideal = "COALESCE(date(fu.Mon2Date, '+28 days'), date(p.DateRxStarted, '+84 days'))";
+  var dayExpr = "CAST(julianday('now') - julianday(" + ideal + ") AS INTEGER)"
+    + " - CASE strftime('%w', " + ideal + ")"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
   return _tbMonSputumQuery(84, 56, mode, facilityIDs,
-    "AND COALESCE(fu.Mon2LabResultID, 0) IN (1,4,5,6)" +
-    " AND (fu.Mon3Date IS NULL OR fu.Mon3Date = '')");
+    "AND COALESCE(fu.Mon2LabResultID, 0) NOT IN (2, 7)" +
+    " AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL OR fu.Mon3Date = ''" +
+    " OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
+    dayExpr);
 }
 
-/** Sputum @ 5 months (140 days): bacteriologically confirmed, no Mon5 smear yet. */
+/** Sputum @ 5 months (140 days). DS-TB only (TbTypeID = 1).
+ *  Ideal date = COALESCE(DateRxStarted, RegDate) + 140 days (with weekend adjustment).
+ *  Includes patients where Mon5 result is null or "Not Done" (3).
+ */
 function getTBMonSputum5(mode, facilityIDs) {
-  return _tbMonSputumQuery(140, 28, mode, facilityIDs,
-    "AND (fu.PtFollowUpTID IS NULL OR fu.Mon5Date IS NULL OR fu.Mon5Date = '')");
-}
+  if (!_db) return [];
+  var hf   = _monFacilityFilter(facilityIDs);
+  var base = "COALESCE(p.DateRxStarted, p.RegDate)";
+  var dayExpr = "CAST(julianday('now') - julianday(" + base + ") AS INTEGER) - 140"
+    + " - CASE strftime('%w', date(" + base + ", '+140 days'))"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  var modeFilter = mode === 'missed'
+    ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= 28'
+    : 'AND (' + dayExpr + ') <= 0';
 
-/** Sputum @ 6 months (168 days): end-of-treatment smear (Mon6), none recorded yet. */
-function getTBMonSputum6(mode, facilityIDs) {
-  return _tbMonSputumQuery(168, 56, mode, facilityIDs,
-    "AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL OR fu.Mon6Date = '')");
+  var sql = [
+    'SELECT p.PtDetailsTID, p.UnitTBNo, p.RegDate, p.PtName, p.Age,',
+    '       p.Village, p.Payam, p.PtPhone, p.PtTypeID, p.NearestHFID,',
+    '       s.Sex, pt.PtTypeShort,',
+    "       COALESCE(hf.HealthFacility,'') AS HealthFacility,",
+    '       (' + dayExpr + ') AS DaysLate',
+    'FROM PtDetailsT p',
+    'LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0',
+    'LEFT JOIN SexT         s  ON p.SexID  = s.SexID',
+    'LEFT JOIN PtTypeT      pt ON p.PtTypeID = pt.PtTypeID',
+    'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
+    'WHERE p.Deleted = 0',
+    '  AND p.TbTypeID = 1',
+    '  AND p.PtTypeID <> 5',
+    '  AND p.Age > 4',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
+    '  AND (COALESCE(fu.Mon0LabResultID, 0) IN (1,4,5,6)',
+    '       OR COALESCE(fu.Mon0XpertResultID, 0) IN (3,4,5))',
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon5LabResultID, 0) IN (0, 3))',
+    '  ' + hf,
+    '  ' + modeFilter,
+    'ORDER BY DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'
+  ].join('\n');
+
+  try {
+    return _monRows(_db.exec(sql));
+  } catch (e) {
+    console.error('[MonDB] sputum5 query error:', e.message);
+    return [];
+  }
 }
 
 /**
- * Sputum @ 8 months (224 days): retreatment cases only (PtTypeID 2/3/4),
- * bacteriologically confirmed, no end-of-treatment smear yet.
+ * Sputum @ 6 months. DS-TB only (TbTypeID = 1).
+ * Ideal date = COALESCE(Mon5Date + 28, DateRxStarted + 168) with weekend adjustment.
+ * Includes patients where Mon6 result is null or "Not Done" (3).
+ */
+function getTBMonSputum6(mode, facilityIDs) {
+  if (!_db) return [];
+  var hf    = _monFacilityFilter(facilityIDs);
+  var ideal = "COALESCE(date(fu.Mon5Date, '+28 days'), date(p.DateRxStarted, '+168 days'))";
+  var dayExpr = "CAST(julianday('now') - julianday(" + ideal + ") AS INTEGER)"
+    + " - CASE strftime('%w', " + ideal + ")"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  var modeFilter = mode === 'missed'
+    ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= 56'
+    : 'AND (' + dayExpr + ') <= 0';
+
+  var sql = [
+    'SELECT p.PtDetailsTID, p.UnitTBNo, p.RegDate, p.PtName, p.Age,',
+    '       p.Village, p.Payam, p.PtPhone, p.PtTypeID, p.NearestHFID,',
+    '       s.Sex, pt.PtTypeShort,',
+    "       COALESCE(hf.HealthFacility,'') AS HealthFacility,",
+    '       (' + dayExpr + ') AS DaysLate',
+    'FROM PtDetailsT p',
+    'LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0',
+    'LEFT JOIN SexT         s  ON p.SexID  = s.SexID',
+    'LEFT JOIN PtTypeT      pt ON p.PtTypeID = pt.PtTypeID',
+    'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
+    'WHERE p.Deleted = 0',
+    "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
+    '  AND p.TbTypeID = 1',
+    '  AND p.PtTypeID <> 5',
+    '  AND p.Age > 4',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
+    '  AND (COALESCE(fu.Mon0LabResultID, 0) IN (1,4,5,6)',
+    '       OR COALESCE(fu.Mon0XpertResultID, 0) IN (3,4,5))',
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID, 0) IN (0, 3))',
+    '  ' + hf,
+    '  ' + modeFilter,
+    'ORDER BY DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'
+  ].join('\n');
+
+  try {
+    return _monRows(_db.exec(sql));
+  } catch (e) {
+    console.error('[MonDB] sputum6 query error:', e.message);
+    return [];
+  }
+}
+
+/**
+ * Sputum @ 8 months. TbTypeID = 1 (Pulmonary only — EP cases do not have sputum smears).
+ * Ideal date = COALESCE(Mon6Date + 56, DateRxStarted + 224) with weekend adjustment.
+ * Includes patients where Mon6 result is null or "Not Done" (3).
  */
 function getTBMonSputum8(mode, facilityIDs) {
-  return _tbMonSputumQuery(224, 56, mode, facilityIDs,
-    "AND p.PtTypeID IN (2,3,4)" +
-    " AND (fu.PtFollowUpTID IS NULL OR fu.Mon6Date IS NULL OR fu.Mon6Date = '')");
+  if (!_db) return [];
+  var hf    = _monFacilityFilter(facilityIDs);
+  var ideal = "COALESCE(date(fu.Mon6Date, '+56 days'), date(p.DateRxStarted, '+224 days'))";
+  var dayExpr = "CAST(julianday('now') - julianday(" + ideal + ") AS INTEGER)"
+    + " - CASE strftime('%w', " + ideal + ")"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  var modeFilter = mode === 'missed'
+    ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= 56'
+    : 'AND (' + dayExpr + ') <= 0';
+
+  var sql = [
+    'SELECT p.PtDetailsTID, p.UnitTBNo, p.RegDate, p.PtName, p.Age,',
+    '       p.Village, p.Payam, p.PtPhone, p.PtTypeID, p.NearestHFID,',
+    '       s.Sex, pt.PtTypeShort,',
+    "       COALESCE(hf.HealthFacility,'') AS HealthFacility,",
+    '       (' + dayExpr + ') AS DaysLate',
+    'FROM PtDetailsT p',
+    'LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0',
+    'LEFT JOIN SexT         s  ON p.SexID  = s.SexID',
+    'LEFT JOIN PtTypeT      pt ON p.PtTypeID = pt.PtTypeID',
+    'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
+    'WHERE p.Deleted = 0',
+    "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
+    '  AND p.TbTypeID = 1',
+    '  AND p.PtTypeID <> 5',
+    '  AND p.Age > 4',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
+    '  AND (COALESCE(fu.Mon0LabResultID, 0) IN (1,4,5,6)',
+    '       OR COALESCE(fu.Mon0XpertResultID, 0) IN (3,4,5))',
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon6LabResultID, 0) IN (0, 3))',
+    '  ' + hf,
+    '  ' + modeFilter,
+    'ORDER BY DaysLate ' + (mode === 'due' ? 'DESC' : 'ASC') + ', p.PtName'
+  ].join('\n');
+
+  try {
+    return _monRows(_db.exec(sql));
+  } catch (e) {
+    console.error('[MonDB] sputum8 query error:', e.message);
+    return [];
+  }
 }
 
 /** HIV testing due: active TB patients not yet tested (HIVTestResultID 0, 4 or missing). */
@@ -1261,12 +1411,14 @@ function getTBMonHIV(facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) = 0)',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    // TODO(user-prefs): 365-day limit on RegDate — make configurable in user preferences
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) <= 365",
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
     '  AND (fu.PtFollowUpTID IS NULL',
-    '       OR COALESCE(fu.HIVTestResultID, 0) IN (0, 4)',
-    "       OR fu.HIVTestDate IS NULL OR fu.HIVTestDate = '')",
+    '       OR COALESCE(fu.HIVTestResultID, 0) IN (0, 3, 4))',
     '  ' + hf,
-    'ORDER BY p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] HIV query:', e.message); return []; }
 }
@@ -1287,11 +1439,14 @@ function getTBMonCPT(facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND COALESCE(fu.OutcomeID, 0) = 0',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    // TODO(user-prefs): 365-day limit on RegDate — make configurable in user preferences
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) <= 365",
+    '  AND COALESCE(fu.OutcomeID, 0) IN (0, 7)',
     '  AND fu.HIVTestResultID = 2',
     '  AND COALESCE(fu.OnCPT, 0) = 0',
     '  ' + hf,
-    'ORDER BY p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] CPT query:', e.message); return []; }
 }
@@ -1312,11 +1467,14 @@ function getTBMonART(facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND COALESCE(fu.OutcomeID, 0) = 0',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    // TODO(user-prefs): 365-day limit on RegDate — make configurable in user preferences
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) <= 365",
+    '  AND COALESCE(fu.OutcomeID, 0) IN (0, 7)',
     '  AND fu.HIVTestResultID = 2',
     '  AND COALESCE(fu.OnART, 0) = 0',
     '  ' + hf,
-    'ORDER BY p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] ART query:', e.message); return []; }
 }
@@ -1342,14 +1500,17 @@ function getTBMonOutcomeMissing(facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
-    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) = 0)',
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    '  AND p.PtTypeID <> 5',
+    '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
     '  AND (',
-    "    (p.PtTypeID NOT IN (2,3,4) AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) > 168)",
+    // TODO(user-prefs): day bounds for outcome — make configurable in user preferences
+    "    (p.PtTypeID = 1 AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) BETWEEN 168 AND 270)",
     '    OR',
-    "    (p.PtTypeID IN (2,3,4) AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) > 252)",
+    "    (p.PtTypeID <> 1 AND CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER) BETWEEN 224 AND 320)",
     '  )',
     '  ' + hf,
-    'ORDER BY DaysSinceStart DESC, p.PtName'
+    'ORDER BY p.RegDate DESC'
   ].join('\n');
   try { return _monRows(_db.exec(sql)); } catch (e) { console.error('[MonDB] outcome query:', e.message); return []; }
 }
@@ -1551,15 +1712,16 @@ function getDQDuplicates(facilityIDs) {
     _DQ_JOINS,
     'WHERE p.Deleted = 0 ' + outerHF,
     "AND p.PtName != ''",
+    // 365-day rolling window — TODO: configurable via user preferences
+    "AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365",
     'AND EXISTS (',
     '  SELECT 1 FROM PtDetailsT d',
     '  WHERE d.Deleted = 0 AND d.PtDetailsTID != p.PtDetailsTID ' + innerHF,
     "  AND d.PtName != ''",
-    '  AND UPPER(TRIM(d.PtName))    = UPPER(TRIM(p.PtName))',
-    '  AND COALESCE(d.Age, -1)      = COALESCE(p.Age, -1)',
-    '  AND COALESCE(d.SexID, -1)    = COALESCE(p.SexID, -1)',
-    "  AND COALESCE(d.UnitTBNo, '') = COALESCE(p.UnitTBNo, '')",
-    "  AND COALESCE(d.RegDate, '')  = COALESCE(p.RegDate, '')",
+    '  AND UPPER(TRIM(d.PtName))      = UPPER(TRIM(p.PtName))',
+    '  AND COALESCE(d.Age, -1)        = COALESCE(p.Age, -1)',
+    '  AND COALESCE(d.PtTypeID, -1)   = COALESCE(p.PtTypeID, -1)',
+    "  AND COALESCE(d.RegDate, '')    = COALESCE(p.RegDate, '')",
     ')',
     'ORDER BY p.PtName, p.RegDate',
   ].join('\n');
@@ -1628,7 +1790,7 @@ function _dqSkippedCTE(hfFilter, minYear) {
     'valid AS (',
     '  SELECT PtDetailsTID, NearestHFID, RegYear, TBNoB',
     '  FROM normalized',
-    '  WHERE TBNoB > 0 AND TBNoB < 2000',
+    '  WHERE TBNoB > 0 AND TBNoB < 10000 AND NOT (TBNoB BETWEEN 2000 AND 2099)',
     '),',
     'ranges AS (',
     '  SELECT NearestHFID, RegYear, MIN(TBNoB) AS MinNo, MAX(TBNoB) AS MaxNo',
@@ -1737,9 +1899,13 @@ function getDQSmearNegCured(facilityIDs) {
     'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
     'LEFT JOIN OutcomeT        o  ON fu.OutcomeID  = o.OutcomeID',
     'WHERE p.Deleted = 0',
-    '  AND COALESCE(fu.OutcomeID, 0) = 1',           // Cured
-    '  AND COALESCE(fu.Mon0LabResultID, 0) NOT IN (1,4,5,6)',  // not smear-positive
-    '  AND COALESCE(fu.Mon0XpertResultID, 0) NOT IN (3,4,5)',  // not Xpert-positive
+    '  AND p.PtTypeID <> 5',                                         // exclude Transfer-In
+    '  AND p.DateRxStarted IS NOT NULL',
+    '  AND COALESCE(fu.OutcomeID, 0) = 1',                           // Cured
+    '  AND COALESCE(fu.Mon0LabResultID, 0) NOT IN (1,4,5,6)',        // not smear-positive
+    '  AND COALESCE(fu.Mon0XpertResultID, 0) NOT IN (3,4,5)',        // not Xpert-positive
+    "  AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)",
+    "   OR  (p.PtTypeID <> 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))",
     '  ' + hf,
     'ORDER BY p.PtName',
   ].join('\n');
@@ -1796,12 +1962,8 @@ function getDQMissingRegInfo(facilityIDs) {
  * Patients who are past their expected treatment end date with no DOTS outcome
  * recorded (OutcomeID = 0, 7, or no follow-up row at all).
  *
- * Treatment durations (1 TB month = 28 days):
- *   PtTypeID = 1 (New)                          → 6 months = 168 days
- *   PtTypeID IN (2,3,4,6) (Retreatment/Others)  → 8 months = 224 days
- *   PtTypeID IN (0,5,7)                         → excluded (unknown / Transfer-In / placeholder)
- *
- * "Not Evaluated" (OutcomeID = 6) is tracked separately — see getDQNotEvaluated.
+ * Treatment durations: New (PtTypeID=1) 180–540 days, Retreatment/Others 240–600 days.
+ * PtTypeID IN (0,5,7) excluded (unknown / Transfer-In / placeholder).
  */
 function getDQNoOutcome(facilityIDs) {
   if (!_db) return [];
@@ -1821,47 +1983,20 @@ function getDQNoOutcome(facilityIDs) {
     'LEFT JOIN OutcomeT        o  ON fu.OutcomeID  = o.OutcomeID',
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
+    "  AND p.PtName IS NOT NULL AND p.PtName != ''",
     '  AND p.PtTypeID NOT IN (0, 5, 7)',
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
+    // TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
     '  AND (',
-    '    (p.PtTypeID = 1          AND ' + days + ' > 168)',
+    '    (p.PtTypeID = 1          AND ' + days + ' BETWEEN 180 AND 540)',
     '    OR',
-    '    (p.PtTypeID IN (2,3,4,6) AND ' + days + ' > 224)',
+    '    (p.PtTypeID IN (2,3,4,6) AND ' + days + ' BETWEEN 240 AND 600)',
     '  )',
     '  ' + hf,
-    'ORDER BY p.DateRxStarted',
+    'ORDER BY p.DateRxStarted DESC',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
   catch (e) { console.error('[DQ] nooutcome:', e.message); return []; }
-}
-
-/**
- * Patients whose outcome is explicitly recorded as "Not Evaluated" (OutcomeID = 6).
- * Distinct from No DOTS Outcome — these patients have a follow-up record but it
- * carries the WHO "Not Evaluated" status, meaning the outcome could not be assessed.
- */
-function getDQNotEvaluated(facilityIDs) {
-  if (!_db) return [];
-  var hf  = _dqFacilityFilter(facilityIDs, 'p');
-  var sql = [
-    'SELECT ' + _DQ_COLS + ',',
-    "       COALESCE(o.Outcome,'') AS Outcome,",
-    "       CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) AS DaysSinceStart",
-    'FROM PtDetailsT p',
-    'JOIN  PtFollowUpT    fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0',
-    'LEFT JOIN SexT           s  ON p.SexID        = s.SexID',
-    'LEFT JOIN PtTypeT        pt ON p.PtTypeID     = pt.PtTypeID',
-    'LEFT JOIN TbTypeT        tt ON p.TbTypeID     = tt.TbTypeID',
-    'LEFT JOIN DiagMethodT    dm ON p.DiagMethodID = dm.DiagMethodID',
-    'LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID',
-    'LEFT JOIN OutcomeT        o  ON fu.OutcomeID  = o.OutcomeID',
-    'WHERE p.Deleted = 0',
-    '  AND fu.OutcomeID = 6',
-    '  ' + hf,
-    'ORDER BY p.DateRxStarted',
-  ].join('\n');
-  try { return _dqRows(_db.exec(sql)); }
-  catch (e) { console.error('[DQ] notevaluated:', e.message); return []; }
 }
 
 /** Patients with no TB diagnostic method recorded (DiagMethodID = 0 or null). */
@@ -1871,7 +2006,8 @@ function getDQDiagMethodMissing(facilityIDs) {
   var sql = [
     'SELECT ' + _DQ_COLS,
     _DQ_JOINS,
-    'WHERE p.Deleted = 0 AND COALESCE(p.DiagMethodID, 0) = 0 ' + hf,
+    'WHERE p.Deleted = 0 AND COALESCE(p.DiagMethodID, 0) = 0' +
+    " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180 " + hf,
     'ORDER BY p.PtName',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
@@ -1893,25 +2029,12 @@ function getDQNoTreatmentStart(facilityIDs) {
     "  AND (p.DateRxStarted IS NULL OR p.DateRxStarted = '')",
     "  AND p.RegDate IS NOT NULL AND p.RegDate != ''",
     "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) > 14",
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180",
     '  ' + hf,
     'ORDER BY p.RegDate',
   ].join('\n');
   try { return _dqRows(_db.exec(sql)); }
   catch (e) { console.error('[DQ] norxstart:', e.message); return []; }
-}
-
-/** Patients whose registration date is in the future (data-entry error). */
-function getDQFutureDates(facilityIDs) {
-  if (!_db) return [];
-  var hf  = _dqFacilityFilter(facilityIDs, 'p');
-  var sql = [
-    'SELECT ' + _DQ_COLS,
-    _DQ_JOINS,
-    "WHERE p.Deleted = 0 AND p.RegDate IS NOT NULL AND p.RegDate > date('now') " + hf,
-    'ORDER BY p.RegDate DESC',
-  ].join('\n');
-  try { return _dqRows(_db.exec(sql)); }
-  catch (e) { console.error('[DQ] futuredates:', e.message); return []; }
 }
 
 /** Soft-deleted patients (Deleted = 1) — can be restored. */
@@ -1945,7 +2068,7 @@ function getDQDeletedPatients(facilityIDs) {
  * @param {number}   cfYear    Calendar year of the CF period
  */
 function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYear, scStart, scEnd) {
-  if (!_db) return { duplicates:0, sametbno:0, missingreg:0, diagmethod:0, scmissed2:0, scmissed3:0, nooutcome:0, smearcured:0, notevaluated:0, skipped:0 };
+  if (!_db) return { duplicates:0, sametbno:0, missingreg:0, diagmethod:0, scmissed2:0, scmissed3:0, nooutcome:0, smearcured:0, skipped:0 };
 
   var outerHF = _dqFacilityFilter(facilityIDs, 'p');
   var innerHF = _dqFacilityFilter(facilityIDs, 'd');
@@ -1961,10 +2084,9 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
       ' AND EXISTS (SELECT 1 FROM PtDetailsT d' +
       '  WHERE d.Deleted = 0 AND d.PtDetailsTID != p.PtDetailsTID ' + innerHF +
       "  AND d.PtName != '' AND UPPER(TRIM(d.PtName)) = UPPER(TRIM(p.PtName))" +
-      '  AND COALESCE(d.Age,-1) = COALESCE(p.Age,-1)' +
-      '  AND COALESCE(d.SexID,-1) = COALESCE(p.SexID,-1)' +
-      "  AND COALESCE(d.UnitTBNo,'') = COALESCE(p.UnitTBNo,'')" +
-      "  AND COALESCE(d.RegDate,'') = COALESCE(p.RegDate,''))"),
+      '  AND COALESCE(d.Age,-1)      = COALESCE(p.Age,-1)' +
+      '  AND COALESCE(d.PtTypeID,-1) = COALESCE(p.PtTypeID,-1)' +
+      "  AND COALESCE(d.RegDate,'')  = COALESCE(p.RegDate,''))"),
 
     sametbno: _dqCount(
       "WITH norm AS (SELECT p.PtDetailsTID, p.NearestHFID, CAST(strftime('%Y',p.RegDate) AS INTEGER) AS RegYear," +
@@ -2009,14 +2131,10 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
 
     smearcured: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0' +
-      ' WHERE p.Deleted=0' + toF +
+      ' WHERE p.Deleted=0 AND p.PtTypeID <> 5' + toF +
       ' AND COALESCE(fu.OutcomeID,0)=1' +
       ' AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)' +
       ' AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) ' + outerHF),
-
-    notevaluated: _dqCount(
-      'SELECT COUNT(*) FROM PtDetailsT p JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0' +
-      ' WHERE p.Deleted=0 AND fu.OutcomeID=6' + toF + ' ' + outerHF),
 
     skipped: _dqCount(
       _dqSkippedCTE(outerHF, minYear) + '\nSELECT COUNT(*) FROM gaps'),
@@ -2027,7 +2145,7 @@ function getDQCountsForReport(facilityIDs, cfStart, cfEnd, toStart, toEnd, cfYea
  * Returns the patient list for a given DQ category, filtered to the report date ranges.
  * Used by the pre-report DQ modal's detail panel.
  *
- * @param {string}   category    One of: duplicates|sametbno|missingreg|diagmethod|nooutcome|smearcured|notevaluated|skipped
+ * @param {string}   category    One of: duplicates|sametbno|missingreg|diagmethod|nooutcome|smearcured|skipped
  * @param {number[]} facilityIDs
  * @param {string}   cfStart     YYYY-MM-DD  (registration period start)
  * @param {string}   cfEnd       YYYY-MM-DD  (registration period end)
@@ -2152,26 +2270,12 @@ function getDQListForReport(category, facilityIDs, cfStart, cfEnd, toStart, toEn
         'LEFT JOIN SexT s ON p.SexID=s.SexID LEFT JOIN PtTypeT pt ON p.PtTypeID=pt.PtTypeID',
         'LEFT JOIN TbTypeT tt ON p.TbTypeID=tt.TbTypeID LEFT JOIN DiagMethodT dm ON p.DiagMethodID=dm.DiagMethodID',
         'LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID LEFT JOIN OutcomeT o ON fu.OutcomeID=o.OutcomeID',
-        'WHERE p.Deleted=0' + toF,
+        'WHERE p.Deleted=0 AND p.PtTypeID <> 5' + toF,
         '  AND COALESCE(fu.OutcomeID,0)=1',
         '  AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)',
         '  AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5) ' + outerHF,
         'ORDER BY p.PtName',
       ].join('\n')));
-
-      case 'notevaluated': {
-        var daysNE = "CAST(julianday('now')-julianday(p.DateRxStarted) AS INTEGER)";
-        return _dqRows(_db.exec([
-          "SELECT " + _DQ_COLS + ", p.RegimenID, COALESCE(o.Outcome,'') AS Outcome, " + daysNE + ' AS DaysSinceStart',
-          'FROM PtDetailsT p',
-          'JOIN PtFollowUpT fu ON p.PtDetailsTID=fu.PtDetailsTID AND fu.Deleted=0',
-          'LEFT JOIN SexT s ON p.SexID=s.SexID LEFT JOIN PtTypeT pt ON p.PtTypeID=pt.PtTypeID',
-          'LEFT JOIN TbTypeT tt ON p.TbTypeID=tt.TbTypeID LEFT JOIN DiagMethodT dm ON p.DiagMethodID=dm.DiagMethodID',
-          'LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID LEFT JOIN OutcomeT o ON fu.OutcomeID=o.OutcomeID',
-          'WHERE p.Deleted=0 AND fu.OutcomeID=6' + toF + ' ' + outerHF,
-          'ORDER BY p.DateRxStarted',
-        ].join('\n')));
-      }
 
       case 'skipped': {
         var hfFilter = _dqFacilityFilter(facilityIDs, 'p');
@@ -2207,10 +2311,8 @@ function getDQList(category, facilityIDs) {
     case 'smearcured':  return getDQSmearNegCured(facilityIDs);
     case 'missingreg':  return getDQMissingRegInfo(facilityIDs);
     case 'nooutcome':    return getDQNoOutcome(facilityIDs);
-    case 'notevaluated': return getDQNotEvaluated(facilityIDs);
     case 'diagmethod':   return getDQDiagMethodMissing(facilityIDs);
     case 'norxstart':   return getDQNoTreatmentStart(facilityIDs);
-    case 'futuredates': return getDQFutureDates(facilityIDs);
     case 'deleted':     return getDQDeletedPatients(facilityIDs);
     default:            return [];
   }
@@ -2221,7 +2323,7 @@ function getDQList(category, facilityIDs) {
  * Uses COUNT(*) queries for efficiency rather than fetching all rows.
  */
 function getDQCounts(facilityIDs) {
-  if (!_db) return { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, notevaluated:0, diagmethod:0, norxstart:0, futuredates:0, deleted:0 };
+  if (!_db) return { all:0, duplicates:0, skipped:0, sametbno:0, smearcured:0, missingreg:0, nooutcome:0, diagmethod:0, norxstart:0, deleted:0 };
 
   var outerHF = _dqFacilityFilter(facilityIDs, 'p');
   var innerHF = _dqFacilityFilter(facilityIDs, 'd');
@@ -2233,15 +2335,16 @@ function getDQCounts(facilityIDs) {
     duplicates: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0 ' + outerHF +
       " AND p.PtName != ''" +
+      // 365-day rolling window — TODO: configurable via user preferences
+      " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365" +
       ' AND EXISTS (' +
       '  SELECT 1 FROM PtDetailsT d' +
       '  WHERE d.Deleted = 0 AND d.PtDetailsTID != p.PtDetailsTID ' + innerHF +
       "  AND d.PtName != ''" +
-      '  AND UPPER(TRIM(d.PtName))    = UPPER(TRIM(p.PtName))' +
-      '  AND COALESCE(d.Age, -1)      = COALESCE(p.Age, -1)' +
-      '  AND COALESCE(d.SexID, -1)    = COALESCE(p.SexID, -1)' +
-      "  AND COALESCE(d.UnitTBNo, '') = COALESCE(p.UnitTBNo, '')" +
-      "  AND COALESCE(d.RegDate, '')  = COALESCE(p.RegDate, '')" +
+      '  AND UPPER(TRIM(d.PtName))      = UPPER(TRIM(p.PtName))' +
+      '  AND COALESCE(d.Age, -1)        = COALESCE(p.Age, -1)' +
+      '  AND COALESCE(d.PtTypeID, -1)   = COALESCE(p.PtTypeID, -1)' +
+      "  AND COALESCE(d.RegDate, '')    = COALESCE(p.RegDate, '')" +
       ')'),
 
     skipped: _dqCount(
@@ -2255,7 +2358,10 @@ function getDQCounts(facilityIDs) {
       " CAST(REPLACE(COALESCE(p.UnitTBNo,''), '\\', '/') AS INTEGER) AS TBNoB" +
       ' FROM PtDetailsT p' +
       " WHERE p.Deleted = 0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo != ''" +
-      " AND p.RegDate IS NOT NULL AND p.RegDate != '' " + outerHF + '),' +
+      " AND p.RegDate IS NOT NULL AND p.RegDate != ''" +
+      // 365-day rolling window — TODO: configurable via user preferences
+      " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 365" +
+      ' ' + outerHF + '),' +
       'dupes AS (' +
       ' SELECT NearestHFID, RegYear, TBNoB FROM normalized WHERE TBNoB > 0' +
       ' GROUP BY NearestHFID, RegYear, TBNoB HAVING COUNT(*) > 1)' +
@@ -2269,14 +2375,18 @@ function getDQCounts(facilityIDs) {
       'SELECT COUNT(*) FROM PtDetailsT p' +
       ' LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0' +
       ' WHERE p.Deleted = 0' +
+      ' AND p.PtTypeID <> 5' +
+      ' AND p.DateRxStarted IS NOT NULL' +
       ' AND COALESCE(fu.OutcomeID, 0) = 1' +
       ' AND COALESCE(fu.Mon0LabResultID, 0) NOT IN (1,4,5,6)' +
       ' AND COALESCE(fu.Mon0XpertResultID, 0) NOT IN (3,4,5)' +
+      " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)" +
+      "  OR  (p.PtTypeID <> 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))" +
       ' ' + outerHF),
 
     missingreg: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0 ' + outerHF +
-      " AND (p.RegDate IS NULL OR p.RegDate = '' OR p.RegDate >= date('now', '-540 days'))" +
+      " AND (p.RegDate IS NULL OR p.RegDate = '' OR p.RegDate >= date('now', '-180 days'))" +
       " AND (p.PtName IS NULL OR p.PtName = ''"+
       " OR p.UnitTBNo IS NULL OR TRIM(p.UnitTBNo) = ''"+
       ' OR p.Age = 0 OR p.Age IS NULL' +
@@ -2288,37 +2398,30 @@ function getDQCounts(facilityIDs) {
       " OR p.DateRxStarted IS NULL OR p.DateRxStarted = ''"+
       ' OR p.DiagMethodID = 0 OR p.DiagMethodID IS NULL)'),
 
+    // TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
     nooutcome: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p' +
       ' LEFT JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0' +
       ' WHERE p.Deleted = 0' +
       " AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''" +
+      " AND p.PtName IS NOT NULL AND p.PtName != ''" +
       ' AND p.PtTypeID NOT IN (0, 5, 7)' +
       ' AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))' +
-      " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) > 168)" +
-      "   OR (p.PtTypeID IN (2,3,4,6) AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) > 224))" +
-      ' ' + outerHF),
-
-    notevaluated: _dqCount(
-      'SELECT COUNT(*) FROM PtDetailsT p' +
-      ' JOIN PtFollowUpT fu ON p.PtDetailsTID = fu.PtDetailsTID AND fu.Deleted = 0' +
-      ' WHERE p.Deleted = 0 AND fu.OutcomeID = 6' +
+      " AND ((p.PtTypeID = 1 AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 180 AND 540)" +
+      "   OR (p.PtTypeID IN (2,3,4,6) AND CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) BETWEEN 240 AND 600))" +
       ' ' + outerHF),
 
     diagmethod: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0' +
-      ' AND COALESCE(p.DiagMethodID, 0) = 0 ' + outerHF),
+      " AND COALESCE(p.DiagMethodID, 0) = 0 AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180 " + outerHF),
 
     norxstart: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0' +
       " AND (p.DateRxStarted IS NULL OR p.DateRxStarted = '')" +
       " AND p.RegDate IS NOT NULL AND p.RegDate != ''" +
       " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) > 14" +
+      " AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) < 180" +
       ' ' + outerHF),
-
-    futuredates: _dqCount(
-      "SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 0" +
-      " AND p.RegDate IS NOT NULL AND p.RegDate > date('now') " + outerHF),
 
     deleted: _dqCount(
       'SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted = 1 ' + outerHF),
