@@ -1443,9 +1443,10 @@ public sealed class TBPatientsController : ControllerBase
                 var r8 = await cmd8.ExecuteScalarAsync();
                 sputum8 = r8 == null || r8 == DBNull.Value ? 0 : Convert.ToInt32(r8);
             }
-            int hiv      = await MonCount("AND p.PtName IS NOT NULL AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))", 0, 0, sputum: false);
-            int cpt      = await MonCountInner("AND p.PtName IS NOT NULL AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
-            int art      = await MonCountInner("AND p.PtName IS NOT NULL AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
+            // TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
+            int hiv      = await MonCount("AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-365,GETDATE()) AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))", 0, 0, sputum: false);
+            int cpt      = await MonCountInner("AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-365,GETDATE()) AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
+            int art      = await MonCountInner("AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-365,GETDATE()) AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
             int outcome;
             {
                 var sql = $"""
@@ -1669,6 +1670,8 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
+                      -- TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
+                      AND p.RegDate >= DATEADD(DAY,-365,GETDATE())
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))
                       {facP}
@@ -1682,6 +1685,8 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
+                      -- TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
+                      AND p.RegDate >= DATEADD(DAY,-365,GETDATE())
                       AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnCPT,0) = 0
@@ -1696,6 +1701,8 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
+                      -- TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
+                      AND p.RegDate >= DATEADD(DAY,-365,GETDATE())
                       AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnART,0) = 0

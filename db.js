@@ -1412,6 +1412,8 @@ function getTBMonHIV(facilityIDs) {
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
     "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    // TODO(user-prefs): 365-day limit on RegDate — make configurable in user preferences
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) <= 365",
     '  AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID, 0) IN (0, 7))',
     '  AND (fu.PtFollowUpTID IS NULL',
     '       OR COALESCE(fu.HIVTestResultID, 0) IN (0, 3, 4))',
@@ -1438,6 +1440,8 @@ function getTBMonCPT(facilityIDs) {
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
     "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    // TODO(user-prefs): 365-day limit on RegDate — make configurable in user preferences
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) <= 365",
     '  AND COALESCE(fu.OutcomeID, 0) IN (0, 7)',
     '  AND fu.HIVTestResultID = 2',
     '  AND COALESCE(fu.OnCPT, 0) = 0',
@@ -1464,6 +1468,8 @@ function getTBMonART(facilityIDs) {
     'WHERE p.Deleted = 0',
     "  AND p.DateRxStarted IS NOT NULL AND p.DateRxStarted != ''",
     "  AND p.PtName IS NOT NULL AND p.PtName != ''",
+    // TODO(user-prefs): 365-day limit on RegDate — make configurable in user preferences
+    "  AND CAST(julianday('now') - julianday(p.RegDate) AS INTEGER) <= 365",
     '  AND COALESCE(fu.OutcomeID, 0) IN (0, 7)',
     '  AND fu.HIVTestResultID = 2',
     '  AND COALESCE(fu.OnART, 0) = 0',
