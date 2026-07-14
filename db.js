@@ -1169,7 +1169,7 @@ function _monRows(r) {
  * @param {number[]}       facilityIDs     - empty = all
  * @param {string}         extraWhere      - additional SQL fragments (internal, safe)
  */
-function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere, dayExprOverride) {
+function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere, dayExprOverride, orderByOverride) {
   if (!_db) return [];
   var hf = _monFacilityFilter(facilityIDs);
   var dayExpr;
@@ -1210,7 +1210,7 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
     '  ' + extraWhere,
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY DaysLate DESC, p.PtName'
+    'ORDER BY ' + (orderByOverride || 'DaysLate DESC, p.PtName')
   ].join('\n');
 
   try {
@@ -1226,7 +1226,8 @@ function getTBMonSputum2(mode, facilityIDs) {
   return _tbMonSputumQuery(56, 28, mode, facilityIDs,
     "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR fu.Mon2Date = ''"
     + " OR COALESCE(fu.Mon2LabResultID, 0) IN (0, 3, 7))"
-    + " AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))");
+    + " AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
+    null, 'p.RegDate DESC');
 }
 
 /**
@@ -1243,7 +1244,7 @@ function getTBMonSputum3(mode, facilityIDs) {
     "AND COALESCE(fu.Mon2LabResultID, 0) NOT IN (2, 7)" +
     " AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL OR fu.Mon3Date = ''" +
     " OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
-    dayExpr);
+    dayExpr, 'p.RegDate DESC');
 }
 
 /** Sputum @ 5 months (140 days): bacteriologically confirmed, no Mon5 smear yet. */
