@@ -11296,7 +11296,8 @@ function resolveGeoScope(user, geo) {
       st.counties.get(r.CountyID).facilities.push({ id: r.HealthFacilityID, name: r.HealthFacility });
     }
 
-    const sortedStates = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const sortedStates    = [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const countryChildren = _el('div', 'rpt-tree-children open');
 
     for (const [stateId, stateData] of sortedStates) {
       const stateNode     = _el('div', 'rpt-tree-node rpt-tree-state');
@@ -11353,6 +11354,7 @@ function resolveGeoScope(user, geo) {
           if (!cb.disabled) { cb.checked = checked; cb.indeterminate = false; }
         });
         stateCb.indeterminate = false;
+        refreshAncestors();
         updateSummary();
       });
       stateLabel.addEventListener('click', () => { if (!stateCb.disabled) stateCb.click(); });
@@ -11362,8 +11364,27 @@ function resolveGeoScope(user, geo) {
       stateNode.appendChild(stateCb);
       stateNode.appendChild(stateLabel);
       stateNode.appendChild(stateChildren);
-      treeEl.appendChild(stateNode);
+      countryChildren.appendChild(stateNode);
     }
+
+    const countryCb     = _checkbox('country', 0);
+    const countryLabel  = _el('span', 'rpt-tree-label', 'South Sudan');
+    const countryToggle = _el('span', 'rpt-tree-toggle open');
+    const countryNode   = _el('div', 'rpt-tree-node rpt-tree-country');
+    countryCb.addEventListener('change', () => {
+      countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+        if (!cb.disabled) { cb.checked = countryCb.checked; cb.indeterminate = false; }
+      });
+      countryCb.indeterminate = false;
+      updateSummary();
+    });
+    countryLabel.addEventListener('click', () => { if (!countryCb.disabled) countryCb.click(); });
+    countryToggle.addEventListener('click', () => _toggleChildren(countryChildren, countryToggle));
+    countryNode.appendChild(countryToggle);
+    countryNode.appendChild(countryCb);
+    countryNode.appendChild(countryLabel);
+    countryNode.appendChild(countryChildren);
+    treeEl.appendChild(countryNode);
 
     applyScope(scope);
     updateSummary(true);
@@ -11401,6 +11422,12 @@ function resolveGeoScope(user, geo) {
         if (ch && !ch.classList.contains('open')) { ch.classList.add('open'); tog?.classList.add('open'); }
       }
     }
+    // Show/hide country node based on whether any state children are visible
+    for (const countryNode of treeEl.querySelectorAll('.rpt-tree-country')) {
+      const visibleStates = [...countryNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state')]
+        .some(n => n.style.display !== 'none');
+      countryNode.style.display = visibleStates ? '' : 'none';
+    }
   }
 
   if (treeSearchEl) {
@@ -11435,7 +11462,7 @@ function resolveGeoScope(user, geo) {
   }
 
   // ── Ancestor state refresh ────────────────────────────────────────────
-  // Re-scans all county + state nodes and sets checked/indeterminate states.
+  // Re-scans all county + state + country nodes and sets checked/indeterminate states.
   function refreshAncestors() {
     for (const countyNode of treeEl.querySelectorAll('.rpt-tree-county')) {
       const countyCb  = countyNode.querySelector(':scope > .rpt-tree-cb');
@@ -11446,6 +11473,11 @@ function resolveGeoScope(user, geo) {
       const stateCb   = stateNode.querySelector(':scope > .rpt-tree-cb');
       const countyCbs = [...stateNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
       _setParentState(stateCb, countyCbs);
+    }
+    for (const countryNode of treeEl.querySelectorAll('.rpt-tree-country')) {
+      const countryCb = countryNode.querySelector(':scope > .rpt-tree-cb');
+      const stateCbs  = [...countryNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+      _setParentState(countryCb, stateCbs);
     }
   }
 
