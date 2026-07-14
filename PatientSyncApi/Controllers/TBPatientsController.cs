@@ -1346,7 +1346,7 @@ public sealed class TBPatientsController : ControllerBase
                     LEFT JOIN HealthFacilityT hf ON p.NearestHFID = hf.HealthFacilityID
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
-                      AND COALESCE(fu.OutcomeID,0) = 0
+                      AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       {extraWhere}
                       {facP}
                     """;
@@ -1682,7 +1682,7 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
-                      AND COALESCE(fu.OutcomeID,0) = 0
+                      AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnCPT,0) = 0
                       {facP}
@@ -1696,7 +1696,7 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
-                      AND COALESCE(fu.OutcomeID,0) = 0
+                      AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnART,0) = 0
                       {facP}
