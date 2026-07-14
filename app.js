@@ -7081,6 +7081,10 @@ let _dqSkippedRows  = [];  // gap rows for the skipped category (used by Excel e
 let _dqTotalCount   = 0;    // server total for current category (used by paging)
 let _dqIsPaging     = false; // guard: one page load at a time
 let _dqPageObserver = null;  // IntersectionObserver on the load-more sentinel
+let _monIsPaging      = false; // guard: one page load at a time
+let _monPageObserver  = null;  // IntersectionObserver on the load-more sentinel
+let _monRenderedCount = 0;     // rows rendered so far (for batch paging)
+const MON_PAGE        = 500;   // rows per batch
 
 /** Persist the selected facility to localStorage so it survives page reloads. */
 function _saveSelectedFacility(fac) {
@@ -8763,7 +8767,131 @@ function _monCatTitle(cat, mode) {
   }
 }
 
-/** Render the patient table. */
+/** Build a single monitoring patient row HTML string. */
+function _monBuildRowHtml(cat, p, isSputum, isOutcome) {
+  let daysCell = '';
+  if (isSputum) {
+    const d   = p.DaysLate;
+    const cls = d > 0 ? 'mon-days-late' : d === 0 ? 'mon-days-today' : 'mon-days-due';
+    const lbl = _monMode === 'missed' ? (d > 0 ? '+' + d : '0') : Math.abs(d);
+    daysCell = `<td class="${cls}">${lbl}</td>`;
+  } else if (isOutcome) {
+    daysCell = `<td>${p.DaysSinceStart != null ? p.DaysSinceStart : ''}</td>`;
+  }
+  return `<tr data-tid="${escHtml(p.PtDetailsTID)}" data-hfid="${p.NearestHFID || 0}" data-hfname="${escHtml(p.HealthFacility || '')}">
+      <td>${escHtml(p.UnitTBNo || '')}</td>
+      <td>${p.RegDate ? fmtDate(p.RegDate.slice(0, 10)) : ''}</td>
+      <td>${escHtml(truncateDisplayName(p.PtName))}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${escHtml(String(p.PtDetailsTID))}" aria-label="Select ${escHtml(p.PtName || '')}"></td>
+      <td>${p.Age != null ? p.Age : ''}</td>
+      <td>${escHtml(p.Sex === 'Male' ? 'M' : p.Sex === 'Female' ? 'F' : (p.Sex || ''))}</td>
+      <td>${escHtml(p.Village || '')}</td>
+      <td>${escHtml(p.PtPhone || '')}</td>
+      <td>${escHtml(p.HealthFacility || '')}</td>
+      <td>${escHtml(p.PtTypeShort || '')}</td>
+      ${daysCell}
+    </tr>`;
+}
+
+/** Attach row-click handlers; uses data-mon-click to skip already-wired rows. */
+function _monAttachRowHandlers(tbody) {
+  tbody.querySelectorAll('tr[data-tid]:not([data-mon-click])').forEach(tr => {
+    tr.dataset.monClick = '1';
+    tr.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
+      const tid    = tr.dataset.tid;
+      const hfid   = Number(tr.dataset.hfid);
+      const hfname = tr.dataset.hfname || '';
+      if (!tid || !hfid) return;
+      const facInfo = getMonitoringFacilityInfo(hfid);
+      _fromMonitoring = true;
+      if (tbMonitoringScreen) tbMonitoringScreen.hidden = true;
+      if (artRegisterScreen)  artRegisterScreen.hidden  = false;
+      _saveSelectedFacility({
+        id:       hfid,
+        name:     hfname,
+        county:   facInfo ? (facInfo.County   || '') : '',
+        state:    facInfo ? (facInfo.State    || '') : '',
+        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
+        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
+      });
+      _selectedRegister = 'tb';
+      updateFacilityBanner();
+      applyFacilityGate();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      loadAndRenderGeoTree();
+      const backBtn = document.getElementById('back-to-dashboard-btn');
+      if (backBtn) backBtn.innerHTML =
+        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Monitoring`;
+      const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
+      if (bottomBackBtn) bottomBackBtn.hidden = false;
+      _pendingMonCategory = _monCategory;
+      await _fetchAndUpsertTBPatientIfNeeded(tid);
+      startEditTBPatient(tid);
+    });
+  });
+}
+
+/** Set up (or reset) an IntersectionObserver sentinel at the bottom of the monitoring list. */
+function _monSetupPagingSentinel(cat) {
+  if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+  document.getElementById('mon-page-sentinel')?.remove();
+  if (_monRenderedCount >= _monCurrentRows.length) return;
+  const tbody     = document.getElementById('mon-patient-tbody');
+  const tableWrap = document.querySelector('.table-wrap--mon-scroll');
+  if (!tbody || !tableWrap) return;
+  const remaining = _monCurrentRows.length - _monRenderedCount;
+  const sentinel  = document.createElement('tr');
+  sentinel.id = 'mon-page-sentinel';
+  sentinel.innerHTML = `<td colspan="11" style="text-align:center;padding:0.6rem;background:#f0fdf4;font-size:0.82rem">
+    <span id="mon-page-spinner" hidden style="display:inline-block;background:#0891b2;color:#fff;padding:3px 14px;border-radius:20px;font-weight:600;letter-spacing:0.02em"><span class="dq-spin-icon">↻</span> Loading more…</span>
+    <span id="mon-page-more" style="color:#0f766e;font-weight:600">${remaining.toLocaleString()} more ↓</span></td>`;
+  tbody.appendChild(sentinel);
+  _monPageObserver = new IntersectionObserver(entries => {
+    if (!entries[0].isIntersecting || _monIsPaging) return;
+    _monLoadNextPage(cat);
+  }, { root: tableWrap, rootMargin: '80px', threshold: 0 });
+  _monPageObserver.observe(sentinel);
+}
+
+/** Append the next batch of rows from _monCurrentRows into the monitoring table. */
+function _monLoadNextPage(cat) {
+  if (_monIsPaging) return;
+  _monIsPaging = true;
+  const spinner = document.getElementById('mon-page-spinner');
+  const moreEl  = document.getElementById('mon-page-more');
+  if (spinner) spinner.hidden = false;
+  if (moreEl)  moreEl.hidden  = true;
+  try {
+    const isSputum  = ['2month','3month','5month','6month','8month'].includes(cat);
+    const isOutcome = cat === 'outcome';
+    const nextBatch = _monCurrentRows.slice(_monRenderedCount, _monRenderedCount + MON_PAGE);
+    const tbody     = document.getElementById('mon-patient-tbody');
+    const sentinel  = document.getElementById('mon-page-sentinel');
+    if (tbody && sentinel && nextBatch.length) {
+      sentinel.insertAdjacentHTML('beforebegin', nextBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join(''));
+      _monAttachRowHandlers(tbody);
+      _monRenderedCount += nextBatch.length;
+      const selectAll = document.getElementById('mon-select-all');
+      if (selectAll?.checked) {
+        tbody.querySelectorAll('.row-check:not(:checked)').forEach(cb => { cb.checked = true; });
+      }
+    }
+    if (_monRenderedCount >= _monCurrentRows.length) {
+      document.getElementById('mon-page-sentinel')?.remove();
+      if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+      const hintEl = document.getElementById('mon-list-hint');
+      if (hintEl) hintEl.textContent = 'HINT: Click any patient row to view or update their medical record';
+    } else {
+      const remaining = _monCurrentRows.length - _monRenderedCount;
+      if (moreEl)  { moreEl.hidden = false; moreEl.textContent = `${remaining.toLocaleString()} more ↓`; }
+      if (spinner) spinner.hidden = true;
+    }
+  } finally {
+    _monIsPaging = false;
+  }
+}
+
 function _monRenderList(cat, rows) {
   const tbody   = document.getElementById('mon-patient-tbody');
   const titleEl = document.getElementById('mon-list-title');
@@ -8772,8 +8900,14 @@ function _monRenderList(cat, rows) {
   const colHdEl = document.getElementById('mon-late-col-hd');
   if (!tbody) return;
 
-  // Store current rows for export
+  // Clean up any previous paging state
+  if (_monPageObserver) { _monPageObserver.disconnect(); _monPageObserver = null; }
+  document.getElementById('mon-page-sentinel')?.remove();
+  _monIsPaging = false;
+
+  // Store all rows for export and batch paging
   _monCurrentRows = rows;
+  _monRenderedCount = 0;
 
   // Select-all checkbox starts unchecked — user must explicitly choose records to export
   const monSelectAll = document.getElementById('mon-select-all');
@@ -8811,71 +8945,19 @@ function _monRenderList(cat, rows) {
     return;
   }
 
-  tbody.innerHTML = rows.map(p => {
-    let daysCell = '';
-    if (isSputum) {
-      const d   = p.DaysLate;
-      const cls = d > 0 ? 'mon-days-late' : d === 0 ? 'mon-days-today' : 'mon-days-due';
-      const lbl = _monMode === 'missed' ? (d > 0 ? '+' + d : '0') : Math.abs(d);
-      daysCell = `<td class="${cls}">${lbl}</td>`;
-    } else if (isOutcome) {
-      daysCell = `<td>${p.DaysSinceStart != null ? p.DaysSinceStart : ''}</td>`;
-    }
-    return `<tr data-tid="${escHtml(p.PtDetailsTID)}" data-hfid="${p.NearestHFID || 0}" data-hfname="${escHtml(p.HealthFacility || '')}">
-      <td>${escHtml(p.UnitTBNo || '')}</td>
-      <td>${p.RegDate ? fmtDate(p.RegDate.slice(0, 10)) : ''}</td>
-      <td>${escHtml(truncateDisplayName(p.PtName))}</td>
-      <td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="row-check" value="${escHtml(String(p.PtDetailsTID))}" aria-label="Select ${escHtml(p.PtName || '')}"></td>
-      <td>${p.Age != null ? p.Age : ''}</td>
-      <td>${escHtml(p.Sex === 'Male' ? 'M' : p.Sex === 'Female' ? 'F' : (p.Sex || ''))}</td>
-      <td>${escHtml(p.Village || '')}</td>
-      <td>${escHtml(p.PtPhone || '')}</td>
-      <td>${escHtml(p.HealthFacility || '')}</td>
-      <td>${escHtml(p.PtTypeShort || '')}</td>
-      ${daysCell}
-    </tr>`;
-  }).join('');
+  // Render first batch (up to MON_PAGE rows)
+  const firstBatch = rows.slice(0, MON_PAGE);
+  tbody.innerHTML = firstBatch.map(p => _monBuildRowHtml(cat, p, isSputum, isOutcome)).join('');
+  _monRenderedCount = firstBatch.length;
+  _monAttachRowHandlers(tbody);
 
-  // Row click: open patient record in edit mode; track origin so back-btn can return here
-  tbody.querySelectorAll('tr[data-tid]').forEach(tr => {
-    tr.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('row-check') || e.target.type === 'checkbox') return;
-      const tid    = tr.dataset.tid;
-      const hfid   = Number(tr.dataset.hfid);
-      const hfname = tr.dataset.hfname || '';
-      if (!tid || !hfid) return;
+  // Set up scroll sentinel for any remaining rows
+  _monSetupPagingSentinel(cat);
 
-      const facInfo = getMonitoringFacilityInfo(hfid);
-      _fromMonitoring = true;
-
-      if (tbMonitoringScreen) tbMonitoringScreen.hidden = true;
-      if (artRegisterScreen)  artRegisterScreen.hidden  = false;
-
-      _saveSelectedFacility({
-        id:       hfid,
-        name:     hfname,
-        county:   facInfo ? (facInfo.County   || '') : '',
-        state:    facInfo ? (facInfo.State    || '') : '',
-        countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
-        stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
-      });
-      _selectedRegister = 'tb';
-      updateFacilityBanner();
-      applyFacilityGate();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      loadAndRenderGeoTree();   // populate the facility tree (empty when coming from monitoring)
-      // Relabel the back button so it's clear where it leads
-      const backBtn = document.getElementById('back-to-dashboard-btn');
-      if (backBtn) backBtn.innerHTML =
-        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Monitoring`;
-      // Show the bottom back-to-monitoring button
-      const bottomBackBtn = document.getElementById('tb-back-to-monitoring-btn');
-      if (bottomBackBtn) bottomBackBtn.hidden = false;
-      _pendingMonCategory = _monCategory;
-      await _fetchAndUpsertTBPatientIfNeeded(tid);
-      startEditTBPatient(tid);  // editable — not read-only
-    });
-  });
+  // Update hint if rows are deferred
+  if (_monRenderedCount < n && hintEl) {
+    hintEl.innerHTML = `Loaded <strong>${_monRenderedCount.toLocaleString()}</strong> of <strong>${n.toLocaleString()}</strong> — scroll down for more.`;
+  }
 }
 
 // ── Monitoring event listeners ────────────────────────────────────────────
