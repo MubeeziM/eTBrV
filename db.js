@@ -1169,15 +1169,20 @@ function _monRows(r) {
  * @param {number[]}       facilityIDs     - empty = all
  * @param {string}         extraWhere      - additional SQL fragments (internal, safe)
  */
-function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere) {
+function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extraWhere, dayExprOverride) {
   if (!_db) return [];
   var hf = _monFacilityFilter(facilityIDs);
-  var offsetStr = String(reviewDayOffset);
-  // Weekend adjustment: if the ideal review date (DateRxStarted + offset) falls on
-  // Saturday (%w=6) shift to Monday (+2); if Sunday (%w=0) shift to Monday (+1).
-  var dayExpr = "CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) - " + offsetStr
-    + " - CASE strftime('%w', date(p.DateRxStarted, '+" + offsetStr + " days'))"
-    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  var dayExpr;
+  if (dayExprOverride) {
+    dayExpr = dayExprOverride;
+  } else {
+    var offsetStr = String(reviewDayOffset);
+    // Weekend adjustment: if the ideal review date (DateRxStarted + offset) falls on
+    // Saturday (%w=6) shift to Monday (+2); if Sunday (%w=0) shift to Monday (+1).
+    dayExpr = "CAST(julianday('now') - julianday(p.DateRxStarted) AS INTEGER) - " + offsetStr
+      + " - CASE strftime('%w', date(p.DateRxStarted, '+" + offsetStr + " days'))"
+      + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
+  }
   var modeFilter = mode === 'missed'
     ? 'AND (' + dayExpr + ') > 0 AND (' + dayExpr + ') <= ' + gracePeriod
     : 'AND (' + dayExpr + ') <= 0';
@@ -1225,13 +1230,20 @@ function getTBMonSputum2(mode, facilityIDs) {
 }
 
 /**
- * Sputum @ 3 months (84 days): still positive at 2-month check, no Mon3 smear yet.
- * Only applies to smear-positive cases who had a positive 2-month result.
+ * Sputum @ 3 months: ideal date = Mon2Date+28 when available, else DateRxStarted+84.
+ * Includes patients where 2-month smear was positive, not done, or unrecorded
+ * (excludes only smear-negative (2) or contaminated (7) 2-month results).
  */
 function getTBMonSputum3(mode, facilityIDs) {
+  var ideal = "COALESCE(date(fu.Mon2Date, '+28 days'), date(p.DateRxStarted, '+84 days'))";
+  var dayExpr = "CAST(julianday('now') - julianday(" + ideal + ") AS INTEGER)"
+    + " - CASE strftime('%w', " + ideal + ")"
+    + " WHEN '6' THEN 2 WHEN '0' THEN 1 ELSE 0 END";
   return _tbMonSputumQuery(84, 56, mode, facilityIDs,
-    "AND COALESCE(fu.Mon2LabResultID, 0) IN (1,4,5,6)" +
-    " AND (fu.Mon3Date IS NULL OR fu.Mon3Date = '')");
+    "AND COALESCE(fu.Mon2LabResultID, 0) NOT IN (2, 7)" +
+    " AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL OR fu.Mon3Date = ''" +
+    " OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
+    dayExpr);
 }
 
 /** Sputum @ 5 months (140 days): bacteriologically confirmed, no Mon5 smear yet. */
