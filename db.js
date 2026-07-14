@@ -1210,7 +1210,7 @@ function _tbMonSputumQuery(reviewDayOffset, gracePeriod, mode, facilityIDs, extr
     '  ' + extraWhere,
     '  ' + hf,
     '  ' + modeFilter,
-    'ORDER BY ' + (orderByOverride || 'DaysLate DESC, p.PtName')
+    'ORDER BY ' + (orderByOverride || 'DaysLate ASC, p.PtName')
   ].join('\n');
 
   try {
@@ -1227,7 +1227,7 @@ function getTBMonSputum2(mode, facilityIDs) {
     "AND (fu.PtFollowUpTID IS NULL OR fu.Mon2Date IS NULL OR fu.Mon2Date = ''"
     + " OR COALESCE(fu.Mon2LabResultID, 0) IN (0, 3, 7))"
     + " AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
-    null, 'p.RegDate DESC');
+    null);
 }
 
 /**
@@ -1244,7 +1244,7 @@ function getTBMonSputum3(mode, facilityIDs) {
     "AND COALESCE(fu.Mon2LabResultID, 0) NOT IN (2, 7)" +
     " AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL OR fu.Mon3Date = ''" +
     " OR COALESCE(fu.Mon3LabResultID, 0) IN (0, 3, 7))",
-    dayExpr, 'p.RegDate DESC');
+    dayExpr);
 }
 
 /** Sputum @ 5 months (140 days): bacteriologically confirmed, no Mon5 smear yet. */

@@ -2869,6 +2869,25 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
   flex-shrink: 0;
 }
 
+/* Skeleton shimmer on count badges while server data is loading */
+.mon-stat-count--loading {
+  display: inline-block;
+  width: 28px;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: dq-shimmer 1.4s ease-in-out infinite;
+  vertical-align: middle;
+  color: transparent;
+  user-select: none;
+}
+.mon-stat-row--active .mon-stat-count--loading {
+  background: linear-gradient(90deg, rgba(255,255,255,.25) 25%, rgba(255,255,255,.45) 50%, rgba(255,255,255,.25) 75%);
+  background-size: 200% 100%;
+  animation: dq-shimmer 1.4s ease-in-out infinite;
+}
+
 /* ── Patient list area ───────────────────────────────────── */
 .mon-list-area {
   background: var(--card);
@@ -2880,6 +2899,25 @@ details[open]       > summary .tree-toggle-box::before { content: '\2212'; }
   flex-direction: column;
   gap: .35rem;
   min-width: 0;
+}
+
+/* Thin indeterminate progress bar above the patient list */
+.mon-load-bar {
+  height: 3px;
+  width: 100%;
+  overflow: hidden;
+  background: #e5e7eb;
+  border-radius: 2px;
+  margin-bottom: 2px;
+}
+.mon-load-bar::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: var(--primary, #2563eb);
+  border-radius: 2px;
+  animation: dq-bar-slide 1.2s ease-in-out infinite;
 }
 
 .mon-list-title {

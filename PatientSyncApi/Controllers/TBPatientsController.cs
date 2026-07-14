@@ -1471,7 +1471,7 @@ public sealed class TBPatientsController : ControllerBase
                       AND (fu.PtFollowUpTID IS NULL OR fu.Mon3Date IS NULL OR COALESCE(fu.Mon3LabResultID,0) IN (0,3,7))
                       {facP}
                       {modeFilter3}
-                    ORDER BY p.RegDate DESC
+                    ORDER BY DaysLate ASC, p.PtName
                     """;
                 break;
             }
@@ -1488,7 +1488,6 @@ public sealed class TBPatientsController : ControllerBase
                 string modeFilter = missed
                     ? $"AND ({daysLate}) > 0 AND ({daysLate}) <= {grace}"
                     : $"AND ({daysLate}) <= 0";
-                string orderBy = category == "2month" ? "p.RegDate DESC" : "DaysLate DESC, p.PtName";
                 querySql = $"""
                     SELECT {baseColsSputum},
                            {daysLate} AS DaysLate
@@ -1504,7 +1503,7 @@ public sealed class TBPatientsController : ControllerBase
                       {extra}
                       {facP}
                       {modeFilter}
-                    ORDER BY {orderBy}
+                    ORDER BY DaysLate ASC, p.PtName
                     """;
                 break;
             }

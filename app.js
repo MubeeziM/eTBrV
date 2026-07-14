@@ -8642,6 +8642,15 @@ function _monSetSidebarCollapsed(collapsed) {
 
 /** Recompute all category counts and re-render the active list. */
 async function _monRefreshAll(skipList = false) {
+  const countIds = ['mon-count-2month','mon-count-3month','mon-count-5month',
+    'mon-count-6month','mon-count-8month','mon-count-hiv','mon-count-cpt',
+    'mon-count-art','mon-count-hhp','mon-count-outcome'];
+  if (_monUseServer) {
+    countIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = ''; el.classList.add('mon-stat-count--loading'); }
+    });
+  }
   try {
     let counts;
     if (_monUseServer) {
@@ -8662,19 +8671,24 @@ async function _monRefreshAll(skipList = false) {
       counts = getTBMonCounts(_monFacilityIDs, _monMode);
     }
 
-    const fmt    = n => String(n).padStart(2, '0');
-    const el     = id => document.getElementById(id);
+    const fmt = n => String(n).padStart(2, '0');
+    const setCount = (id, n) => {
+      const e = document.getElementById(id);
+      if (!e) return;
+      e.classList.remove('mon-stat-count--loading');
+      e.textContent = fmt(n);
+    };
 
-    el('mon-count-2month')  && (el('mon-count-2month').textContent  = fmt(counts.sputum2));
-    el('mon-count-3month')  && (el('mon-count-3month').textContent  = fmt(counts.sputum3));
-    el('mon-count-5month')  && (el('mon-count-5month').textContent  = fmt(counts.sputum5));
-    el('mon-count-6month')  && (el('mon-count-6month').textContent  = fmt(counts.sputum6));
-    el('mon-count-8month')  && (el('mon-count-8month').textContent  = fmt(counts.sputum8));
-    el('mon-count-hiv')     && (el('mon-count-hiv').textContent     = fmt(counts.hiv));
-    el('mon-count-cpt')     && (el('mon-count-cpt').textContent     = fmt(counts.cpt));
-    el('mon-count-art')     && (el('mon-count-art').textContent     = fmt(counts.art));
-    el('mon-count-hhp')     && (el('mon-count-hhp').textContent     = fmt(counts.hhp));
-    el('mon-count-outcome') && (el('mon-count-outcome').textContent = fmt(counts.outcome));
+    setCount('mon-count-2month',  counts.sputum2);
+    setCount('mon-count-3month',  counts.sputum3);
+    setCount('mon-count-5month',  counts.sputum5);
+    setCount('mon-count-6month',  counts.sputum6);
+    setCount('mon-count-8month',  counts.sputum8);
+    setCount('mon-count-hiv',     counts.hiv);
+    setCount('mon-count-cpt',     counts.cpt);
+    setCount('mon-count-art',     counts.art);
+    setCount('mon-count-hhp',     counts.hhp);
+    setCount('mon-count-outcome', counts.outcome);
 
     const sputumHd = document.getElementById('mon-sputum-hd');
     if (sputumHd) {
@@ -8685,6 +8699,7 @@ async function _monRefreshAll(skipList = false) {
 
     if (!skipList) _monSelectCategory(_monCategory);
   } catch (err) {
+    countIds.forEach(id => document.getElementById(id)?.classList.remove('mon-stat-count--loading'));
     console.error('[Monitoring] _monRefreshAll:', err);
   }
 }
@@ -8698,9 +8713,11 @@ async function _monSelectCategory(cat) {
   });
   try {
     let rows;
+    const _loadBar = document.getElementById('mon-load-bar');
     if (_monUseServer) {
+      if (_loadBar) _loadBar.hidden = false;
       const tbody = document.getElementById('mon-patient-tbody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center py-3 text-muted">Loading from the eTBr server…</td></tr>';
+      if (tbody) tbody.innerHTML = '';
       rows = [];
       const token = getToken();
       if (token && _reallyOnline) {
@@ -8714,11 +8731,13 @@ async function _monSelectCategory(cat) {
           if (resp.ok) rows = await resp.json();
         } catch (_) {}
       }
+      if (_loadBar) _loadBar.hidden = true;
     } else {
       rows = getTBMonList(cat, _monMode, _monFacilityIDs);
     }
     _monRenderList(cat, rows);
   } catch (err) {
+    document.getElementById('mon-load-bar')?.setAttribute('hidden', '');
     const tbody = document.getElementById('mon-patient-tbody');
     if (tbody) tbody.innerHTML =
       `<tr><td colspan="11" class="text-danger text-center py-3">Error: ${escHtml(err.message)}</td></tr>`;
