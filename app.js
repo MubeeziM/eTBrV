@@ -6068,6 +6068,7 @@ function showAppScreen() {
   if (user) {
     logoutBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true" style="flex-shrink:0"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Log Out`;
     userInfoBar.hidden = false;
+    _updateHeaderUser(user);
     // Populate welcome banner
     const nameEl     = document.getElementById('db-welcome-name');
     const facilityEl = document.getElementById('db-welcome-facility');
@@ -6225,6 +6226,7 @@ document.getElementById('offline-pin-form')?.addEventListener('submit', async e 
       authScreen.hidden  = true;
       appScreen.hidden   = false;
       userInfoBar.hidden = false;
+      _updateHeaderUser(getUser());
       // Restore the app UI using the cached user profile
       showAppScreen();
       showToast('Offline access granted. Data entry enabled.', 'info');
@@ -6499,6 +6501,446 @@ document.querySelectorAll('.pwd-toggle').forEach(btn => {
   pwdInput.addEventListener('input', updateStrength);
   confirmInput.addEventListener('input', updateMatch);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MY ACCOUNT / PROFILE MODULE
+//  Handles the profile modal: update display name / username / email / phone
+//  / avatar, change password, and view read-only scope information.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Avatar helpers ────────────────────────────────────────────────────────
+
+/** Derive up to 2 initials from a full name or username. */
+function _initials(name = '') {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return (parts[0] ?? '?').slice(0, 2).toUpperCase();
+}
+
+/**
+ * Render an avatar element.
+ * If avatarBase64 is a non-empty data URI, set it as background-image.
+ * Otherwise show initials with a coloured background derived from the name.
+ */
+function _renderAvatar(el, avatarBase64, name = '') {
+  if (!el) return;
+  const colours = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#0ea5e9','#ec4899'];
+  const colour  = colours[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % colours.length];
+
+  if (avatarBase64 && avatarBase64.startsWith('data:')) {
+    el.style.backgroundImage = `url(${avatarBase64})`;
+    el.style.background      = `url(${avatarBase64}) center/cover`;
+    el.textContent           = '';
+  } else {
+    el.style.backgroundImage = '';
+    el.style.background      = colour;
+    el.textContent           = _initials(name);
+    el.style.color           = '#fff';
+  }
+}
+
+/**
+ * Update the "My Account" button in the header (avatar + display name).
+ * Called after login and after a successful profile save.
+ */
+function _updateHeaderUser(user) {
+  const avatarEl = document.getElementById('header-avatar');
+  const nameEl   = document.getElementById('user-name-display');
+  if (!user) return;
+  _renderAvatar(avatarEl, user.avatarBase64, user.fullName ?? user.userName ?? '');
+  if (nameEl) nameEl.textContent = user.fullName ?? user.userName ?? '';
+}
+
+// ── Profile modal bootstrap ───────────────────────────────────────────────
+(function _initProfileModal() {
+  const modalEl  = document.getElementById('profile-modal');
+  if (!modalEl) return;
+
+  // ── Shared score helper (same logic as registration / reset forms) ────
+  const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  function _scorePassword(pwd) {
+    if (!pwd) return 0;
+    let s = 0;
+    if (pwd.length >= 8)  s++;
+    if (pwd.length >= 12) s++;
+    if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) s++;
+    if (/\d/.test(pwd))   s++;
+    if (/[^A-Za-z0-9]/.test(pwd)) s++;
+    return Math.min(s, 4);
+  }
+
+  // ── DOM refs ─────────────────────────────────────────────────────────
+  const profileForm      = document.getElementById('profile-form');
+  const profileMsg       = document.getElementById('profile-msg');
+  const profileSaveBtn   = document.getElementById('profile-save-btn');
+  const avatarPreview    = document.getElementById('profile-avatar-preview');
+  const avatarInput      = document.getElementById('profile-avatar-input');
+  const avatarClearBtn   = document.getElementById('profile-avatar-clear');
+  const fullNameInput    = document.getElementById('profile-fullname');
+  const userNameInput    = document.getElementById('profile-username');
+  const emailInput       = document.getElementById('profile-email');
+  const phoneInput       = document.getElementById('profile-phone');
+  const userNameStatus   = document.getElementById('profile-username-status');
+  const emailStatus      = document.getElementById('profile-email-status');
+
+  const pwdForm          = document.getElementById('profile-pwd-form');
+  const pwdMsg           = document.getElementById('profile-pwd-msg');
+  const pwdBtn           = document.getElementById('profile-pwd-btn');
+  const currentPwdInput  = document.getElementById('profile-current-pwd');
+  const newPwdInput      = document.getElementById('profile-new-pwd');
+  const confirmPwdInput  = document.getElementById('profile-confirm-pwd');
+  const pwdStrengthEl    = document.getElementById('profile-pwd-strength');
+  const pwdStrengthLabel = document.getElementById('profile-pwd-strength-label');
+  const pwdMatchEl       = document.getElementById('profile-pwd-match');
+
+  // Pending avatar — either a new data URI or empty string (clear), or null (unchanged)
+  let _pendingAvatar = null;   // null = keep server value
+  let _originalUserName = '';
+  let _originalEmail    = '';
+
+  // ── Load profile data when modal opens ───────────────────────────────
+  modalEl.addEventListener('shown.bs.modal', async () => {
+    // Reset to Profile tab
+    const infoTab = document.getElementById('ptab-info-tab');
+    if (infoTab) bootstrap.Tab.getOrCreateInstance(infoTab).show();
+
+    _pendingAvatar   = null;
+    _clearProfileMsg();
+    _clearPwdMsg();
+
+    const user = getUser();
+    if (!user) return;
+
+    // Pre-fill from cached session (instant)
+    fullNameInput.value = user.fullName  ?? '';
+    userNameInput.value = user.userName  ?? '';
+    emailInput.value    = user.emailAddress ?? '';
+    phoneInput.value    = user.phoneNo   ?? '';
+    _renderAvatar(avatarPreview, user.avatarBase64, user.fullName ?? user.userName);
+    avatarClearBtn.style.display = user.avatarBase64 ? '' : 'none';
+    _originalUserName = user.userName  ?? '';
+    _originalEmail    = user.emailAddress ?? '';
+
+    // Scope tab — populate read-only fields from cache first, then refresh from API
+    _fillScopeFromUser(user);
+
+    // Fetch fresh data from server (online only)
+    if (!navigator.onLine) return;
+    const tok = getToken();
+    if (!tok) return;
+    try {
+      const res  = await fetch(`${API_BASE}/auth/profile`, {
+        headers: { 'Authorization': `Bearer ${tok}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      fullNameInput.value  = data.fullName     ?? fullNameInput.value;
+      userNameInput.value  = data.userName     ?? userNameInput.value;
+      emailInput.value     = data.emailAddress ?? emailInput.value;
+      phoneInput.value     = data.phoneNo      ?? phoneInput.value;
+      _originalUserName    = data.userName     ?? _originalUserName;
+      _originalEmail       = data.emailAddress ?? _originalEmail;
+      _renderAvatar(avatarPreview, data.avatarBase64, data.fullName ?? data.userName ?? '');
+      avatarClearBtn.style.display = data.avatarBase64 ? '' : 'none';
+      _fillScopeFromApi(data);
+    } catch { /* offline — silently ignore */ }
+  });
+
+  // Reset forms when modal fully closes
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    profileForm?.reset();
+    pwdForm?.reset();
+    _clearProfileMsg();
+    _clearPwdMsg();
+    _pendingAvatar  = null;
+    if (pwdStrengthEl)    { pwdStrengthEl.hidden = true; pwdStrengthEl.removeAttribute('data-score'); }
+    if (pwdMatchEl)       { pwdMatchEl.hidden = true; pwdMatchEl.className = 'pwd-match'; }
+    if (userNameStatus)   userNameStatus.textContent = '';
+    if (emailStatus)      emailStatus.textContent    = '';
+  });
+
+  // ── Avatar upload / preview ───────────────────────────────────────────
+  avatarInput?.addEventListener('change', () => {
+    const file = avatarInput.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      _showProfileMsg('Image is too large. Please choose a file under 4 MB.', 'error');
+      avatarInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize to max 200×200 on a canvas, then re-encode as JPEG at 80%
+        const MAX = 200;
+        const scale  = Math.min(MAX / img.width, MAX / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUri = canvas.toDataURL('image/jpeg', 0.80);
+        _pendingAvatar = dataUri;
+        _renderAvatar(avatarPreview, dataUri, fullNameInput.value);
+        avatarClearBtn.style.display = '';
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  avatarClearBtn?.addEventListener('click', () => {
+    _pendingAvatar = '';   // empty string = clear on server
+    avatarInput.value = '';
+    _renderAvatar(avatarPreview, null, fullNameInput.value);
+    avatarClearBtn.style.display = 'none';
+  });
+
+  // ── Real-time username uniqueness check ────────────────────────────────
+  let _unCheckTimer;
+  userNameInput?.addEventListener('input', () => {
+    clearTimeout(_unCheckTimer);
+    const val = userNameInput.value.trim();
+    if (!val || val === _originalUserName) { userNameStatus.textContent = ''; return; }
+    userNameStatus.textContent = '…';
+    _unCheckTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/auth/check-username?username=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        userNameStatus.textContent = data.available ? '✓' : '✗ taken';
+        userNameStatus.style.color = data.available ? '#10b981' : '#ef4444';
+      } catch { userNameStatus.textContent = ''; }
+    }, 450);
+  });
+
+  // ── Real-time email uniqueness check ───────────────────────────────────
+  let _emCheckTimer;
+  emailInput?.addEventListener('input', () => {
+    clearTimeout(_emCheckTimer);
+    const val = emailInput.value.trim();
+    if (!val || val === _originalEmail) { emailStatus.textContent = ''; return; }
+    emailStatus.textContent = '…';
+    _emCheckTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        emailStatus.textContent = data.available ? '✓' : '✗ in use';
+        emailStatus.style.color = data.available ? '#10b981' : '#ef4444';
+      } catch { emailStatus.textContent = ''; }
+    }, 450);
+  });
+
+  // ── Profile form submit ────────────────────────────────────────────────
+  profileForm?.addEventListener('submit', async e => {
+    e.preventDefault();
+    _clearProfileMsg();
+
+    const fullName = fullNameInput.value.trim();
+    const userName = userNameInput.value.trim();
+    const email    = emailInput.value.trim();
+    const phone    = phoneInput.value.trim();
+
+    if (!fullName) { _showProfileMsg('Display name is required.', 'error'); return; }
+    if (!userName) { _showProfileMsg('Username is required.', 'error'); return; }
+    if (!email)    { _showProfileMsg('Email address is required.', 'error'); return; }
+
+    if (userNameStatus.textContent === '✗ taken') {
+      _showProfileMsg('That username is already in use. Please choose another.', 'error'); return;
+    }
+    if (emailStatus.textContent === '✗ in use') {
+      _showProfileMsg('That email address is already in use.', 'error'); return;
+    }
+
+    if (!navigator.onLine) {
+      _showProfileMsg('You are offline. Please connect to the internet to save profile changes.', 'error');
+      return;
+    }
+
+    profileSaveBtn.disabled    = true;
+    profileSaveBtn.textContent = 'Saving…';
+
+    const payload = { fullName, userName, emailAddress: email, phoneNo: phone || null };
+    if (_pendingAvatar !== null) payload.avatarBase64 = _pendingAvatar;
+
+    const tok = getToken();
+    try {
+      const res  = await fetch(`${API_BASE}/auth/profile`, {
+        method:  'PUT',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        // Persist refreshed JWT + updated user object
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem(AUTH_EXPIRY_KEY, new Date(data.expiresAt).getTime().toString());
+        const currentUser = getUser() ?? {};
+        const updatedUser = {
+          ...currentUser,
+          fullName:     data.fullName,
+          userName:     data.userName,
+          emailAddress: data.emailAddress,
+          phoneNo:      data.phoneNo,
+          avatarBase64: data.avatarBase64 ?? null,
+        };
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updatedUser));
+        _pendingAvatar    = null;
+        _originalUserName = data.userName;
+        _originalEmail    = data.emailAddress;
+        if (userNameStatus) userNameStatus.textContent = '';
+        if (emailStatus)    emailStatus.textContent    = '';
+
+        // Refresh header button
+        _updateHeaderUser(updatedUser);
+
+        // Refresh welcome banner name
+        const nameEl = document.getElementById('db-welcome-name');
+        if (nameEl) nameEl.textContent = `Welcome back, ${data.fullName ?? data.userName ?? 'User'}!`;
+
+        _showProfileMsg('Profile updated successfully.', 'success');
+      } else {
+        _showProfileMsg(data.error ?? 'Could not save profile.', 'error');
+      }
+    } catch {
+      _showProfileMsg('Could not reach the server. Please try again.', 'error');
+    } finally {
+      profileSaveBtn.disabled    = false;
+      profileSaveBtn.textContent = 'Save Changes';
+    }
+  });
+
+  // ── Password-strength meter for change-password tab ───────────────────
+  newPwdInput?.addEventListener('input', () => {
+    const val   = newPwdInput.value;
+    const score = _scorePassword(val);
+    if (!val) {
+      pwdStrengthEl.hidden = true;
+      pwdStrengthEl.removeAttribute('data-score');
+    } else {
+      pwdStrengthEl.hidden         = false;
+      pwdStrengthEl.dataset.score  = score;
+      pwdStrengthLabel.textContent = STRENGTH_LABELS[score];
+    }
+    _updatePwdMatch();
+  });
+
+  confirmPwdInput?.addEventListener('input', _updatePwdMatch);
+
+  function _updatePwdMatch() {
+    const val     = confirmPwdInput.value;
+    const matches = val && newPwdInput.value === val;
+    if (!val) { pwdMatchEl.hidden = true; pwdMatchEl.className = 'pwd-match'; return; }
+    pwdMatchEl.hidden = false;
+    if (matches) {
+      pwdMatchEl.className = 'pwd-match match-ok';
+      pwdMatchEl.innerHTML = '&#10003; Passwords match';
+    } else {
+      pwdMatchEl.className = 'pwd-match match-no';
+      pwdMatchEl.innerHTML = '&#10007; Passwords do not match';
+    }
+  }
+
+  // ── Change-password form submit ────────────────────────────────────────
+  pwdForm?.addEventListener('submit', async e => {
+    e.preventDefault();
+    _clearPwdMsg();
+
+    const currentPwd = currentPwdInput.value;
+    const newPwd     = newPwdInput.value;
+    const confirmPwd = confirmPwdInput.value;
+
+    if (!currentPwd) { _showPwdMsg('Please enter your current password.', 'error'); return; }
+    if (newPwd.length < 8) { _showPwdMsg('New password must be at least 8 characters.', 'error'); return; }
+    if (newPwd !== confirmPwd) { _showPwdMsg('Passwords do not match.', 'error'); return; }
+    if (newPwd === currentPwd) { _showPwdMsg('New password must differ from the current password.', 'error'); return; }
+
+    if (!navigator.onLine) {
+      _showPwdMsg('You are offline. Please connect to the internet to change your password.', 'error');
+      return;
+    }
+
+    pwdBtn.disabled    = true;
+    pwdBtn.textContent = 'Changing…';
+
+    const tok = getToken();
+    try {
+      const res  = await fetch(`${API_BASE}/auth/change-password`, {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ currentPassword: currentPwd, newPassword: newPwd }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        _showPwdMsg('Password changed successfully.', 'success');
+        pwdForm.reset();
+        if (pwdStrengthEl)  { pwdStrengthEl.hidden = true; pwdStrengthEl.removeAttribute('data-score'); }
+        if (pwdMatchEl)     { pwdMatchEl.hidden = true; pwdMatchEl.className = 'pwd-match'; }
+      } else {
+        _showPwdMsg(data.error ?? 'Could not change password.', 'error');
+      }
+    } catch {
+      _showPwdMsg('Could not reach the server. Please try again.', 'error');
+    } finally {
+      pwdBtn.disabled    = false;
+      pwdBtn.textContent = 'Change Password';
+    }
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+  function _showProfileMsg(msg, type) {
+    profileMsg.textContent = msg;
+    profileMsg.className   = `auth-msg auth-msg--${type}`;
+    profileMsg.hidden      = false;
+  }
+  function _clearProfileMsg() {
+    profileMsg.hidden    = true;
+    profileMsg.className = 'auth-msg';
+  }
+  function _showPwdMsg(msg, type) {
+    pwdMsg.textContent = msg;
+    pwdMsg.className   = `auth-msg auth-msg--${type}`;
+    pwdMsg.hidden      = false;
+  }
+  function _clearPwdMsg() {
+    pwdMsg.hidden    = true;
+    pwdMsg.className = 'auth-msg';
+  }
+
+  function _fillScopeFromUser(user) {
+    const roleMap = {
+      SuperUser: 'Super User', Admin: 'Admin', National: 'National Level',
+      StateCoordinator: 'State Coordinator', CountySupervisor: 'County Supervisor',
+      NGO: 'NGO', DataEntrant: 'Data Entrant',
+    };
+    const roleNames = Array.isArray(user.roles) && user.roles.length
+      ? user.roles.map(r => roleMap[r] ?? r).join(', ')
+      : 'Data Entrant';
+    const s = document.getElementById('pscope-role');
+    if (s) s.textContent = roleNames;
+  }
+
+  function _fillScopeFromApi(data) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+    set('pscope-role',     data.groupName);
+    set('pscope-facility', data.facility);
+    set('pscope-county',   data.county);
+    set('pscope-state',    data.state);
+    set('pscope-since',    data.createdAt ? new Date(data.createdAt).toLocaleDateString() : '—');
+  }
+})();
+
+// ── Cascade .pwd-toggle clicks to any newly-added inputs (profile modal) ──
+// The global delegation below covers the profile modal's show/hide buttons
+// without needing to re-bind after Bootstrap renders the modal.
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.pwd-toggle');
+  if (!btn) return;
+  const inp = document.getElementById(btn.dataset.target);
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+});
 
 // ── Cascading location dropdowns (registration) ─────────────────────────
 (function () {

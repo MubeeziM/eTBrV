@@ -48,6 +48,13 @@
       <span id="connection-status" class="status-badge bg-success text-white">Online</span>
       <!-- Logged-in user info + sign-out (shown after successful login) -->
       <div id="user-info-bar" class="user-info-bar" hidden>
+        <!-- My Account button — avatar circle + name -->
+        <button id="my-account-btn" class="btn-my-account" type="button"
+                data-bs-toggle="modal" data-bs-target="#profile-modal"
+                aria-label="My Account">
+          <span id="header-avatar" class="header-avatar" aria-hidden="true"></span>
+          <span id="user-name-display" class="header-username"></span>
+        </button>
         <button id="logout-btn" class="btn-logout" type="button"
                 data-bs-toggle="modal" data-bs-target="#logout-modal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true" style="flex-shrink:0">
@@ -604,15 +611,18 @@
         </h3>
         <div class="db-grid db-grid--2">
 
-          <div class="db-card db-card--soon">
+          <div class="db-card db-card--active" style="cursor:pointer"
+               data-bs-toggle="modal" data-bs-target="#profile-modal">
             <div class="db-card-ico">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
             <div class="db-card-body">
-              <h4>User Settings and Preferences</h4>
-              <p>Manage your profile, change your password, configure notifications and application preferences.</p>
+              <h4>My Account</h4>
+              <p>Update your display name, profile picture, username, email address and password.</p>
             </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+            <div class="db-card-foot">
+              <span class="db-badge" style="background:#dbeafe;color:#1d4ed8">Open</span>
+            </div>
           </div>
 
           <div class="db-card db-card--soon">
@@ -2454,7 +2464,163 @@
 
   </main>
 
-  <!-- ========== LOGOUT MODAL ========== -->
+  <!-- ========== PROFILE / MY ACCOUNT MODAL ========== -->
+  <div class="modal fade" id="profile-modal" tabindex="-1" aria-labelledby="profile-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:520px">
+      <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+
+        <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
+          <div class="d-flex align-items-center gap-3">
+            <div style="width:44px;height:44px;border-radius:12px;background:#dbeafe;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" width="22" height="22" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <h5 class="modal-title mb-0" id="profile-modal-label" style="font-weight:700;font-size:1.1rem">My Account</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="margin-left:auto"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1.25rem 1.5rem 0.5rem">
+
+          <!-- Bootstrap tabs -->
+          <ul class="nav nav-tabs mb-3" id="profile-tabs" role="tablist" style="font-size:.9rem">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="ptab-info-tab" data-bs-toggle="tab" data-bs-target="#ptab-info"
+                      type="button" role="tab" aria-controls="ptab-info" aria-selected="true">Profile</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="ptab-pwd-tab" data-bs-toggle="tab" data-bs-target="#ptab-pwd"
+                      type="button" role="tab" aria-controls="ptab-pwd" aria-selected="false">Change Password</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="ptab-scope-tab" data-bs-toggle="tab" data-bs-target="#ptab-scope"
+                      type="button" role="tab" aria-controls="ptab-scope" aria-selected="false">My Scope</button>
+            </li>
+          </ul>
+
+          <div class="tab-content" id="profile-tabs-content">
+
+            <!-- ── Tab 1: Profile info ─────────────────────────────────── -->
+            <div class="tab-pane fade show active" id="ptab-info" role="tabpanel" aria-labelledby="ptab-info-tab">
+              <div id="profile-msg" class="auth-msg" hidden></div>
+              <form id="profile-form" novalidate autocomplete="off">
+
+                <!-- Avatar picker -->
+                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem">
+                  <div id="profile-avatar-preview" class="profile-avatar-lg" aria-hidden="true"></div>
+                  <div style="display:flex;flex-direction:column;gap:.5rem">
+                    <label class="btn btn-sm btn-outline-secondary" style="cursor:pointer;margin:0">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:4px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      Upload Photo
+                      <input type="file" id="profile-avatar-input" accept="image/jpeg,image/png,image/webp"
+                             style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+                    </label>
+                    <button type="button" id="profile-avatar-clear" class="btn btn-sm btn-outline-danger"
+                            style="display:none">Remove Photo</button>
+                    <span style="font-size:.75rem;color:#9ca3af">JPG / PNG / WEBP · max 200 KB</span>
+                  </div>
+                </div>
+
+                <div class="field-group">
+                  <label for="profile-fullname">Display Name</label>
+                  <input type="text" id="profile-fullname" autocomplete="name" placeholder="Your full name" />
+                </div>
+                <div class="field-group">
+                  <label for="profile-username">Username</label>
+                  <div style="position:relative">
+                    <input type="text" id="profile-username" autocomplete="username" placeholder="Username" />
+                    <span id="profile-username-status" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:.78rem"></span>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-email">Email Address</label>
+                  <div style="position:relative">
+                    <input type="email" id="profile-email" autocomplete="email" placeholder="you@example.com" />
+                    <span id="profile-email-status" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:.78rem"></span>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-phone">Phone Number <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
+                  <input type="tel" id="profile-phone" autocomplete="tel" placeholder="e.g. 0801234567" />
+                </div>
+
+                <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="submit" id="profile-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Changes</button>
+                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
+                          style="border-radius:10px;font-weight:600">Cancel</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ── Tab 2: Change Password ─────────────────────────────── -->
+            <div class="tab-pane fade" id="ptab-pwd" role="tabpanel" aria-labelledby="ptab-pwd-tab">
+              <div id="profile-pwd-msg" class="auth-msg" hidden></div>
+              <form id="profile-pwd-form" novalidate autocomplete="off">
+                <div class="field-group">
+                  <label for="profile-current-pwd">Current Password</label>
+                  <div class="pwd-wrap">
+                    <input type="password" id="profile-current-pwd" autocomplete="current-password"
+                           placeholder="Your current password" />
+                    <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="profile-current-pwd">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-new-pwd">New Password</label>
+                  <div class="pwd-wrap">
+                    <input type="password" id="profile-new-pwd" autocomplete="new-password"
+                           placeholder="Min. 8 characters" />
+                    <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="profile-new-pwd">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                  <div class="pwd-strength" id="profile-pwd-strength" aria-live="polite" hidden>
+                    <div class="pwd-strength-segments">
+                      <span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span>
+                    </div>
+                    <span class="pwd-strength-label" id="profile-pwd-strength-label"></span>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-confirm-pwd">Confirm New Password</label>
+                  <div class="pwd-wrap">
+                    <input type="password" id="profile-confirm-pwd" autocomplete="new-password"
+                           placeholder="Repeat new password" />
+                    <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="profile-confirm-pwd">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                  <div class="pwd-match" id="profile-pwd-match" aria-live="polite" hidden></div>
+                </div>
+                <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="submit" id="profile-pwd-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Change Password</button>
+                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
+                          style="border-radius:10px;font-weight:600">Cancel</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ── Tab 3: My Scope (read-only) ────────────────────────── -->
+            <div class="tab-pane fade" id="ptab-scope" role="tabpanel" aria-labelledby="ptab-scope-tab">
+              <p style="font-size:.83rem;color:#6b7280;margin-bottom:1rem"
+                 >Your facility, county, state and role are assigned by an administrator
+                 and cannot be changed here.</p>
+              <dl class="profile-scope-list">
+                <dt>Role</dt>       <dd id="pscope-role">—</dd>
+                <dt>Facility</dt>   <dd id="pscope-facility">—</dd>
+                <dt>County</dt>     <dd id="pscope-county">—</dd>
+                <dt>State</dt>      <dd id="pscope-state">—</dd>
+                <dt>Member since</dt><dd id="pscope-since">—</dd>
+              </dl>
+            </div>
+
+          </div><!-- /tab-content -->
+        </div><!-- /modal-body -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== LOGOUT MODAL ===========
   <div class="modal fade" id="logout-modal" tabindex="-1" aria-labelledby="logout-modal-label" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered" style="max-width:360px">
       <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">

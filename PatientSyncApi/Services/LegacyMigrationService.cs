@@ -195,6 +195,22 @@ public sealed class LegacyMigrationService
                 _progress.Update(dataSourceId, s => s.ImportedFollowUps = followUpsImported);
             }
 
+            // ── Presumptive cases ─────────────────────────────────────────
+            int presumptiveImported = 0;
+            try
+            {
+                var legacyCases = await ReadLegacyPresumptiveCasesAsync(dataSourceId, null, ct);
+                presumptiveImported = await UpsertPresumptiveCasesAsync(conn, tx, legacyCases, dataSourceId, false, ct);
+            }
+            catch (Exception pcEx)
+            {
+                // Non-fatal: old DB may not have PresumptiveCaseT or the table
+                // may have a different schema — log and continue.
+                _logger.LogWarning(pcEx,
+                    "Could not migrate presumptive cases for DataSourceID={DataSourceId} (non-fatal).",
+                    dataSourceId);
+            }
+
             // Mark facility as migrated — bridge logic will now exclude this
             // DataSourceID from legacy DB queries.
             await MarkFacilityMigratedAsync(
@@ -205,11 +221,12 @@ public sealed class LegacyMigrationService
 
             _logger.LogInformation(
                 "Migration committed: DataSourceID={DataSourceId}, " +
-                "patients={Patients}, followUps={FollowUps}.",
-                dataSourceId, patientsImported, followUpsImported);
+                "patients={Patients}, followUps={FollowUps}, presumptiveCases={PC}.",
+                dataSourceId, patientsImported, followUpsImported, presumptiveImported);
 
-            var successMsg = $"Migrated {patientsImported} patients and {followUpsImported} follow-ups " +
-                             $"for DataSourceID {dataSourceId}.";
+            var successMsg = $"Migrated {patientsImported} patients, {followUpsImported} follow-ups" +
+                             (presumptiveImported > 0 ? $", {presumptiveImported} presumptive case(s)" : "") +
+                             $" for DataSourceID {dataSourceId}.";
             _progress.Update(dataSourceId, s => {
                 s.Status            = "done";
                 s.ImportedPatients  = patientsImported;
@@ -365,6 +382,22 @@ public sealed class LegacyMigrationService
                 _progress.Update(dataSourceId, s => s.ImportedFollowUps = followUpsUpserted);
             }
 
+            // ── Delta: presumptive cases ──────────────────────────────────
+            int presumptiveUpserted = 0;
+            try
+            {
+                // cutoff 46203 = June 30 2026 (Access/legacy date serial);
+                // overwrite=true so legacy changes after that date win over earlier imports.
+                var legacyCases = await ReadLegacyPresumptiveCasesAsync(dataSourceId, 46203, ct);
+                presumptiveUpserted = await UpsertPresumptiveCasesAsync(conn, tx, legacyCases, dataSourceId, true, ct);
+            }
+            catch (Exception pcEx)
+            {
+                _logger.LogWarning(pcEx,
+                    "Could not delta-sync presumptive cases for DataSourceID={DataSourceId} (non-fatal).",
+                    dataSourceId);
+            }
+
             // Stamp the delta sync timestamp on MigratedFacilitiesT
             await UpdateDeltaSyncStatsAsync(conn, tx, dataSourceId, patientsUpserted, followUpsUpserted, ct);
 
@@ -372,12 +405,13 @@ public sealed class LegacyMigrationService
 
             _logger.LogInformation(
                 "Delta sync committed: DataSourceID={DataSourceId}, " +
-                "patients={Patients}, followUps={FollowUps}.",
-                dataSourceId, patientsUpserted, followUpsUpserted);
+                "patients={Patients}, followUps={FollowUps}, presumptiveCases={PC}.",
+                dataSourceId, patientsUpserted, followUpsUpserted, presumptiveUpserted);
 
             var successMsg =
-                $"Delta sync: {patientsUpserted} patient(s) and {followUpsUpserted} follow-up(s) " +
-                $"synced for DataSourceID {dataSourceId}.";
+                $"Delta sync: {patientsUpserted} patient(s) and {followUpsUpserted} follow-up(s)" +
+                (presumptiveUpserted > 0 ? $", {presumptiveUpserted} presumptive case(s)" : "") +
+                $" synced for DataSourceID {dataSourceId}.";
 
             _progress.Update(dataSourceId, s => {
                 s.Status            = "delta-done";
@@ -1249,5 +1283,156 @@ public sealed class LegacyMigrationService
         public DateTime? CPTDate            { get; set; }
         public bool     MovedTo2ndLine      { get; set; }
         public string?  Remarks             { get; set; }
+    }
+
+    // ── Presumptive case helpers ──────────────────────────────────────────────
+
+    private sealed class LegacyPresumptiveCaseRow
+    {
+        public int  PresumptiveCase { get; set; }
+        public int  MonthID         { get; set; }
+        public int  YearID          { get; set; }
+        public int  NearestHFID     { get; set; }
+        public int  DataSourceID    { get; set; }
+        public int  CountyID        { get; set; }
+    }
+
+    /// <summary>
+    /// Reads all PresumptiveCaseT rows for <paramref name="dataSourceId"/>
+    /// from the legacy database.  Returns an empty list if the table does not
+    /// exist (graceful no-op for legacy DBs without presumptive data).
+    /// </summary>
+    private async Task<List<LegacyPresumptiveCaseRow>> ReadLegacyPresumptiveCasesAsync(
+        int dataSourceId, int? cutoffSerialDate, CancellationToken ct)
+    {
+        var rows = new List<LegacyPresumptiveCaseRow>();
+        await using var conn = new SqlConnection(_legacyConnStr);
+        await conn.OpenAsync(ct);
+
+        // Guard: check the table exists before querying it
+        await using (var chkCmd = NewCmd(conn))
+        {
+            chkCmd.CommandText =
+                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES " +
+                "WHERE TABLE_NAME = 'PresumptiveCaseT'";
+            var exists = await chkCmd.ExecuteScalarAsync(ct);
+            if (exists is null) return rows; // table absent in legacy DB
+        }
+
+        await using var cmd = NewCmd(conn);
+        cmd.CommandText = cutoffSerialDate.HasValue
+            ? """
+              SELECT PresumptiveCase, MonthID, YearID, NearestHFID,
+                     DataSourceID, ISNULL(CountyID, 0) AS CountyID
+              FROM   PresumptiveCaseT
+              WHERE  DataSourceID = @DataSourceID
+                AND  LastModOn   >= @CutoffDate
+              """
+            : """
+              SELECT PresumptiveCase, MonthID, YearID, NearestHFID,
+                     DataSourceID, ISNULL(CountyID, 0) AS CountyID
+              FROM   PresumptiveCaseT
+              WHERE  DataSourceID = @DataSourceID
+              """;
+        cmd.Parameters.AddWithValue("@DataSourceID", dataSourceId);
+        if (cutoffSerialDate.HasValue)
+            cmd.Parameters.AddWithValue("@CutoffDate", cutoffSerialDate.Value);
+
+        await using var rdr = await cmd.ExecuteReaderAsync(ct);
+        while (await rdr.ReadAsync(ct))
+        {
+            rows.Add(new LegacyPresumptiveCaseRow
+            {
+                PresumptiveCase = rdr.IsDBNull(0) ? 0 : rdr.GetInt32(0),
+                MonthID         = rdr.IsDBNull(1) ? 0 : rdr.GetInt32(1),
+                YearID          = rdr.IsDBNull(2) ? 0 : rdr.GetInt32(2),
+                NearestHFID     = rdr.IsDBNull(3) ? 0 : rdr.GetInt32(3),
+                DataSourceID    = rdr.IsDBNull(4) ? 0 : rdr.GetInt32(4),
+                CountyID        = rdr.IsDBNull(5) ? 0 : rdr.GetInt32(5),
+            });
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Upserts a set of legacy presumptive case rows into the new PresumptiveCaseT.
+    /// Keyed on (NearestHFID, MonthID, YearID) — one row per facility per month.
+    /// Rows that do not exist are inserted; existing rows are left unchanged
+    /// (the new-system value wins to avoid overwriting user edits).
+    /// Returns the count of rows inserted.
+    /// </summary>
+    private static async Task<int> UpsertPresumptiveCasesAsync(
+        SqlConnection conn,
+        SqlTransaction tx,
+        List<LegacyPresumptiveCaseRow> cases,
+        int dataSourceId,
+        bool overwrite,
+        CancellationToken ct)
+    {
+        if (cases.Count == 0) return 0;
+        int inserted = 0;
+
+        const string sqlInsertOnly = """
+            IF NOT EXISTS (
+                SELECT 1 FROM PresumptiveCaseT
+                WHERE NearestHFID = @NearestHFID
+                  AND MonthID     = @MonthID
+                  AND YearID      = @YearID
+            )
+            BEGIN
+                INSERT INTO PresumptiveCaseT (
+                    PresumptiveCaseTID, PresumptiveCase, MonthID, YearID,
+                    NearestHFID, DataSourceID, CountyID,
+                    HasChanged, Uploaded, Imported, LastModOn, EnteredByID)
+                VALUES (
+                    NEWID(), @PresumptiveCase, @MonthID, @YearID,
+                    @NearestHFID, @DataSourceID, @CountyID,
+                    0, 0, 1, GETDATE(), '00000000-0000-0000-0000-000000000000')
+            END
+            """;
+        const string sqlUpsert = """
+            IF EXISTS (
+                SELECT 1 FROM PresumptiveCaseT
+                WHERE NearestHFID = @NearestHFID
+                  AND MonthID     = @MonthID
+                  AND YearID      = @YearID
+            )
+                UPDATE PresumptiveCaseT
+                SET    PresumptiveCase = @PresumptiveCase,
+                       CountyID        = @CountyID,
+                       LastModOn       = GETDATE(),
+                       Imported        = 1
+                WHERE  NearestHFID = @NearestHFID
+                  AND  MonthID     = @MonthID
+                  AND  YearID      = @YearID
+            ELSE
+                INSERT INTO PresumptiveCaseT (
+                    PresumptiveCaseTID, PresumptiveCase, MonthID, YearID,
+                    NearestHFID, DataSourceID, CountyID,
+                    HasChanged, Uploaded, Imported, LastModOn, EnteredByID)
+                VALUES (
+                    NEWID(), @PresumptiveCase, @MonthID, @YearID,
+                    @NearestHFID, @DataSourceID, @CountyID,
+                    0, 0, 1, GETDATE(), '00000000-0000-0000-0000-000000000000')
+            """;
+        var sql = overwrite ? sqlUpsert : sqlInsertOnly;
+
+        foreach (var c in cases)
+        {
+            if (c.MonthID <= 0 || c.YearID <= 0) continue;
+
+            await using var cmd = new SqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@NearestHFID",     c.NearestHFID);
+            cmd.Parameters.AddWithValue("@MonthID",         c.MonthID);
+            cmd.Parameters.AddWithValue("@YearID",          c.YearID);
+            cmd.Parameters.AddWithValue("@PresumptiveCase", c.PresumptiveCase);
+            cmd.Parameters.AddWithValue("@DataSourceID",    dataSourceId);
+            cmd.Parameters.AddWithValue("@CountyID",        c.CountyID);
+            var rows = await cmd.ExecuteNonQueryAsync(ct);
+            inserted += rows;
+        }
+
+        return inserted;
     }
 }
