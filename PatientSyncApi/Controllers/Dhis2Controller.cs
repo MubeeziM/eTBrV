@@ -375,6 +375,15 @@ public sealed class Dhis2Controller : ControllerBase
 
     // ── Internal cache types ──────────────────────────────────────────────────
 
+    /// <summary>
+    /// One patient row from PtDetailsT + PtFollowUpT, used by the batch compute path
+    /// in <see cref="ComputeFromRows"/> to avoid N×4 per-facility SQL round-trips.
+    /// </summary>
+    private record PatientRow(
+        int PtType, int TbType, int Sex, int Age, int DiagMethod,
+        int Mon0Lab, int Mon0Xpert, int HivResult, int OnART, int OnCPT,
+        int Mon2Lab, int Mon3Lab, int Outcome);
+
     /// <summary>One facility's computed report data, stored in IMemoryCache.</summary>
     private sealed class FacilityCache
     {
@@ -439,7 +448,7 @@ public sealed class Dhis2Controller : ControllerBase
     ///   toQuarter, toYear   — Treatment Outcome period (optional; defaults to CF-4, i.e. exactly one year before CF)
     /// </summary>
     [HttpGet("tb-prepare")]
-    public async Task<IActionResult> Prepare([FromQuery] TbPrepareQuery q)
+    public async Task<IActionResult> Prepare([FromQuery] TbPrepareQuery q, [FromQuery] int[]? facilityIds = null)
     {
         if (q.CfQuarter is < 1 or > 4)
             return BadRequest(new { error = "cfQuarter must be 1–4." });
@@ -463,7 +472,12 @@ public sealed class Dhis2Controller : ControllerBase
 
         string period   = $"{q.CfYear}Q{q.CfQuarter}";
         string userId   = User.FindFirstValue("user_id") ?? "0";
-        string cacheKey = $"dhis2_tb_{userId}_{q.CfQuarter}_{q.CfYear}_{scQ}_{scY}_{toQ}_{toY}";
+        // Include selected facility IDs in the cache key so a subset selection
+        // does not collide with a full-scope prepare from the same user.
+        string facFilter = (facilityIds is { Length: > 0 })
+            ? "_f" + string.Join("_", facilityIds.OrderBy(x => x))
+            : "";
+        string cacheKey = $"dhis2_tb_{userId}_{q.CfQuarter}_{q.CfYear}_{scQ}_{scY}_{toQ}_{toY}{facFilter}";
 
         // Get scope from JWT claims
         int.TryParse(User.FindFirstValue("facility_id"), out var facilityId);
@@ -480,10 +494,28 @@ public sealed class Dhis2Controller : ControllerBase
             var facilities = await GetFacilitiesInScopeAsync(
                 conn, facilityId, countyId, stateId, isSuperUser == 1);
 
+            // If the caller supplied specific facility IDs, restrict to that subset
+            // (facilities not in the user's scope are silently excluded).
+            if (facilityIds is { Length: > 0 })
+            {
+                var allowed = new HashSet<int>(facilityIds);
+                facilities = facilities.Where(f => allowed.Contains(f.FacilityId)).ToList();
+            }
+
             if (facilities.Count == 0)
                 return Ok(new { facilities = Array.Empty<FacilityReportDto>(), cacheKey });
 
-            // ── Compute data per facility ─────────────────────────────────────
+            // ── Batch-fetch all patient rows and presumptive totals (4 queries, not 4×N) ──
+            // Builds one shared IN-clause used by all four queries.
+            var allFacIds = facilities.Select(f => f.FacilityId).ToArray();
+            var allPNames = allFacIds.Select((_, i) => $"@F{i}").ToArray();
+            string allIn  = string.Join(", ", allPNames);
+
+            var cfByFac     = await FetchPatientBatchAsync(conn, allPNames, allFacIds, cfStart, cfEnd,   allIn);
+            var scByFac     = await FetchPatientBatchAsync(conn, allPNames, allFacIds, scStart, scEnd,   allIn);
+            var toByFac     = await FetchPatientBatchAsync(conn, allPNames, allFacIds, toStart, toEnd,   allIn);
+            var presumByFac = await FetchPresumptiveBatchAsync(conn, allPNames, allFacIds, cfStart, allIn);
+
             var cacheDict = new Dictionary<string, FacilityCache>(StringComparer.Ordinal);
             var result    = new List<FacilityReportDto>();
 
@@ -491,11 +523,16 @@ public sealed class Dhis2Controller : ControllerBase
             {
                 if (string.IsNullOrWhiteSpace(fac.Uid)) continue;
 
-                var (cfVals, toVals) = await ComputeFacilityAsync(
-                    conn, fac.FacilityId,
-                    cfStart, cfEnd,
-                    scStart, scEnd,
-                    toStart, toEnd);
+                cfByFac.TryGetValue(fac.FacilityId,    out var cfRows);
+                scByFac.TryGetValue(fac.FacilityId,    out var scRows);
+                toByFac.TryGetValue(fac.FacilityId,    out var toRows);
+                presumByFac.TryGetValue(fac.FacilityId, out int presumptive);
+
+                var (cfVals, toVals) = ComputeFromRows(
+                    cfRows     ?? [],
+                    scRows     ?? [],
+                    toRows     ?? [],
+                    presumptive);
 
                 int totalCf = cfVals.Sum();
                 int totalTo = toVals.Sum();
@@ -1316,14 +1353,125 @@ public sealed class Dhis2Controller : ControllerBase
         return list;
     }
 
-    // ── Report computation ────────────────────────────────────────────────────
+    // ── Batch fetch helpers ───────────────────────────────────────────────────
 
-    private static async Task<(int[] CfVals, int[] ToVals)> ComputeFacilityAsync(
+    /// <summary>
+    /// Fetches patient rows for ALL facilities in a single SQL query.
+    /// Returns a dictionary keyed by NearestHFID.
+    /// Using an IN-clause over all facility IDs reduces N×4 per-facility
+    /// round-trips down to 4 total (CF, SC, TO, Presumptive), preventing
+    /// timeouts when national/state users have many accessible facilities.
+    /// </summary>
+    private static async Task<Dictionary<int, List<PatientRow>>> FetchPatientBatchAsync(
         SqlConnection conn,
-        int facilityId,
-        DateOnly cfStart, DateOnly cfEnd,
-        DateOnly scStart, DateOnly scEnd,
-        DateOnly toStart, DateOnly toEnd)
+        string[] pNames,
+        int[] facIds,
+        DateOnly start,
+        DateOnly end,
+        string inClause)
+    {
+        string sql = $"""
+            SELECT p.NearestHFID,
+                p.PtTypeID,
+                p.TbTypeID,
+                p.SexID,
+                COALESCE(p.Age, 0)                AS Age,
+                COALESCE(p.DiagMethodID, 0)        AS DiagMethodID,
+                COALESCE(f.Mon0LabResultID,  0)    AS Mon0LabResultID,
+                COALESCE(f.Mon0XpertResultID,0)    AS Mon0XpertResultID,
+                COALESCE(f.HIVTestResultID,  0)    AS HIVTestResultID,
+                COALESCE(f.OnART, 0)               AS OnART,
+                COALESCE(f.OnCPT, 0)               AS OnCPT,
+                COALESCE(f.Mon2LabResultID,  0)    AS Mon2LabResultID,
+                COALESCE(f.Mon3LabResultID,  0)    AS Mon3LabResultID,
+                COALESCE(f.OutcomeID,        0)    AS OutcomeID
+            FROM   PtDetailsT  p
+            LEFT JOIN PtFollowUpT f
+                   ON f.PtDetailsTID = p.PtDetailsTID AND f.Deleted = 0
+            WHERE  p.Deleted       = 0
+              AND  p.PtTypeID      IN (1,2,3,4,6)
+              AND  p.NearestHFID   IN ({inClause})
+              AND  p.RegDate       BETWEEN @Start AND @End
+            """;
+
+        var result = new Dictionary<int, List<PatientRow>>();
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 300 };
+        cmd.Parameters.AddWithValue("@Start", start.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("@End",   end.ToDateTime(TimeOnly.MinValue));
+        for (int i = 0; i < facIds.Length; i++) cmd.Parameters.AddWithValue(pNames[i], facIds[i]);
+
+        await using var rdr = await cmd.ExecuteReaderAsync();
+        while (await rdr.ReadAsync())
+        {
+            int facId = rdr.GetInt32(0);
+            if (!result.TryGetValue(facId, out var list))
+                result[facId] = list = [];
+            list.Add(new PatientRow(
+                PtType:    rdr.GetInt32(1),
+                TbType:    rdr.GetInt32(2),
+                Sex:       rdr.GetInt32(3),
+                Age:       rdr.GetInt32(4),
+                DiagMethod:rdr.GetInt32(5),
+                Mon0Lab:   rdr.GetInt32(6),
+                Mon0Xpert: rdr.GetInt32(7),
+                HivResult: rdr.GetInt32(8),
+                OnART:     rdr.GetInt32(9),
+                OnCPT:     rdr.GetInt32(10),
+                Mon2Lab:   rdr.GetInt32(11),
+                Mon3Lab:   rdr.GetInt32(12),
+                Outcome:   rdr.GetInt32(13)));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Fetches the sum of PresumptiveCase for ALL facilities in a single query.
+    /// Returns a dictionary keyed by NearestHFID.
+    /// </summary>
+    private static async Task<Dictionary<int, int>> FetchPresumptiveBatchAsync(
+        SqlConnection conn,
+        string[] pNames,
+        int[] facIds,
+        DateOnly cfStart,
+        string inClause)
+    {
+        string sql = $"""
+            SELECT pc.NearestHFID, COALESCE(SUM(pc.PresumptiveCase), 0) AS Total
+            FROM   PresumptiveCaseT pc
+            INNER JOIN MonthT m ON m.MonthID = pc.MonthID
+            INNER JOIN YearT  y ON y.YearID  = pc.YearID
+            WHERE  pc.NearestHFID IN ({inClause})
+              AND  y.YearName     = @Year
+              AND  m.MonthID      IN (@M1, @M2, @M3)
+            GROUP BY pc.NearestHFID
+            """;
+
+        var result = new Dictionary<int, int>();
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 300 };
+        int startMonth = cfStart.Month;
+        cmd.Parameters.AddWithValue("@Year", cfStart.Year);
+        cmd.Parameters.AddWithValue("@M1",   startMonth);
+        cmd.Parameters.AddWithValue("@M2",   startMonth + 1);
+        cmd.Parameters.AddWithValue("@M3",   startMonth + 2);
+        for (int i = 0; i < facIds.Length; i++) cmd.Parameters.AddWithValue(pNames[i], facIds[i]);
+
+        await using var rdr = await cmd.ExecuteReaderAsync();
+        while (await rdr.ReadAsync())
+            result[rdr.GetInt32(0)] = rdr.GetInt32(1);
+        return result;
+    }
+
+    // ── Report computation (pure — no DB calls) ───────────────────────────────
+
+    /// <summary>
+    /// Computes CF and TO value arrays from pre-fetched patient rows and a presumptive total.
+    /// All counter logic matches the original ASP.NET system exactly.
+    /// </summary>
+    private static (int[] CfVals, int[] ToVals) ComputeFromRows(
+        IReadOnlyList<PatientRow> cfRows,
+        IReadOnlyList<PatientRow> scRows,
+        IReadOnlyList<PatientRow> toRows,
+        int cfPresumptive)
     {
         // All counter variables — matching the original ASP.NET code exactly
         int cf_PBCNew = 0, cf_PBCRelapse = 0, cf_PBCPrevTreat = 0, cf_PBCOther = 0;
@@ -1333,7 +1481,7 @@ public sealed class Dhis2Controller : ControllerBase
         int cf_PBCNew25_34M = 0, cf_PBCNew35_44M = 0, cf_PBCNew45_54M = 0, cf_PBCNew55_64M = 0, cf_PBCNew65PlusM = 0;
         int cf_PBCNewU5F = 0, cf_PBCNew5_9F = 0, cf_PBCNew10_14F = 0, cf_PBCNew15_19F = 0, cf_PBCNew20_24F = 0;
         int cf_PBCNew25_34F = 0, cf_PBCNew35_44F = 0, cf_PBCNew45_54F = 0, cf_PBCNew55_64F = 0, cf_PBCNew65PlusF = 0;
-        int cf_SuspectsSeen = 0, cf_PBCLab = 0;
+        int cf_SuspectsSeen = cfPresumptive, cf_PBCLab = 0;
         int cf_TestedHIV = 0, cf_TestedHIVPos = 0, cf_TestedHIVART = 0, cf_TestedHIVCPT = 0;
         int cf_GeneXpert = 0, cf_Microscopy = 0, cf_TBLam = 0, cf_TrueNat = 0, cf_Xray = 0;
         int cf_GeneXpert_Pos = 0, cf_Microscopy_Pos = 0, cf_TBLam_Pos = 0, cf_TrueNat_Pos = 0, cf_Xray_Pos = 0;
@@ -1376,50 +1524,19 @@ public sealed class Dhis2Controller : ControllerBase
         int to_Adol = 0, to_Adol_Cured = 0, to_Adol_Completed = 0, to_Adol_Died = 0;
         int to_Adol_Failed = 0, to_Adol_LostToFP = 0, to_Adol_NotEval = 0;
 
-        // ── CASE FINDING query ───────────────────────────────────────────────
-        const string patientSql = """
-            SELECT
-                p.PtTypeID,
-                p.TbTypeID,
-                p.SexID,
-                COALESCE(p.Age, 0)                AS Age,
-                COALESCE(p.DiagMethodID, 0)        AS DiagMethodID,
-                COALESCE(f.Mon0LabResultID,  0)    AS Mon0LabResultID,
-                COALESCE(f.Mon0XpertResultID,0)    AS Mon0XpertResultID,
-                COALESCE(f.HIVTestResultID,  0)    AS HIVTestResultID,
-                COALESCE(f.OnART, 0)               AS OnART,
-                COALESCE(f.OnCPT, 0)               AS OnCPT,
-                COALESCE(f.Mon2LabResultID,  0)    AS Mon2LabResultID,
-                COALESCE(f.Mon3LabResultID,  0)    AS Mon3LabResultID,
-                COALESCE(f.OutcomeID,        0)    AS OutcomeID
-            FROM   PtDetailsT  p
-            LEFT JOIN PtFollowUpT f
-                   ON f.PtDetailsTID = p.PtDetailsTID AND f.Deleted = 0
-            WHERE  p.Deleted       = 0
-              AND  p.PtTypeID      IN (1,2,3,4,6)
-              AND  p.NearestHFID   = @FacilityId
-              AND  p.RegDate       BETWEEN @Start AND @End
-            """;
-
-        await using (var cmd = new SqlCommand(patientSql, conn))
+        // ── CASE FINDING ─────────────────────────────────────────────────────
+        foreach (var row in cfRows)
         {
-            cmd.Parameters.AddWithValue("@FacilityId", facilityId);
-            cmd.Parameters.AddWithValue("@Start",      cfStart.ToDateTime(TimeOnly.MinValue));
-            cmd.Parameters.AddWithValue("@End",        cfEnd.ToDateTime(TimeOnly.MinValue));
-
-            await using var rs = await cmd.ExecuteReaderAsync();
-            while (await rs.ReadAsync())
-            {
-                int ptType    = rs.GetInt32(0);
-                int tbType    = rs.GetInt32(1);
-                int sex       = rs.GetInt32(2);
-                int age       = rs.GetInt32(3);
-                int diagMeth  = rs.GetInt32(4);
-                int mon0Lab   = rs.GetInt32(5);
-                int mon0Xpert = rs.GetInt32(6);
-                int hivResult = rs.GetInt32(7);
-                int onArt     = rs.GetInt32(8);
-                int onCpt     = rs.GetInt32(9);
+            int ptType    = row.PtType;
+            int tbType    = row.TbType;
+            int sex       = row.Sex;
+            int age       = row.Age;
+            int diagMeth  = row.DiagMethod;
+            int mon0Lab   = row.Mon0Lab;
+            int mon0Xpert = row.Mon0Xpert;
+            int hivResult = row.HivResult;
+            int onArt     = row.OnART;
+            int onCpt     = row.OnCPT;
 
                 // PBC positive: sputum 1,4,5,6 (Scanty,1+,2+,3+) OR Xpert 3,4,5 (T,TI,RR)
                 bool isPBC = tbType == 1 &&
@@ -1580,120 +1697,80 @@ public sealed class Dhis2Controller : ControllerBase
                     }
                 }
             }
-        }
 
-        // ── SPUTUM CONVERSION query ──────────────────────────────────────────
-        await using (var cmd = new SqlCommand(patientSql, conn))
+        // ── SPUTUM CONVERSION ─────────────────────────────────────────────────
+        foreach (var row in scRows)
         {
-            cmd.Parameters.AddWithValue("@FacilityId", facilityId);
-            cmd.Parameters.AddWithValue("@Start",      scStart.ToDateTime(TimeOnly.MinValue));
-            cmd.Parameters.AddWithValue("@End",        scEnd.ToDateTime(TimeOnly.MinValue));
+            int ptType    = row.PtType;
+            int tbType    = row.TbType;
+            int mon0Lab   = row.Mon0Lab;
+            int mon0Xpert = row.Mon0Xpert;
+            int mon2Lab   = row.Mon2Lab;
+            int mon3Lab   = row.Mon3Lab;
 
-            await using var rs = await cmd.ExecuteReaderAsync();
-            while (await rs.ReadAsync())
+            bool isNewPBC = ptType == 1 && tbType == 1 &&
+                (mon0Lab is 1 or 4 or 5 or 6 || mon0Xpert is 3 or 4 or 5);
+
+            if (isNewPBC)
             {
-                int ptType    = rs.GetInt32(0);
-                int tbType    = rs.GetInt32(1);
-                int mon0Lab   = rs.GetInt32(5);
-                int mon0Xpert = rs.GetInt32(6);
-                int mon2Lab   = rs.GetInt32(10);
-                int mon3Lab   = rs.GetInt32(11);
-
-                bool isNewPBC = ptType == 1 && tbType == 1 &&
-                    (mon0Lab is 1 or 4 or 5 or 6 || mon0Xpert is 3 or 4 or 5);
-
-                if (isNewPBC)
-                {
-                    sc_NewPBC++;
-                    if (mon2Lab is 3 or 7 && mon3Lab is 3 or 7 or 0) sc_SmearND++;
-                    if (mon2Lab == 2) sc_2Months++;
-                    if (mon3Lab == 2 && mon2Lab != 2) sc_3Months++;
-                }
+                sc_NewPBC++;
+                if (mon2Lab is 3 or 7 && mon3Lab is 3 or 7 or 0) sc_SmearND++;
+                if (mon2Lab == 2) sc_2Months++;
+                if (mon3Lab == 2 && mon2Lab != 2) sc_3Months++;
             }
         }
 
-        // ── PRESUMPTIVE CASES query ──────────────────────────────────────────
-        // Sums monthly tally counts for the CF quarter months/year
-        const string presumptiveSql = """
-            SELECT COALESCE(SUM(pc.PresumptiveCase), 0)
-            FROM   PresumptiveCaseT pc
-            INNER JOIN MonthT m ON m.MonthID = pc.MonthID
-            INNER JOIN YearT  y ON y.YearID  = pc.YearID
-            WHERE  pc.NearestHFID = @FacilityId
-              AND  y.YearName     = @Year
-              AND  m.MonthID      IN (@M1, @M2, @M3)
-            """;
-
-        await using (var cmd = new SqlCommand(presumptiveSql, conn))
+        // ── TREATMENT OUTCOME ─────────────────────────────────────────────────
+        foreach (var row in toRows)
         {
-            int startMonth = (cfStart.Month);
-            cmd.Parameters.AddWithValue("@FacilityId", facilityId);
-            cmd.Parameters.AddWithValue("@Year",       cfStart.Year);
-            cmd.Parameters.AddWithValue("@M1",         startMonth);
-            cmd.Parameters.AddWithValue("@M2",         startMonth + 1);
-            cmd.Parameters.AddWithValue("@M3",         startMonth + 2);
-            var scalar = await cmd.ExecuteScalarAsync();
-            cf_SuspectsSeen = scalar is DBNull ? 0 : Convert.ToInt32(scalar);
-        }
+            int ptType    = row.PtType;
+            int tbType    = row.TbType;
+            int sex       = row.Sex;
+            int age       = row.Age;
+            int mon0Lab   = row.Mon0Lab;
+            int mon0Xpert = row.Mon0Xpert;
+            int hivResult = row.HivResult;
+            int onArt     = row.OnART;
+            int onCpt     = row.OnCPT;
+            int outcome   = row.Outcome;
 
-        // ── TREATMENT OUTCOME query ──────────────────────────────────────────
-        await using (var cmd = new SqlCommand(patientSql, conn))
-        {
-            cmd.Parameters.AddWithValue("@FacilityId", facilityId);
-            cmd.Parameters.AddWithValue("@Start",      toStart.ToDateTime(TimeOnly.MinValue));
-            cmd.Parameters.AddWithValue("@End",        toEnd.ToDateTime(TimeOnly.MinValue));
+            bool isPBC = tbType == 1 &&
+                (mon0Lab is 1 or 4 or 5 or 6 || mon0Xpert is 3 or 4 or 5);
+            bool isPCDEP = (mon0Xpert is not (3 or 4 or 5)) &&
+                (tbType == 2 || (tbType == 1 && mon0Lab is 2 or 3 or 7));
+            bool notPsTI = ptType is not (5 or 7);
 
-            await using var rs = await cmd.ExecuteReaderAsync();
-            while (await rs.ReadAsync())
+            // New PBC outcomes by sex
+            if (ptType == 1 && isPBC)
             {
-                int ptType    = rs.GetInt32(0);
-                int tbType    = rs.GetInt32(1);
-                int sex       = rs.GetInt32(2);
-                int age       = rs.GetInt32(3);
-                int mon0Lab   = rs.GetInt32(5);
-                int mon0Xpert = rs.GetInt32(6);
-                int hivResult = rs.GetInt32(7);
-                int onArt     = rs.GetInt32(8);
-                int onCpt     = rs.GetInt32(9);
-                int outcome   = rs.GetInt32(12);
+                if (sex == 1) { to_NewPBCM++; }
+                else          { to_NewPBCF++; }
+                IncrOutcome(outcome, sex,
+                    ref to_NewPBC_CuredM,    ref to_NewPBC_CuredF,
+                    ref to_NewPBC_CompletedM, ref to_NewPBC_CompletedF,
+                    ref to_NewPBC_DiedM,     ref to_NewPBC_DiedF,
+                    ref to_NewPBC_FailedM,   ref to_NewPBC_FailedF,
+                    ref to_NewPBC_LostToFPM, ref to_NewPBC_LostToFPF,
+                    ref to_NewPBC_NotEvalM,  ref to_NewPBC_NotEvalF);
+            }
 
-                bool isPBC = tbType == 1 &&
-                    (mon0Lab is 1 or 4 or 5 or 6 || mon0Xpert is 3 or 4 or 5);
-                bool isPCDEP = (mon0Xpert is not (3 or 4 or 5)) &&
-                    (tbType == 2 || (tbType == 1 && mon0Lab is 2 or 3 or 7));
-                bool notPsTI = ptType is not (5 or 7);
+            // New PCD/EP outcomes by sex
+            if (ptType == 1 && isPCDEP)
+            {
+                if (sex == 1) { to_NewPCDEPM++; }
+                else          { to_NewPCDEPF++; }
+                IncrOutcomeNoCure(outcome, sex,
+                    ref to_NewPCDEP_CompletedM, ref to_NewPCDEP_CompletedF,
+                    ref to_NewPCDEP_DiedM,      ref to_NewPCDEP_DiedF,
+                    ref to_NewPCDEP_FailedM,    ref to_NewPCDEP_FailedF,
+                    ref to_NewPCDEP_LostToFPM,  ref to_NewPCDEP_LostToFPF,
+                    ref to_NewPCDEP_NotEvalM,   ref to_NewPCDEP_NotEvalF);
+            }
 
-                // New PBC outcomes by sex
-                if (ptType == 1 && isPBC)
-                {
-                    if (sex == 1) { to_NewPBCM++; }
-                    else          { to_NewPBCF++; }
-                    IncrOutcome(outcome, sex,
-                        ref to_NewPBC_CuredM,    ref to_NewPBC_CuredF,
-                        ref to_NewPBC_CompletedM, ref to_NewPBC_CompletedF,
-                        ref to_NewPBC_DiedM,     ref to_NewPBC_DiedF,
-                        ref to_NewPBC_FailedM,   ref to_NewPBC_FailedF,
-                        ref to_NewPBC_LostToFPM, ref to_NewPBC_LostToFPF,
-                        ref to_NewPBC_NotEvalM,  ref to_NewPBC_NotEvalF);
-                }
-
-                // New PCD/EP outcomes by sex
-                if (ptType == 1 && isPCDEP)
-                {
-                    if (sex == 1) { to_NewPCDEPM++; }
-                    else          { to_NewPCDEPF++; }
-                    IncrOutcomeNoCure(outcome, sex,
-                        ref to_NewPCDEP_CompletedM, ref to_NewPCDEP_CompletedF,
-                        ref to_NewPCDEP_DiedM,      ref to_NewPCDEP_DiedF,
-                        ref to_NewPCDEP_FailedM,    ref to_NewPCDEP_FailedF,
-                        ref to_NewPCDEP_LostToFPM,  ref to_NewPCDEP_LostToFPF,
-                        ref to_NewPCDEP_NotEvalM,   ref to_NewPCDEP_NotEvalF);
-                }
-
-                // Relapse outcomes
-                if (ptType == 2)
-                {
-                    if (sex == 1) { to_RelapseM++; }
+            // Relapse outcomes
+            if (ptType == 2)
+            {
+                if (sex == 1) { to_RelapseM++; }
                     else          { to_RelapseF++; }
                     IncrOutcome(outcome, sex,
                         ref to_Relapse_CuredM,    ref to_Relapse_CuredF,
@@ -1797,7 +1874,6 @@ public sealed class Dhis2Controller : ControllerBase
                     }
                 }
             }
-        }
 
         // ── Pack values arrays (order must match CfMap / ToMap) ───────────────
         int[] cfVals =

@@ -454,6 +454,67 @@ public sealed class TBPatientsController : ControllerBase
     }
 
     // ───────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/mine-presumptive
+    //  Returns all PresumptiveCaseT rows for the authenticated user's linked
+    //  facility (facility_id JWT claim = NearestHFID).
+    //  Supports delta pull via ?since=<ISO-8601> timestamp.
+    // ───────────────────────────────────────────────────────────────────────
+    [HttpGet("mine-presumptive")]
+    public async Task<IActionResult> GetMinePresumptive([FromQuery] DateTime? since = null)
+    {
+        var facilityStr = User.FindFirstValue("facility_id") ?? "0";
+        if (!int.TryParse(facilityStr, out var facilityId) || facilityId <= 0)
+            return Ok(Array.Empty<object>()); // no linked facility — return empty list
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            var sinceClause = since.HasValue ? "AND LastModOn > @Since" : "";
+            var sql = $"""
+                SELECT
+                    CAST(PresumptiveCaseTID AS nvarchar(36)) AS PresumptiveCaseTID,
+                    PresumptiveCase, MonthID, YearID,
+                    NearestHFID, DataSourceID, CountyID,
+                    CONVERT(nvarchar(30), LastModOn, 126) AS LastModOn,
+                    CAST(EnteredByID AS nvarchar(36))     AS EnteredByID
+                FROM PresumptiveCaseT
+                WHERE NearestHFID = @FacilityID
+                {sinceClause}
+                ORDER BY YearID, MonthID
+                """;
+
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@FacilityID", facilityId);
+            if (since.HasValue) cmd.Parameters.AddWithValue("@Since", since.Value);
+
+            var cases = new List<Dictionary<string, object?>>();
+            await using (var rdr = await cmd.ExecuteReaderAsync())
+            {
+                while (await rdr.ReadAsync())
+                {
+                    var row = new Dictionary<string, object?>();
+                    for (int i = 0; i < rdr.FieldCount; i++)
+                        row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+                    cases.Add(row);
+                }
+            }
+
+            _logger.LogInformation(
+                "TB GetMinePresumptive: {Count} case(s) for facility {FacilityId}.",
+                cases.Count, facilityId);
+
+            return Ok(cases);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in GetMinePresumptive for facility {FacilityId}.", facilityId);
+            return StatusCode(500, new { error = "Could not retrieve presumptive case records." });
+        }
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
     //  POST /api/tb-patients/sync-presumptive
     //  Upserts monthly presumptive case tallies.
     // ───────────────────────────────────────────────────────────────────────
@@ -477,11 +538,16 @@ public sealed class TBPatientsController : ControllerBase
             await conn.OpenAsync();
             await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
 
+            // SQL Server MERGE requires a USING clause — MERGE...ON without USING
+            // is a syntax error (error 156). Use a single-row derived table as source.
             const string mergeSql = """
                 MERGE INTO PresumptiveCaseT AS target
-                ON (target.NearestHFID = @NearestHFID
-                    AND target.MonthID  = @MonthID
-                    AND target.YearID   = @YearID)
+                USING (SELECT @NearestHFID AS NearestHFID,
+                              @MonthID     AS MonthID,
+                              @YearID      AS YearID) AS source
+                ON (target.NearestHFID = source.NearestHFID
+                    AND target.MonthID  = source.MonthID
+                    AND target.YearID   = source.YearID)
                 WHEN MATCHED THEN
                   UPDATE SET
                     HasChanged=0, LastModOn=GETDATE(),
@@ -493,9 +559,13 @@ public sealed class TBPatientsController : ControllerBase
                           HasChanged, Uploaded, Imported, LastModOn, EnteredByID)
                   VALUES (@PresumptiveCaseTID, @PresumptiveCase, @MonthID, @YearID,
                           @NearestHFID, @DataSourceID,
-                          COALESCE(NULLIF((SELECT TOP 1 CountyID FROM HealthFacilityT WHERE HealthFacilityID = @NearestHFID), 0), 0),
+                          COALESCE(NULLIF((SELECT TOP 1 CountyID FROM HealthFacilityT WHERE HealthFacilityID = @NearestHFID), 0), NULL),
                           0, 0, 0, GETDATE(), @EnteredByID);
                 """;
+
+            // Use NULL rather than 0 for unassigned facility so the now-nullable
+            // DataSourceID / CountyID columns accept the value without error 547.
+            object dataSourceParam = dataSourceID > 0 ? dataSourceID : DBNull.Value;
 
             foreach (var c in payload.Cases)
             {
@@ -505,7 +575,7 @@ public sealed class TBPatientsController : ControllerBase
                 cmd.Parameters.AddWithValue("@MonthID",            c.MonthID);
                 cmd.Parameters.AddWithValue("@YearID",             c.YearID);
                 cmd.Parameters.AddWithValue("@NearestHFID",        c.NearestHFID);
-                cmd.Parameters.AddWithValue("@DataSourceID",       dataSourceID);
+                cmd.Parameters.AddWithValue("@DataSourceID",       dataSourceParam);
                 cmd.Parameters.AddWithValue("@EnteredByID",        enteredByID);
                 await cmd.ExecuteNonQueryAsync();
             }

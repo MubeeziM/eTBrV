@@ -404,7 +404,7 @@
             </div>
             <div class="db-card-body mt-3">
               <h4>Data Entry</h4>
-              <p>Enter patient records for ART Register, Unit TB Register, and other clinical registers.</p>
+              <p>Enter patient records for ART Register, Unit TB Register, Presumptive TB Cases, and other clinical registers.</p>
             </div>
             <div class="db-card-foot">
               <button class="db-open-btn" style="background:#059669;border-color:#7c3aed;color:#fff" tabindex="-1">Enter Data
@@ -881,6 +881,7 @@
                 <option value="">— Select Register —</option>
                 <option value="art">ART Register</option>
                 <option value="tb">Unit TB Register</option>
+                <option value="presumptive">Presumptive TB Cases</option>
                 <option value="index" disabled>Index Client Register (coming soon)</option>
                 <option value="dispensing" disabled>Dispensing Register (coming soon)</option>
               </select>
@@ -1937,6 +1938,85 @@
 
           </div><!-- /#tb-register-content -->
 
+          <!-- ══ Presumptive TB Cases ══════════════════════════════════ -->
+          <div id="presumptive-register-content" hidden>
+            <section class="card form-card">
+              <h2 class="section-title" id="pc-form-title">Presumptive TB Cases — Per Month</h2>
+
+              <!-- Step instructions -->
+              <p style="font-size:.85rem;color:#6b7280;margin:0 0 1.25rem">
+                Select the year and month, enter the number of presumptive TB cases examined by the lab that month, then click <strong>Save</strong>.
+              </p>
+
+              <div class="row g-4">
+
+                <!-- ── LEFT: year / month / count entry ──────────────── -->
+                <div class="col-md-5">
+                  <div class="form-section-body" style="border-radius:.5rem;border:1.5px solid #b2d4b2">
+                  <div class="field-group">
+                    <label for="pc-year-sel">Year <span class="required">*</span></label>
+                    <select id="pc-year-sel" class="form-select" style="font-size:.9rem">
+                      <option value="0">— Select A Year —</option>
+                    </select>
+                  </div>
+
+                  <div class="field-group mt-3">
+                    <label for="pc-month-sel">Month <span class="required">*</span></label>
+                    <select id="pc-month-sel" class="form-select" style="font-size:.9rem">
+                      <option value="0">— Select A Month —</option>
+                    </select>
+                  </div>
+
+                  <div class="field-group mt-3">
+                    <label for="pc-count">Number of Presumptive TB Cases Seen By The Lab <span class="required">*</span></label>
+                    <input type="number" id="pc-count" min="0" step="1" placeholder="e.g. 45"
+                           style="width:100%;padding:.5rem .75rem;font-size:1.6rem;font-weight:700;text-align:center;border:1.5px solid #d1d5db;border-radius:.375rem;color:#111827" />
+                    <span class="field-error" id="pc-count-error"></span>
+                  </div>
+
+                  <div class="mt-4 d-flex gap-2 align-items-center justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary" id="pc-clear-btn">Clear</button>
+                    <button type="button" class="btn btn-primary" id="pc-save-btn" style="min-width:110px">
+                      <span id="pc-save-spinner" class="spinner-border spinner-border-sm me-1 d-none"
+                            role="status" aria-hidden="true"></span>
+                      Save
+                    </button>
+                  </div>
+                  </div><!-- /.form-section-body -->
+
+                  <div id="pc-status" class="alert d-none mt-3 mb-0" style="font-size:.85rem" role="alert"></div>
+                </div>
+
+                <!-- ── RIGHT: summary table ───────────────────────────── -->
+                <div class="col-md-7">
+                  <div style="border:1px solid #e5e7eb;border-radius:.5rem;overflow:hidden">
+                    <div style="background:#1e3a5f;color:#fff;padding:.45rem .8rem;font-weight:700;font-size:.85rem;text-align:center">
+                      Presumptive TB Cases Seen In <span id="pc-table-year">—</span>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-bordered mb-0" style="font-size:.85rem">
+                        <thead>
+                          <tr style="background:#f9fafb">
+                            <th style="padding:.35rem .75rem;color:#6b7280;text-transform:uppercase;font-size:.75rem">Month</th>
+                            <th style="padding:.35rem .75rem;color:#6b7280;text-transform:uppercase;font-size:.75rem;text-align:center"># Presumptive TB Cases</th>
+                          </tr>
+                        </thead>
+                        <tbody id="pc-summary-tbody">
+                          <tr>
+                            <td colspan="2" style="text-align:center;color:#9ca3af;padding:.9rem">
+                              Select a year to view data
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- /.row -->
+            </section>
+          </div><!-- /#presumptive-register-content -->
+
           </div><!-- /#register-content -->
         </div><!-- /.register-main -->
       </div><!-- /.register-layout -->
@@ -2320,6 +2400,18 @@
             style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:0.4rem 1rem;font-size:0.86rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:0.4rem">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
             Sync Now
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" title="View sync diagnostic log"
+                  style="padding:.35rem .7rem;font-size:.78rem;display:flex;align-items:center;gap:4px"
+                  data-bs-toggle="modal" data-bs-target="#sync-log-modal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            Sync Log
           </button>
           <span id="psearch-sync-status" style="font-size:0.83rem;color:#6b7280"></span>
         </div>

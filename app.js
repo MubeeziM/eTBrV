@@ -1696,17 +1696,19 @@ async function triggerTBSync(silent = false, background = false, caller = 'unkno
     return;
   }
 
-  const patients = getAllPtDetailsTBForSync();
-  logSync('INFO', '[TB] Local changed records', { patients: patients.length });
+  const patients    = getAllPtDetailsTBForSync();
+  const pcCases     = getAllPresumptiveCasesForSyncAll();
+  logSync('INFO', '[TB] Local changed records', { patients: patients.length, presumptiveCases: pcCases.length });
 
-  if (patients.length === 0) {
-    logSync('INFO', '[TB] Aborted \u2014 no changes to sync');
-    if (!silent) showToast('No TB changes to sync — all records are up to date.', '');
+  if (patients.length === 0 && pcCases.length === 0) {
+    logSync('INFO', '[TB] Aborted — no changes to sync');
+    if (!background) showToast('No TB changes to sync — all records are up to date.', '');
     _tbSyncInProgress = false;
     return;
   }
 
-  if (!silent) showToast(`Syncing ${patients.length} TB record(s) to the eTBr server…`, '');
+  const totalChanges = patients.length + pcCases.length;
+  if (!silent) showToast(`Syncing ${totalChanges} TB record(s) to the eTBr server…`, '');
 
   if (!silent && tbSyncBtn) {
     tbSyncBtn.disabled = true;
@@ -1726,6 +1728,43 @@ async function triggerTBSync(silent = false, background = false, caller = 'unkno
   }
 
   try {
+    // ── Presumptive-cases-only path: skip TB patient POST when no patients changed ──
+    if (patients.length === 0 && pcCases.length > 0) {
+      const pcPayload = {
+        cases: pcCases.map(c => ({
+          PresumptiveCaseTID: c.PresumptiveCaseTID,
+          PresumptiveCase:    c.PresumptiveCase   ?? 0,
+          MonthID:            c.MonthID,
+          YearID:             c.YearID,
+          NearestHFID:        c.NearestHFID       || 0,
+          DataSourceID:       c.DataSourceID      || 0,
+          HasChanged:         1,
+        })),
+      };
+      logSync('INFO', '[PC] Sending payload', { cases: pcPayload.cases.map(c => ({ TID: c.PresumptiveCaseTID, MonthID: c.MonthID, YearID: c.YearID, HF: c.NearestHFID, DS: c.DataSourceID })) });
+      const pcRes = await fetch(`${API_BASE}/tb-patients/sync-presumptive`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body:    JSON.stringify(pcPayload),
+      });
+      if (pcRes.ok) {
+        await markPresumptiveCasesSynced(pcCases.map(c => c.PresumptiveCaseTID));
+        localStorage.setItem('tb.lastSync', new Date().toISOString());
+        logSync('INFO', `[PC] Synced ${pcCases.length} presumptive case(s) (no TB patients).`);
+        await _pushAuditLogs();
+        if (!silent) showToast(`${pcCases.length} presumptive TB case(s) synced successfully.`, 'success');
+        else if (!background) showToast('Presumptive TB cases synced to the eTBr server.', 'success');
+      } else {
+        const pcErrBody = await pcRes.text().catch(() => '(unreadable)');
+        logSync('WARN', `[PC] Presumptive-only sync returned ${pcRes.status}.`, { body: pcErrBody });
+        if (!background) showToast(
+          silent ? 'Sync failed — tap "Sync Data" to retry.' : `Presumptive TB cases sync failed (${pcRes.status}).`,
+          'error'
+        );
+      }
+      return; // finally will restore the button and reset _tbSyncInProgress
+    }
+
     const payload = {
       patients: patients.map(p => ({
         PtDetailsTID:  p.PtDetailsTID,
@@ -1802,7 +1841,7 @@ async function triggerTBSync(silent = false, background = false, caller = 'unkno
     logSync('INFO', '[TB] Response', { status: response.status, ok: response.ok });
 
     if (response.status === 401) {
-      logSync('ERROR', '[TB] 401 \u2014 forcing re-login');
+      logSync('ERROR', '[TB] 401 — forcing re-login');
       clearAuth(); showAuthScreen();
       showToast('Session expired. Please sign in again.', 'error');
       return;
@@ -1813,6 +1852,38 @@ async function triggerTBSync(silent = false, background = false, caller = 'unkno
       logSync('INFO', '[TB] Sync successful', data);
       await markTBRecordsSynced(patientTIDs);
       localStorage.setItem('tb.lastSync', new Date().toISOString());
+
+      // ── Presumptive cases upload (piggybacked onto the same sync) ───────
+      if (pcCases.length > 0) {
+        try {
+          const pcPayload = {
+            cases: pcCases.map(c => ({
+              PresumptiveCaseTID: c.PresumptiveCaseTID,
+              PresumptiveCase:    c.PresumptiveCase   ?? 0,
+              MonthID:            c.MonthID,
+              YearID:             c.YearID,
+              NearestHFID:        c.NearestHFID       || 0,
+              DataSourceID:       c.DataSourceID      || 0,
+              HasChanged:         1,
+            })),
+          };
+          const pcRes = await fetch(`${API_BASE}/tb-patients/sync-presumptive`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body:    JSON.stringify(pcPayload),
+          });
+          if (pcRes.ok) {
+            await markPresumptiveCasesSynced(pcCases.map(c => c.PresumptiveCaseTID));
+            logSync('INFO', `[PC] Synced ${pcCases.length} presumptive case(s).`);
+          } else {
+            const pcErrBody = await pcRes.text().catch(() => '(unreadable)');
+            logSync('WARN', `[PC] Presumptive sync returned ${pcRes.status} — will retry on next sync.`, { body: pcErrBody });
+          }
+        } catch (pcErr) {
+          logSync('WARN', `[PC] Presumptive upload exception: ${pcErr.message}`);
+        }
+      }
+
       await _pushAuditLogs();
       renderTBPatients();
       if (!silent) showToast(data.message ?? 'TB sync successful!', 'success');
@@ -1830,7 +1901,7 @@ async function triggerTBSync(silent = false, background = false, caller = 'unkno
         sqlErrorMessage = ed.sqlErrorMessage ?? null;
       } catch { /* ignore */ }
       logSync('ERROR', `[TB] eTBr server error ${response.status}`, { errorMsg, sqlErrorNumber, sqlErrorMessage });
-      if (!background) showToast(silent ? 'TB auto-sync failed \u2014 tap "Sync Data" to retry.' : `${errorMsg}. Please try again.`, 'error');
+      if (!background) showToast(silent ? 'TB auto-sync failed — tap "Sync Data" to retry.' : `${errorMsg}. Please try again.`, 'error');
     }
   } catch (err) {
     logSync('ERROR', `[TB] Network/JS exception: ${err.message}`);
@@ -4156,7 +4227,7 @@ const artRegisterScreen   = document.getElementById('art-register-screen');
  */
 function updateDashboardStats() {
   try {
-    const pending  = getAllPtDetailsForSync().length + getAllPtDetailsTBForSync().length;
+    const pending  = getAllPtDetailsForSync().length + getAllPtDetailsTBForSync().length + getAllPresumptiveCasesForSyncAll().length;
     const lastSyncART = localStorage.getItem('art.lastSync');
     const lastSyncTB  = localStorage.getItem('tb.lastSync');
     const lastSync = (!lastSyncART && !lastSyncTB) ? null
@@ -5927,6 +5998,28 @@ async function autoRestoreFromServerTB(silent = false) {
         showToast(`${imported} TB record(s) synced from the eTBr server.`, 'success');
       }
     }
+
+    // ── Pull presumptive cases (piggybacked onto the same restore) ────────
+    try {
+      const lastPcPullAt = silent ? localStorage.getItem('art.lastPcPullAt') : null;
+      const pcUrl = lastPcPullAt
+        ? `${API_BASE}/tb-patients/mine-presumptive?since=${encodeURIComponent(lastPcPullAt)}`
+        : `${API_BASE}/tb-patients/mine-presumptive`;
+      const pcRes = await fetch(pcUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (pcRes.ok) {
+        const cases = await pcRes.json();
+        const pcImported = await importPresumptiveCasesFromServer(cases);
+        localStorage.setItem('art.lastPcPullAt', new Date(Date.now() - 2 * 60 * 1000).toISOString());
+        if (pcImported > 0) {
+          logSync('INFO', `[PC] Pull: ${pcImported} presumptive case(s) synced from server.`);
+        }
+      } else {
+        logSync('WARN', `[PC] mine-presumptive returned ${pcRes.status}`);
+      }
+    } catch (pcErr) {
+      logSync('WARN', `[PC] Presumptive pull failed: ${pcErr.message}`);
+    }
+
   } catch (err) {
     logSync('WARN', `[TB] Background pull failed: ${err.message}`);
   }
@@ -7068,7 +7161,7 @@ document.getElementById('logout-modal')?.addEventListener('hide.bs.modal', () =>
 
 const FACILITY_KEY = 'art.selectedFacility';   // localStorage key
 let _selectedFacility = null;   // { id, name, countyId, county, stateId, state }
-let _selectedRegister = null;   // 'art' | 'tb' | null (not persisted — reset on each visit)
+let _selectedRegister = null;   // 'art' | 'tb' | 'presumptive' | null (not persisted — reset on each visit)
 /** True when the sidebar was auto-collapsed due to portrait orientation (not by user action). */
 let _sidebarAutoCollapsed = false;
 
@@ -7405,10 +7498,11 @@ function updateFacilityBanner() {
 
 /** Show or hide the register selector and register content based on facility + register selection. */
 function applyFacilityGate() {
-  const regSelector = document.getElementById('register-selector');
-  const content     = document.getElementById('register-content');
-  const artContent  = document.getElementById('art-register-content');
-  const tbContent   = document.getElementById('tb-register-content');
+  const regSelector   = document.getElementById('register-selector');
+  const content       = document.getElementById('register-content');
+  const artContent    = document.getElementById('art-register-content');
+  const tbContent     = document.getElementById('tb-register-content');
+  const pcContent     = document.getElementById('presumptive-register-content');
 
   // Keep the dropdown value in sync with the programmatic register selection,
   // and lock it when the patient was opened from monitoring or DQ (no switching mid-edit).
@@ -7432,6 +7526,7 @@ function applyFacilityGate() {
     if (content)     content.hidden     = false;
     if (artContent)  artContent.hidden  = (_selectedRegister !== 'art');
     if (tbContent)   tbContent.hidden   = (_selectedRegister !== 'tb');
+    if (pcContent)   pcContent.hidden   = (_selectedRegister !== 'presumptive');
     // Baseline data button is ART-register-only
     const baselineBtn = document.getElementById('sfb-baseline-btn');
     if (baselineBtn) baselineBtn.hidden = (_selectedRegister !== 'art') || !userCanWrite();
@@ -7539,6 +7634,11 @@ document.getElementById('register-select')?.addEventListener('change', (e) => {
     // Hide baseline warning — not relevant for the TB register
     const warnBanner = document.getElementById('bl-facility-warn-banner');
     if (warnBanner) warnBanner.hidden = true;
+  }
+  if (_selectedFacility && _selectedRegister === 'presumptive') {
+    const warnBanner = document.getElementById('bl-facility-warn-banner');
+    if (warnBanner) warnBanner.hidden = true;
+    initPresumptiveForm(_selectedFacility.id);
   }
 });
 
@@ -7798,7 +7898,7 @@ async function triggerSync(silent = false, background = false, caller = 'unknown
 
   if (patients.length === 0) {
     logSync('INFO', 'Aborted — no changes to sync');
-    if (!silent) showToast('No changes to sync — all records are up to date.', '');
+    if (!background) showToast('No changes to sync — all records are up to date.', '');
     _syncInProgress = false;
     return;
   }
@@ -10605,7 +10705,7 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
     if (btn) btn.disabled = true;
     if (statusEl) statusEl.textContent = 'Syncing…';
     try {
-      await triggerSync(false, false, 'pending-sync-btn');
+      await triggerSync(true, false, 'pending-sync-btn');
       await triggerTBSync(true, false, 'pending-sync-btn-tb');
       await autoRestoreFromServer(true);
       await autoRestoreFromServerTB(true);
@@ -10766,7 +10866,7 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
     ];
 
     if (!rows.length) {
-      _showEmpty('No patients are currently pending sync.');
+      _showEmpty('No data is currently pending sync.');
       return;
     }
 
@@ -10779,7 +10879,7 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
     if (hintEl)  hintEl.hidden  = false;
     if (countEl) {
       countEl.hidden = false;
-      countEl.textContent = `${rows.length} patient${rows.length !== 1 ? 's' : ''} pending sync`;
+      countEl.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''} pending sync`;
     }
 
     const canWrite = userCanWrite();
@@ -15030,7 +15130,9 @@ function resolveGeoScope(user, geo) {
     if (dhis2ProgressWrap) dhis2ProgressWrap.style.display = '';
 
     try {
-      const qs  = `cfQuarter=${cfQ}&cfYear=${cfY}`;
+      const _selIds = getSelectedFacilityIds();
+      const qs  = `cfQuarter=${cfQ}&cfYear=${cfY}` +
+        (_selIds.length > 0 ? _selIds.map(id => `&facilityIds=${id}`).join('') : '');
       const res = await fetch(`${API_BASE}/dhis2/tb-prepare?${qs}`, {
         headers: { Authorization: `Bearer ${authToken}` }
       });
@@ -15916,6 +16018,258 @@ function truncateDisplayName(name = '') {
   const normalized = raw.replace(/\s+/g, ' ');
   const truncated = normalized.length > 15 ? normalized.substring(0, 15) : normalized;
   return truncated.replace(/\b\w/g, char => char.toUpperCase());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PRESUMPTIVE TB CASES — inline register form
+//  Called by the register-select change handler when 'presumptive' is chosen.
+//  Uses the already-selected _selectedFacility from the data-entry sidebar.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** One-time setup flag so we only attach DOM listeners once. */
+let _pcListenersAttached = false;
+
+/**
+ * Called whenever the user switches to the Presumptive TB Cases register.
+ * Populates selectors, refreshes the summary table, and pre-fills the count.
+ * @param {number} facilityId  — the currently selected facility ID
+ */
+function initPresumptiveForm(facilityId) {
+  _pcPopulateSelectors();
+  _pcRefreshSummary(facilityId);
+  _pcPrefillCount(facilityId);
+
+  if (!_pcListenersAttached) {
+    _pcAttachListeners();
+    _pcListenersAttached = true;
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function _pcSetStatus(msg, type) {
+  const el = document.getElementById('pc-status');
+  if (!el) return;
+  el.className = type === 'success'
+    ? 'alert bg-success text-white mt-3 mb-0'
+    : `alert alert-${type} mt-3 mb-0`;
+  if (type === 'success') {
+    el.innerHTML = msg;
+  } else {
+    el.textContent = msg;
+  }
+  el.classList.remove('d-none');
+}
+
+function _pcClearStatus() {
+  const el = document.getElementById('pc-status');
+  if (!el) return;
+  el.className = 'alert d-none mt-3 mb-0';
+  el.textContent = '';
+}
+
+function _pcPopulateSelectors() {
+  if (!_db) return;
+
+  const yearSel  = document.getElementById('pc-year-sel');
+  const monthSel = document.getElementById('pc-month-sel');
+
+  // Years (seed starts at YearID=1/2015; skip the oldest entries like the VBA does)
+  try {
+    const yr = _db.exec('SELECT YearID, YearName FROM YearT WHERE YearID >= 8 ORDER BY YearName');
+    if (yr.length && yearSel && yearSel.options.length <= 1) {
+      yearSel.innerHTML = '<option value="0">— Select A Year —</option>';
+      for (const [id, name] of yr[0].values) {
+        const o = document.createElement('option');
+        o.value = id; o.textContent = name; yearSel.appendChild(o);
+      }
+      // Pre-select current year
+      const cur = String(new Date().getFullYear());
+      for (const o of yearSel.options) { if (o.textContent === cur) { o.selected = true; break; } }
+    }
+  } catch (e) { console.warn('[PC] year load error', e.message); }
+
+  // Months
+  try {
+    const mo = _db.exec('SELECT MonthID, MonthName FROM MonthT ORDER BY MonthID');
+    if (mo.length && monthSel && monthSel.options.length <= 1) {
+      monthSel.innerHTML = '<option value="0">— Select A Month —</option>';
+      for (const [id, name] of mo[0].values) {
+        const o = document.createElement('option');
+        o.value = id; o.textContent = name; monthSel.appendChild(o);
+      }
+    }
+  } catch (e) { console.warn('[PC] month load error', e.message); }
+}
+
+function _pcRefreshSummary(facilityId) {
+  const facId   = facilityId || (_selectedFacility?.id || 0);
+  const yearSel = document.getElementById('pc-year-sel');
+  const yearId  = parseInt(yearSel?.value, 10) || 0;
+  const tbody   = document.getElementById('pc-summary-tbody');
+  const yearLbl = document.getElementById('pc-table-year');
+  if (!tbody) return;
+
+  if (!facId || !yearId) {
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#9ca3af;padding:.9rem">Select a year to view data</td></tr>';
+    return;
+  }
+
+  const yearName = yearSel?.selectedOptions?.[0]?.textContent || '';
+  if (yearLbl) yearLbl.textContent = yearName;
+
+  let rows = [];
+  try {
+    const r = _db.exec(`
+      SELECT m.MonthID, m.MonthName, COALESCE(pc.PresumptiveCase, '') AS Cnt
+      FROM   MonthT m
+      LEFT JOIN PresumptiveCaseT pc
+             ON pc.MonthID = m.MonthID AND pc.YearID = ? AND pc.NearestHFID = ?
+      ORDER  BY m.MonthID`,
+      [yearId, facId]
+    );
+    if (r.length) rows = r[0].values;
+  } catch (e) { console.warn('[PC] summary query error', e.message); }
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#9ca3af;padding:.9rem">No data yet for this year</td></tr>';
+    return;
+  }
+
+  const selMonthId = parseInt(document.getElementById('pc-month-sel')?.value, 10) || 0;
+  tbody.innerHTML = rows.map(([mid, mname, cnt]) => {
+    const highlight = selMonthId > 0 && mid === selMonthId ? 'background:#dbeafe;font-weight:700' : '';
+    const display   = cnt === '' ? '<span style="color:#d1d5db">—</span>' : escHtml(String(cnt));
+    return `<tr style="${highlight}">
+      <td style="padding:.3rem .75rem">${escHtml(mname)}</td>
+      <td style="text-align:center;padding:.3rem .75rem">${display}</td>
+    </tr>`;
+  }).join('');
+}
+
+function _pcPrefillCount(facilityId) {
+  const facId   = facilityId || (_selectedFacility?.id || 0);
+  const yearId  = parseInt(document.getElementById('pc-year-sel')?.value,  10) || 0;
+  const monthId = parseInt(document.getElementById('pc-month-sel')?.value, 10) || 0;
+  const inp     = document.getElementById('pc-count');
+  if (!inp) return;
+  if (!facId || !yearId || !monthId) { inp.value = ''; return; }
+  try {
+    const r = _db.exec(
+      'SELECT PresumptiveCase FROM PresumptiveCaseT WHERE NearestHFID = ? AND YearID = ? AND MonthID = ?',
+      [facId, yearId, monthId]
+    );
+    inp.value = (r.length && r[0].values.length) ? (r[0].values[0][0] ?? '') : '';
+  } catch { inp.value = ''; }
+}
+
+// ── Event listeners (attached once) ──────────────────────────────────────
+
+function _pcAttachListeners() {
+  document.getElementById('pc-year-sel')?.addEventListener('change', () => {
+    _pcRefreshSummary();
+    _pcPrefillCount();
+  });
+
+  document.getElementById('pc-month-sel')?.addEventListener('change', () => {
+    _pcPrefillCount();
+    _pcRefreshSummary();
+  });
+
+  document.getElementById('pc-count')?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '');
+  });
+
+  document.getElementById('pc-clear-btn')?.addEventListener('click', () => {
+    const inp = document.getElementById('pc-count');
+    if (inp) inp.value = '';
+    _pcClearStatus();
+    const errEl = document.getElementById('pc-count-error');
+    if (errEl) errEl.textContent = '';
+  });
+
+  document.getElementById('pc-save-btn')?.addEventListener('click', async () => {
+    _pcClearStatus();
+    const errEl = document.getElementById('pc-count-error');
+    if (errEl) errEl.textContent = '';
+
+    const facId   = _selectedFacility?.id || 0;
+    const yearSel = document.getElementById('pc-year-sel');
+    const monSel  = document.getElementById('pc-month-sel');
+    const inp     = document.getElementById('pc-count');
+    const yearId  = parseInt(yearSel?.value,  10) || 0;
+    const monthId = parseInt(monSel?.value,   10) || 0;
+    const raw     = inp?.value?.trim() ?? '';
+    const count   = parseInt(raw, 10);
+
+    if (!facId)   { _pcSetStatus('No facility selected — please select a facility from the sidebar.', 'warning'); return; }
+    if (!yearId)  { _pcSetStatus('Please select a year.', 'warning'); return; }
+    if (!monthId) { _pcSetStatus('Please select a month.', 'warning'); return; }
+    if (raw === '' || isNaN(count) || count < 0) {
+      if (errEl) errEl.textContent = 'Enter a valid number (0 or more).';
+      _pcSetStatus('Please enter the number of presumptive TB cases (0 or more).', 'warning');
+      return;
+    }
+
+    // Future-month guard — mirror VBA 3-day rule
+    const yearName = parseInt(yearSel?.selectedOptions?.[0]?.textContent, 10) || 0;
+    if (yearName > 0) {
+      const monthEndDate = new Date(yearName, monthId, 0);
+      const daysLeft     = Math.floor((monthEndDate - new Date()) / 86400000);
+      if (daysLeft > 3) {
+        const monthName = monSel?.selectedOptions?.[0]?.textContent || `Month ${monthId}`;
+        _pcSetStatus(`${monthName} ${yearName} still has ${daysLeft} day(s) before it ends. You can only record data after the month has ended.`, 'warning');
+        return;
+      }
+    }
+
+    const saveBtn     = document.getElementById('pc-save-btn');
+    const spinner     = document.getElementById('pc-save-spinner');
+    const user        = getUser();
+    const geoItems    = document.getElementById('facility-tree')?._treeData || [];
+    const geoItem     = geoItems.find(it => it.healthFacilityID === facId);
+    const countyId    = geoItem?.countyID || _selectedFacility?.countyId || 0;
+
+    if (saveBtn) saveBtn.disabled = true;
+    spinner?.classList.remove('d-none');
+    try {
+      await upsertPresumptiveCase({
+        PresumptiveCase: count,
+        MonthID:         monthId,
+        YearID:          yearId,
+        NearestHFID:     facId,
+        DataSourceID:    user?.dataSourceID || 0,
+        CountyID:        countyId,
+        LocationID:      user?.locationID   || 0,
+        SubRecID:        user?.subRecID     || 0,
+        EnteredByID:     user?.userTID      || '',
+      });
+
+      const monthName = monSel?.selectedOptions?.[0]?.textContent || `Month ${monthId}`;
+      const facName   = _selectedFacility?.name || `Facility #${facId}`;
+      const _esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      _pcSetStatus(
+        `<strong>Data saved successfully</strong><br>${count} presumptive TB case(s)<br>${_esc(facName)}, ${_esc(monthName)} ${yearName}.`,
+        'success'
+      );
+      if (inp) inp.value = '';
+      _pcRefreshSummary(facId);
+      if (navigator.onLine) triggerTBSync(true, false, 'pc-save');
+
+      await insertAuditLog({
+        action:   'UPSERT_PRESUMPTIVE',
+        notes:    `Saved ${count} presumptive TB cases for ${facName}, ${monthName} ${yearName}`,
+        userTID:  user?.userTID,
+        userName: user?.fullName ?? user?.userName,
+      });
+    } catch (err) {
+      console.error('[PC] save error:', err);
+      _pcSetStatus(`Save failed: ${err.message || err}`, 'danger');
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+      spinner?.classList.add('d-none');
+    }
+  });
 }
 
 // ─── Back-button / exit guard ─────────────────────────────────────────────────
