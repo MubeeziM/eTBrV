@@ -103,3 +103,82 @@ public sealed class ResetPasswordRequest
     public string ResetCode   { get; set; } = string.Empty;
     public string NewPassword { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Profile fields that a logged-in user may update on their own account.
+/// All fields are optional — only non-null / non-empty values are applied.
+/// Facility assignments are intentionally excluded; those are admin-controlled.
+/// </summary>
+public sealed class UpdateProfileRequest
+{
+    public string? FullName     { get; set; }
+    public string? UserName     { get; set; }
+    public string? EmailAddress { get; set; }
+    public string? PhoneNo      { get; set; }
+    /// <summary>
+    /// Data-URI of the profile picture (e.g. "data:image/jpeg;base64,…").
+    /// Pass an empty string to clear the avatar.
+    /// Max decoded size enforced server-side: 200 KB.
+    /// </summary>
+    public string? AvatarBase64 { get; set; }
+}
+
+/// <summary>Payload returned after a successful profile update — mirrors the fields that changed.</summary>
+public sealed class UpdateProfileResponse
+{
+    public string  FullName     { get; set; } = string.Empty;
+    public string  UserName     { get; set; } = string.Empty;
+    public string  EmailAddress { get; set; } = string.Empty;
+    public string? PhoneNo      { get; set; }
+    public string? AvatarBase64 { get; set; }
+    /// <summary>Fresh JWT that reflects the updated FullName / UserName claims.</summary>
+    public string  Token        { get; set; } = string.Empty;
+    public DateTime ExpiresAt   { get; set; }
+}
+
+/// <summary>Allows a logged-in user to change their own password. Requires the current password for verification.</summary>
+public sealed class ChangePasswordRequest
+{
+    public string CurrentPassword { get; set; } = string.Empty;
+    public string NewPassword     { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// All per-user configurable preferences.
+/// Returned by GET /api/auth/preferences and accepted by PUT /api/auth/preferences.
+/// Every field has a safe default so missing rows in UserPreferencesT are harmless.
+/// </summary>
+public sealed class UserPreferencesDto
+{
+    // ── Clinical Thresholds ───────────────────────────────────────────────
+    public int  TbLookbackDays          { get; set; } = 365;
+    public int  OutcomeEligNewMin       { get; set; } = 168;
+    public int  OutcomeEligNewMax       { get; set; } = 270;
+    public int  OutcomeEligReTxMin      { get; set; } = 224;
+    public int  OutcomeEligReTxMax      { get; set; } = 320;
+    public int  DqNoOutcomeNewMin       { get; set; } = 180;
+    public int  DqNoOutcomeNewMax       { get; set; } = 540;
+    public int  DqNoOutcomeReTxMin      { get; set; } = 240;
+    public int  DqNoOutcomeReTxMax      { get; set; } = 600;
+    public int  DqDiagMethodDays        { get; set; } = 180;
+    // ── Data Entry ────────────────────────────────────────────────────────
+    public int  ArtLoadLimit            { get; set; } = 0;
+    public bool DupNameCheckEnabled     { get; set; } = true;
+    // ── Monitoring ────────────────────────────────────────────────────────
+    public string DefaultMonMode        { get; set; } = "missed";
+    public int  MonRowsPerPage          { get; set; } = 500;
+    // ── Reports ───────────────────────────────────────────────────────────
+    public string DefaultReportPeriodType { get; set; } = "monthly";
+    public int  DefaultReportFacilityID { get; set; } = 0;
+    // ── Session & Security ────────────────────────────────────────────────
+    public int  InactivityWarnMinutes   { get; set; } = 13;
+    public int  AutoLogoutMinutes       { get; set; } = 2;
+    public int  SyncIntervalMinutes     { get; set; } = 5;
+    // ── Display & Usability ───────────────────────────────────────────────
+    public int  NameTruncLength         { get; set; } = 15;
+    public bool ShowTbSection           { get; set; } = true;
+    public bool ShowDqSection           { get; set; } = true;
+    public bool PinEnrollDismissed      { get; set; } = false;
+    public bool DqAutoClose             { get; set; } = false;
+    public bool CompactTableMode        { get; set; } = false;
+}

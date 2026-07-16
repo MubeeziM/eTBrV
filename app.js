@@ -15,6 +15,24 @@
 // ─── App version — stamped automatically at deploy time ──────────────────
 const APP_VERSION = 'v__BUILD__';
 
+// ─── Auth-screen flash prevention ────────────────────────────────────────
+// If the user has a stored (non-expired) token, hide the auth screen
+// immediately — before bootstrap()/initDB() complete — so they never see
+// the login page flash during a SW-triggered page reload.
+(function _hideAuthIfLoggedIn() {
+  try {
+    const token  = localStorage.getItem('art.token');
+    const expiry = localStorage.getItem('art.expiry');
+    if (!token || !expiry) return;
+    const expiryMs = isNaN(Number(expiry)) ? new Date(expiry).getTime() : Number(expiry);
+    if (Date.now() >= expiryMs) return;   // expired — let bootstrap show auth
+    const authEl = document.getElementById('auth-screen');
+    const appEl  = document.getElementById('app-screen');
+    if (authEl) authEl.hidden = true;
+    if (appEl)  appEl.hidden  = false;
+  } catch { /* ignore — bootstrap() will handle auth state */ }
+})();
+
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
 
@@ -3932,6 +3950,79 @@ function initInputFilters() {
 const AUTH_TOKEN_KEY  = 'art.token';
 const AUTH_EXPIRY_KEY = 'art.expiry';
 const AUTH_USER_KEY   = 'art.user';
+const AUTH_PREFS_KEY  = 'art.prefs';
+
+/** Factory — default preference values (mirrors server/DB defaults). */
+function _defaultPrefs() {
+  return {
+    tbLookbackDays:          365,
+    outcomeEligNewMin:       168,
+    outcomeEligNewMax:       270,
+    outcomeEligReTxMin:      224,
+    outcomeEligReTxMax:      320,
+    dqNoOutcomeNewMin:       180,
+    dqNoOutcomeNewMax:       540,
+    dqNoOutcomeReTxMin:      240,
+    dqNoOutcomeReTxMax:      600,
+    dqDiagMethodDays:        180,
+    artLoadLimit:              0,
+    dupNameCheckEnabled:    true,
+    defaultMonMode:       'missed',
+    monRowsPerPage:          500,
+    defaultReportPeriodType: 'monthly',
+    defaultReportFacilityID:   0,
+    inactivityWarnMinutes:    13,
+    autoLogoutMinutes:         2,
+    syncIntervalMinutes:       5,
+    nameTruncLength:          15,
+    showTbSection:          true,
+    showDqSection:          true,
+    pinEnrollDismissed:    false,
+    dqAutoClose:           false,
+    compactTableMode:      false,
+  };
+}
+
+/** Read preferences from localStorage (merged with defaults). */
+function getPrefs() {
+  try {
+    const raw = localStorage.getItem(AUTH_PREFS_KEY);
+    if (raw) return { ..._defaultPrefs(), ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return _defaultPrefs();
+}
+
+/** Apply a preferences object to all runtime variables and UI state. */
+function applyPrefs(prefs) {
+  if (!prefs) return;
+  INACTIVITY_WARN_MS   = prefs.inactivityWarnMinutes * 60 * 1000;
+  INACTIVITY_LOGOUT_MS = prefs.autoLogoutMinutes      * 60 * 1000;
+  SYNC_INTERVAL_MS     = prefs.syncIntervalMinutes    * 60 * 1000;
+  MON_PAGE             = prefs.monRowsPerPage || 500;
+  if (typeof _monMode !== 'undefined') _monMode = prefs.defaultMonMode || 'missed';
+  localStorage.setItem('art.dqAutoClose', prefs.dqAutoClose ? '1' : '0');
+  document.body.classList.toggle('compact-mode', !!prefs.compactTableMode);
+  const tbCard = document.getElementById('dash-goto-tb-monitoring')?.closest('.db-card');
+  if (tbCard) tbCard.style.display = prefs.showTbSection ? '' : 'none';
+  const dqCard = document.getElementById('dash-goto-tb-quality')?.closest('.db-card');
+  if (dqCard) dqCard.style.display = prefs.showDqSection ? '' : 'none';
+}
+
+/** Fetch preferences from the server, cache, and apply them (fire-and-forget). */
+async function refreshPrefsFromServer() {
+  if (!navigator.onLine) return;
+  const tok = getToken();
+  if (!tok) return;
+  try {
+    const res = await fetch(`${API_BASE}/auth/preferences`, {
+      headers: { 'Authorization': `Bearer ${tok}` }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(data));
+    applyPrefs(data);
+  } catch { /* silently ignore */ }
+}
 
 // ── Auth DOM refs ────────────────────────────────────────────────────────
 const authScreen      = document.getElementById('auth-screen');
@@ -3939,6 +4030,73 @@ const appScreen       = document.getElementById('app-screen');
 const userInfoBar     = document.getElementById('user-info-bar');
 const userNameDisplay = document.getElementById('user-name-display');
 const logoutBtn       = document.getElementById('logout-btn');
+
+// ── User dropdown (avatar icon → popover menu) ───────────────────────────
+(function _initUserDropdown() {
+  const wrap       = document.getElementById('user-menu-wrap');
+  const avatarBtn  = document.getElementById('my-account-btn');
+  const dropdown   = document.getElementById('user-dropdown');
+  const udName     = document.getElementById('ud-name');
+  const udSub      = document.getElementById('ud-sub');
+  const udAvatar   = document.getElementById('ud-avatar');
+  const udProfile  = document.getElementById('ud-profile-btn');
+  const udLogout   = document.getElementById('ud-logout-btn');
+  if (!avatarBtn || !dropdown || !wrap) return;
+
+  function openDropdown() {
+    // Sync the dropdown avatar/name with the current user
+    const user = getUser && getUser();
+    if (user) {
+      if (udName)   udName.textContent = user.fullName ?? user.userName ?? '';
+      if (udSub)    udSub.textContent  = user.role ?? user.userName ?? '';
+      if (udAvatar) _renderAvatar(udAvatar, user.avatarBase64, user.fullName ?? user.userName ?? '');
+    }
+    dropdown.hidden = false;
+    avatarBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeDropdown() {
+    dropdown.hidden = true;
+    avatarBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  avatarBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.hidden ? openDropdown() : closeDropdown();
+  });
+
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!wrap.contains(e.target)) closeDropdown();
+  });
+
+  // Keyboard: Escape closes
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDropdown();
+  });
+
+  // "Edit Profile" → open profile modal
+  if (udProfile) {
+    udProfile.addEventListener('click', () => {
+      closeDropdown();
+      const profileModalEl = document.getElementById('profile-modal');
+      if (profileModalEl && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(profileModalEl).show();
+      }
+    });
+  }
+
+  // "Log Out" → open logout confirmation modal
+  if (udLogout) {
+    udLogout.addEventListener('click', () => {
+      closeDropdown();
+      const logoutModalEl = document.getElementById('logout-modal');
+      if (logoutModalEl && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(logoutModalEl).show();
+      }
+    });
+  }
+})();
 
 const loginPanel      = document.getElementById('auth-login-panel');
 const registerPanel   = document.getElementById('auth-register-panel');
@@ -4117,6 +4275,8 @@ async function attemptOfflinePinLogin(pin) {
 async function _checkPinEnrollment() {
   console.log('[PIN] _checkPinEnrollment: start');
   try {
+    // If the user has dismissed PIN enrollment, skip straight to the app.
+    if (getPrefs().pinEnrollDismissed) { showAppScreen(); return; }
     const user    = getUser();
     console.log('[PIN] getUser:', user ? `${user.userName} (${user.userTID})` : 'null');
     const pinData = await loadOfflinePin();
@@ -5851,9 +6011,12 @@ async function autoRestoreFromServer(silent = false) {
   // Delta pull for background syncs (silent=true) when we have a previous pull timestamp.
   // Full pull otherwise: new device/browser (no stored timestamp) or manual restore.
   const lastArtPullAt = silent ? localStorage.getItem('art.lastArtPullAt') : null;
+  const artLimit = getPrefs().artLoadLimit || 0;
   const url = lastArtPullAt
     ? `${API_BASE}/patients/mine?since=${encodeURIComponent(lastArtPullAt)}`
-    : `${API_BASE}/patients/mine`;
+    : artLimit > 0
+      ? `${API_BASE}/patients/mine?limit=${artLimit}`
+      : `${API_BASE}/patients/mine`;
 
   // ── Banner: block new-entry while restoring (non-silent only) ──────────
   let banner = null;
@@ -6068,6 +6231,7 @@ function showAppScreen() {
   if (user) {
     logoutBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true" style="flex-shrink:0"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Log Out`;
     userInfoBar.hidden = false;
+    _updateHeaderUser(user);
     // Populate welcome banner
     const nameEl     = document.getElementById('db-welcome-name');
     const facilityEl = document.getElementById('db-welcome-facility');
@@ -6098,7 +6262,12 @@ function showAppScreen() {
     }
   }
   // Always land on the dashboard after login
+  applyPrefs(getPrefs());        // apply cached prefs immediately
+  refreshPrefsFromServer();      // non-blocking: fetch fresh prefs and re-apply
   showDashboard();
+  // Retry stats after 2 s — covers the case where the WASM DB or
+  // the auth token wasn't fully ready on the first showDashboard() call.
+  setTimeout(updateDashboardStats, 2000);
 
   // Baseline card is visible to all users regardless of role.
   const baselineCard = document.getElementById('dash-goto-baseline');
@@ -6225,6 +6394,7 @@ document.getElementById('offline-pin-form')?.addEventListener('submit', async e 
       authScreen.hidden  = true;
       appScreen.hidden   = false;
       userInfoBar.hidden = false;
+      _updateHeaderUser(getUser());
       // Restore the app UI using the cached user profile
       showAppScreen();
       showToast('Offline access granted. Data entry enabled.', 'info');
@@ -6331,6 +6501,12 @@ document.getElementById('pin-enroll-save-btn')?.addEventListener('click', async 
 // ── PIN Enrollment panel: Skip link ──────────────────────────────────────
 document.getElementById('pin-enroll-skip-btn')?.addEventListener('click', e => {
   e.preventDefault();
+  // Mark dismissed so the PIN panel is not shown again on future logins
+  try {
+    const prefs = getPrefs();
+    prefs.pinEnrollDismissed = true;
+    localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(prefs));
+  } catch { /* ignore */ }
   showAppScreen();
 });
 
@@ -6499,6 +6675,575 @@ document.querySelectorAll('.pwd-toggle').forEach(btn => {
   pwdInput.addEventListener('input', updateStrength);
   confirmInput.addEventListener('input', updateMatch);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MY ACCOUNT / PROFILE MODULE
+//  Handles the profile modal: update display name / username / email / phone
+//  / avatar, change password, and view read-only scope information.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Avatar helpers ────────────────────────────────────────────────────────
+
+/** Derive up to 2 initials from a full name or username. */
+function _initials(name = '') {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return (parts[0] ?? '?').slice(0, 2).toUpperCase();
+}
+
+/**
+ * Render an avatar element.
+ * If avatarBase64 is a non-empty data URI, set it as background-image.
+ * Otherwise show initials with a coloured background derived from the name.
+ */
+function _renderAvatar(el, avatarBase64, name = '') {
+  if (!el) return;
+  const colours = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#0ea5e9','#ec4899'];
+  const colour  = colours[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % colours.length];
+
+  if (avatarBase64 && avatarBase64.startsWith('data:')) {
+    el.style.backgroundImage = `url(${avatarBase64})`;
+    el.style.background      = `url(${avatarBase64}) center/cover`;
+    el.textContent           = '';
+  } else {
+    el.style.backgroundImage = '';
+    el.style.background      = colour;
+    el.textContent           = _initials(name);
+    el.style.color           = '#fff';
+  }
+}
+
+/**
+ * Update the "My Account" button in the header (avatar + display name).
+ * Called after login and after a successful profile save.
+ */
+function _updateHeaderUser(user) {
+  const avatarEl = document.getElementById('header-avatar');
+  const nameEl   = document.getElementById('user-name-display');
+  if (!user) return;
+  _renderAvatar(avatarEl, user.avatarBase64, user.fullName ?? user.userName ?? '');
+  if (nameEl) nameEl.textContent = user.fullName ?? user.userName ?? '';
+}
+
+// ── Profile modal bootstrap ───────────────────────────────────────────────
+(function _initProfileModal() {
+  const modalEl  = document.getElementById('profile-modal');
+  if (!modalEl) return;
+
+  // ── Shared score helper (same logic as registration / reset forms) ────
+  const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  function _scorePassword(pwd) {
+    if (!pwd) return 0;
+    let s = 0;
+    if (pwd.length >= 8)  s++;
+    if (pwd.length >= 12) s++;
+    if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) s++;
+    if (/\d/.test(pwd))   s++;
+    if (/[^A-Za-z0-9]/.test(pwd)) s++;
+    return Math.min(s, 4);
+  }
+
+  // ── DOM refs ─────────────────────────────────────────────────────────
+  const profileForm      = document.getElementById('profile-form');
+  const profileMsg       = document.getElementById('profile-msg');
+  const profileSaveBtn   = document.getElementById('profile-save-btn');
+  const avatarPreview    = document.getElementById('profile-avatar-preview');
+  const avatarInput      = document.getElementById('profile-avatar-input');
+  const avatarClearBtn   = document.getElementById('profile-avatar-clear');
+  const fullNameInput    = document.getElementById('profile-fullname');
+  const userNameInput    = document.getElementById('profile-username');
+  const emailInput       = document.getElementById('profile-email');
+  const phoneInput       = document.getElementById('profile-phone');
+  const userNameStatus   = document.getElementById('profile-username-status');
+  const emailStatus      = document.getElementById('profile-email-status');
+
+  const pwdForm          = document.getElementById('profile-pwd-form');
+  const pwdMsg           = document.getElementById('profile-pwd-msg');
+  const pwdBtn           = document.getElementById('profile-pwd-btn');
+  const currentPwdInput  = document.getElementById('profile-current-pwd');
+  const newPwdInput      = document.getElementById('profile-new-pwd');
+  const confirmPwdInput  = document.getElementById('profile-confirm-pwd');
+  const pwdStrengthEl    = document.getElementById('profile-pwd-strength');
+  const pwdStrengthLabel = document.getElementById('profile-pwd-strength-label');
+  const pwdMatchEl       = document.getElementById('profile-pwd-match');
+
+  // Pending avatar — either a new data URI or empty string (clear), or null (unchanged)
+  let _pendingAvatar = null;   // null = keep server value
+  let _originalUserName = '';
+  let _originalEmail    = '';
+
+  // ── Load profile data when modal opens ───────────────────────────────
+  modalEl.addEventListener('shown.bs.modal', async () => {
+    // Reset to Profile tab
+    const infoTab = document.getElementById('ptab-info-tab');
+    if (infoTab) bootstrap.Tab.getOrCreateInstance(infoTab).show();
+
+    _pendingAvatar   = null;
+    _clearProfileMsg();
+    _clearPwdMsg();
+
+    const user = getUser();
+    if (!user) return;
+
+    // Pre-fill from cached session (instant)
+    fullNameInput.value = user.fullName  ?? '';
+    userNameInput.value = user.userName  ?? '';
+    emailInput.value    = user.emailAddress ?? '';
+    phoneInput.value    = user.phoneNo   ?? '';
+    _renderAvatar(avatarPreview, user.avatarBase64, user.fullName ?? user.userName);
+    avatarClearBtn.style.display = user.avatarBase64 ? '' : 'none';
+    _originalUserName = user.userName  ?? '';
+    _originalEmail    = user.emailAddress ?? '';
+
+    // Scope tab — populate read-only fields from cache first, then refresh from API
+    _fillScopeFromUser(user);
+
+    // Fetch fresh data from server (online only)
+    if (!navigator.onLine) return;
+    const tok = getToken();
+    if (!tok) return;
+    try {
+      const res  = await fetch(`${API_BASE}/auth/profile`, {
+        headers: { 'Authorization': `Bearer ${tok}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      fullNameInput.value  = data.fullName     ?? fullNameInput.value;
+      userNameInput.value  = data.userName     ?? userNameInput.value;
+      emailInput.value     = data.emailAddress ?? emailInput.value;
+      phoneInput.value     = data.phoneNo      ?? phoneInput.value;
+      _originalUserName    = data.userName     ?? _originalUserName;
+      _originalEmail       = data.emailAddress ?? _originalEmail;
+      _renderAvatar(avatarPreview, data.avatarBase64, data.fullName ?? data.userName ?? '');
+      avatarClearBtn.style.display = data.avatarBase64 ? '' : 'none';
+      _fillScopeFromApi(data);
+    } catch { /* offline — silently ignore */ }
+  });
+
+  // Reset forms when modal fully closes
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    profileForm?.reset();
+    pwdForm?.reset();
+    _clearProfileMsg();
+    _clearPwdMsg();
+    _pendingAvatar  = null;
+    if (pwdStrengthEl)    { pwdStrengthEl.hidden = true; pwdStrengthEl.removeAttribute('data-score'); }
+    if (pwdMatchEl)       { pwdMatchEl.hidden = true; pwdMatchEl.className = 'pwd-match'; }
+    if (userNameStatus)   userNameStatus.textContent = '';
+    if (emailStatus)      emailStatus.textContent    = '';
+  });
+
+  // ── Avatar upload / preview ───────────────────────────────────────────
+  avatarInput?.addEventListener('change', () => {
+    const file = avatarInput.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      _showProfileMsg('Image is too large. Please choose a file under 4 MB.', 'error');
+      avatarInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize to max 200×200 on a canvas, then re-encode as JPEG at 80%
+        const MAX = 200;
+        const scale  = Math.min(MAX / img.width, MAX / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUri = canvas.toDataURL('image/jpeg', 0.80);
+        _pendingAvatar = dataUri;
+        _renderAvatar(avatarPreview, dataUri, fullNameInput.value);
+        avatarClearBtn.style.display = '';
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  avatarClearBtn?.addEventListener('click', () => {
+    _pendingAvatar = '';   // empty string = clear on server
+    avatarInput.value = '';
+    _renderAvatar(avatarPreview, null, fullNameInput.value);
+    avatarClearBtn.style.display = 'none';
+  });
+
+  // ── Real-time username uniqueness check ────────────────────────────────
+  let _unCheckTimer;
+  userNameInput?.addEventListener('input', () => {
+    clearTimeout(_unCheckTimer);
+    const val = userNameInput.value.trim();
+    if (!val || val === _originalUserName) { userNameStatus.textContent = ''; return; }
+    userNameStatus.textContent = '…';
+    _unCheckTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/auth/check-username?username=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        userNameStatus.textContent = data.available ? '✓' : '✗ taken';
+        userNameStatus.style.color = data.available ? '#10b981' : '#ef4444';
+      } catch { userNameStatus.textContent = ''; }
+    }, 450);
+  });
+
+  // ── Real-time email uniqueness check ───────────────────────────────────
+  let _emCheckTimer;
+  emailInput?.addEventListener('input', () => {
+    clearTimeout(_emCheckTimer);
+    const val = emailInput.value.trim();
+    if (!val || val === _originalEmail) { emailStatus.textContent = ''; return; }
+    emailStatus.textContent = '…';
+    _emCheckTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        emailStatus.textContent = data.available ? '✓' : '✗ in use';
+        emailStatus.style.color = data.available ? '#10b981' : '#ef4444';
+      } catch { emailStatus.textContent = ''; }
+    }, 450);
+  });
+
+  // ── Profile form submit ────────────────────────────────────────────────
+  profileForm?.addEventListener('submit', async e => {
+    e.preventDefault();
+    _clearProfileMsg();
+
+    const fullName = fullNameInput.value.trim();
+    const userName = userNameInput.value.trim();
+    const email    = emailInput.value.trim();
+    const phone    = phoneInput.value.trim();
+
+    if (!fullName) { _showProfileMsg('Display name is required.', 'error'); return; }
+    if (!userName) { _showProfileMsg('Username is required.', 'error'); return; }
+    if (!email)    { _showProfileMsg('Email address is required.', 'error'); return; }
+
+    if (userNameStatus.textContent === '✗ taken') {
+      _showProfileMsg('That username is already in use. Please choose another.', 'error'); return;
+    }
+    if (emailStatus.textContent === '✗ in use') {
+      _showProfileMsg('That email address is already in use.', 'error'); return;
+    }
+
+    if (!navigator.onLine) {
+      _showProfileMsg('You are offline. Please connect to the internet to save profile changes.', 'error');
+      return;
+    }
+
+    profileSaveBtn.disabled    = true;
+    profileSaveBtn.textContent = 'Saving…';
+
+    const payload = { fullName, userName, emailAddress: email, phoneNo: phone || null };
+    if (_pendingAvatar !== null) payload.avatarBase64 = _pendingAvatar;
+
+    const tok = getToken();
+    try {
+      const res  = await fetch(`${API_BASE}/auth/profile`, {
+        method:  'PUT',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        // Persist refreshed JWT + updated user object
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem(AUTH_EXPIRY_KEY, new Date(data.expiresAt).getTime().toString());
+        const currentUser = getUser() ?? {};
+        const updatedUser = {
+          ...currentUser,
+          fullName:     data.fullName,
+          userName:     data.userName,
+          emailAddress: data.emailAddress,
+          phoneNo:      data.phoneNo,
+          avatarBase64: data.avatarBase64 ?? null,
+        };
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updatedUser));
+        _pendingAvatar    = null;
+        _originalUserName = data.userName;
+        _originalEmail    = data.emailAddress;
+        if (userNameStatus) userNameStatus.textContent = '';
+        if (emailStatus)    emailStatus.textContent    = '';
+
+        // Refresh header button
+        _updateHeaderUser(updatedUser);
+
+        // Refresh welcome banner name
+        const nameEl = document.getElementById('db-welcome-name');
+        if (nameEl) nameEl.textContent = `Welcome back, ${data.fullName ?? data.userName ?? 'User'}!`;
+
+        _showProfileMsg('Profile updated successfully.', 'success');
+      } else {
+        _showProfileMsg(data.error ?? 'Could not save profile.', 'error');
+      }
+    } catch {
+      _showProfileMsg('Could not reach the server. Please try again.', 'error');
+    } finally {
+      profileSaveBtn.disabled    = false;
+      profileSaveBtn.textContent = 'Save Changes';
+    }
+  });
+
+  // ── Password-strength meter for change-password tab ───────────────────
+  newPwdInput?.addEventListener('input', () => {
+    const val   = newPwdInput.value;
+    const score = _scorePassword(val);
+    if (!val) {
+      pwdStrengthEl.hidden = true;
+      pwdStrengthEl.removeAttribute('data-score');
+    } else {
+      pwdStrengthEl.hidden         = false;
+      pwdStrengthEl.dataset.score  = score;
+      pwdStrengthLabel.textContent = STRENGTH_LABELS[score];
+    }
+    _updatePwdMatch();
+  });
+
+  confirmPwdInput?.addEventListener('input', _updatePwdMatch);
+
+  function _updatePwdMatch() {
+    const val     = confirmPwdInput.value;
+    const matches = val && newPwdInput.value === val;
+    if (!val) { pwdMatchEl.hidden = true; pwdMatchEl.className = 'pwd-match'; return; }
+    pwdMatchEl.hidden = false;
+    if (matches) {
+      pwdMatchEl.className = 'pwd-match match-ok';
+      pwdMatchEl.innerHTML = '&#10003; Passwords match';
+    } else {
+      pwdMatchEl.className = 'pwd-match match-no';
+      pwdMatchEl.innerHTML = '&#10007; Passwords do not match';
+    }
+  }
+
+  // ── Change-password form submit ────────────────────────────────────────
+  pwdForm?.addEventListener('submit', async e => {
+    e.preventDefault();
+    _clearPwdMsg();
+
+    const currentPwd = currentPwdInput.value;
+    const newPwd     = newPwdInput.value;
+    const confirmPwd = confirmPwdInput.value;
+
+    if (!currentPwd) { _showPwdMsg('Please enter your current password.', 'error'); return; }
+    if (newPwd.length < 8) { _showPwdMsg('New password must be at least 8 characters.', 'error'); return; }
+    if (newPwd !== confirmPwd) { _showPwdMsg('Passwords do not match.', 'error'); return; }
+    if (newPwd === currentPwd) { _showPwdMsg('New password must differ from the current password.', 'error'); return; }
+
+    if (!navigator.onLine) {
+      _showPwdMsg('You are offline. Please connect to the internet to change your password.', 'error');
+      return;
+    }
+
+    pwdBtn.disabled    = true;
+    pwdBtn.textContent = 'Changing…';
+
+    const tok = getToken();
+    try {
+      const res  = await fetch(`${API_BASE}/auth/change-password`, {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ currentPassword: currentPwd, newPassword: newPwd }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        _showPwdMsg('Password changed successfully.', 'success');
+        pwdForm.reset();
+        if (pwdStrengthEl)  { pwdStrengthEl.hidden = true; pwdStrengthEl.removeAttribute('data-score'); }
+        if (pwdMatchEl)     { pwdMatchEl.hidden = true; pwdMatchEl.className = 'pwd-match'; }
+      } else {
+        _showPwdMsg(data.error ?? 'Could not change password.', 'error');
+      }
+    } catch {
+      _showPwdMsg('Could not reach the server. Please try again.', 'error');
+    } finally {
+      pwdBtn.disabled    = false;
+      pwdBtn.textContent = 'Change Password';
+    }
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+  function _showProfileMsg(msg, type) {
+    profileMsg.textContent = msg;
+    profileMsg.className   = `auth-msg auth-msg--${type}`;
+    profileMsg.hidden      = false;
+  }
+  function _clearProfileMsg() {
+    profileMsg.hidden    = true;
+    profileMsg.className = 'auth-msg';
+  }
+  function _showPwdMsg(msg, type) {
+    pwdMsg.textContent = msg;
+    pwdMsg.className   = `auth-msg auth-msg--${type}`;
+    pwdMsg.hidden      = false;
+  }
+  function _clearPwdMsg() {
+    pwdMsg.hidden    = true;
+    pwdMsg.className = 'auth-msg';
+  }
+
+  function _fillScopeFromUser(user) {
+    const roleMap = {
+      SuperUser: 'Super User', Admin: 'Admin', National: 'National Level',
+      StateCoordinator: 'State Coordinator', CountySupervisor: 'County Supervisor',
+      NGO: 'NGO', DataEntrant: 'Data Entrant',
+    };
+    const roleNames = Array.isArray(user.roles) && user.roles.length
+      ? user.roles.map(r => roleMap[r] ?? r).join(', ')
+      : 'Data Entrant';
+    const s = document.getElementById('pscope-role');
+    if (s) s.textContent = roleNames;
+  }
+
+  function _fillScopeFromApi(data) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+    set('pscope-role',     data.groupName);
+    set('pscope-facility', data.facility);
+    set('pscope-county',   data.county);
+    set('pscope-state',    data.state);
+    set('pscope-since',    data.createdAt ? new Date(data.createdAt).toLocaleDateString() : '—');
+  }
+})();
+
+// ── Preferences tab form ──────────────────────────────────────────────────
+(function _initPrefsForm() {
+  const form    = document.getElementById('prefs-form');
+  if (!form) return;
+  const msgEl   = document.getElementById('prefs-msg');
+  const saveBtn = document.getElementById('prefs-save-btn');
+
+  function _showMsg(msg, type) {
+    if (!msgEl) return;
+    msgEl.textContent = msg;
+    msgEl.className   = `auth-msg auth-msg--${type}`;
+    msgEl.hidden      = false;
+  }
+  function _clearMsg() { if (msgEl) { msgEl.hidden = true; msgEl.className = 'auth-msg'; } }
+
+  function _setField(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!val;
+    else el.value = val ?? '';
+  }
+
+  function _populateForm(p) {
+    _setField('pref-tb-lookback',        p.tbLookbackDays);
+    _setField('pref-elig-new-min',       p.outcomeEligNewMin);
+    _setField('pref-elig-new-max',       p.outcomeEligNewMax);
+    _setField('pref-elig-retx-min',      p.outcomeEligReTxMin);
+    _setField('pref-elig-retx-max',      p.outcomeEligReTxMax);
+    _setField('pref-dq-no-out-new-min',  p.dqNoOutcomeNewMin);
+    _setField('pref-dq-no-out-new-max',  p.dqNoOutcomeNewMax);
+    _setField('pref-dq-no-out-retx-min', p.dqNoOutcomeReTxMin);
+    _setField('pref-dq-no-out-retx-max', p.dqNoOutcomeReTxMax);
+    _setField('pref-dq-diagmethod',      p.dqDiagMethodDays);
+    _setField('pref-art-load',           p.artLoadLimit);
+    _setField('pref-dup-name-check',     p.dupNameCheckEnabled);
+    _setField('pref-mon-mode',           p.defaultMonMode);
+    _setField('pref-mon-rows',           p.monRowsPerPage);
+    _setField('pref-report-period',      p.defaultReportPeriodType);
+    _setField('pref-inactivity-warn',    p.inactivityWarnMinutes);
+    _setField('pref-auto-logout',        p.autoLogoutMinutes);
+    _setField('pref-sync-interval',      p.syncIntervalMinutes);
+    _setField('pref-name-trunc',         p.nameTruncLength);
+    _setField('pref-show-tb-section',    p.showTbSection);
+    _setField('pref-show-dq-section',    p.showDqSection);
+    _setField('pref-compact-mode',       p.compactTableMode);
+    _setField('pref-dq-autoclose',       p.dqAutoClose);
+    _setField('pref-pin-dismissed',      p.pinEnrollDismissed);
+  }
+
+  // Populate whenever the Preferences tab becomes visible
+  document.getElementById('ptab-prefs-tab')?.addEventListener('shown.bs.tab', () => {
+    _clearMsg();
+    _populateForm(getPrefs());
+  });
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    _clearMsg();
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving\u2026'; }
+
+    const get = id => document.getElementById(id);
+    const num = id => parseInt(get(id)?.value ?? '', 10) || 0;
+    const chk = id => !!(get(id)?.checked);
+    const sel = id => get(id)?.value ?? '';
+
+    const payload = {
+      tbLookbackDays:          num('pref-tb-lookback'),
+      outcomeEligNewMin:       num('pref-elig-new-min'),
+      outcomeEligNewMax:       num('pref-elig-new-max'),
+      outcomeEligReTxMin:      num('pref-elig-retx-min'),
+      outcomeEligReTxMax:      num('pref-elig-retx-max'),
+      dqNoOutcomeNewMin:       num('pref-dq-no-out-new-min'),
+      dqNoOutcomeNewMax:       num('pref-dq-no-out-new-max'),
+      dqNoOutcomeReTxMin:      num('pref-dq-no-out-retx-min'),
+      dqNoOutcomeReTxMax:      num('pref-dq-no-out-retx-max'),
+      dqDiagMethodDays:        num('pref-dq-diagmethod'),
+      artLoadLimit:            num('pref-art-load'),
+      dupNameCheckEnabled:     chk('pref-dup-name-check'),
+      defaultMonMode:          sel('pref-mon-mode'),
+      monRowsPerPage:          num('pref-mon-rows'),
+      defaultReportPeriodType: sel('pref-report-period'),
+      defaultReportFacilityID: 0,
+      inactivityWarnMinutes:   num('pref-inactivity-warn'),
+      autoLogoutMinutes:       num('pref-auto-logout'),
+      syncIntervalMinutes:     num('pref-sync-interval'),
+      nameTruncLength:         num('pref-name-trunc'),
+      showTbSection:           chk('pref-show-tb-section'),
+      showDqSection:           chk('pref-show-dq-section'),
+      pinEnrollDismissed:      chk('pref-pin-dismissed'),
+      dqAutoClose:             chk('pref-dq-autoclose'),
+      compactTableMode:        chk('pref-compact-mode'),
+    };
+
+    if (!navigator.onLine) {
+      localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(payload));
+      applyPrefs(payload);
+      _showMsg('Saved locally (offline \u2014 will sync next time you\u2019re online).', 'success');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Preferences'; }
+      return;
+    }
+
+    const tok = getToken();
+    if (!tok) {
+      _showMsg('Not authenticated.', 'error');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Preferences'; }
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/auth/preferences`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const saved = await res.json();
+      localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(saved));
+      applyPrefs(saved);
+      _showMsg('Preferences saved.', 'success');
+    } catch (ex) {
+      _showMsg(`Could not save: ${ex.message}`, 'error');
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Preferences'; }
+    }
+  });
+})();
+
+// ── Cascade .pwd-toggle clicks to any newly-added inputs (profile modal) ──
+// The global delegation below covers the profile modal's show/hide buttons
+// without needing to re-bind after Bootstrap renders the modal.
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.pwd-toggle');
+  if (!btn) return;
+  const inp = document.getElementById(btn.dataset.target);
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+});
 
 // ── Cascading location dropdowns (registration) ─────────────────────────
 (function () {
@@ -7178,7 +7923,7 @@ let _dqPageObserver = null;  // IntersectionObserver on the load-more sentinel
 let _monIsPaging      = false; // guard: one page load at a time
 let _monPageObserver  = null;  // IntersectionObserver on the load-more sentinel
 let _monRenderedCount = 0;     // rows rendered so far (for batch paging)
-const MON_PAGE        = 500;   // rows per batch
+let MON_PAGE        = 500;   // rows per batch (overridden by applyPrefs)
 
 /** Persist the selected facility to localStorage so it survives page reloads. */
 function _saveSelectedFacility(fac) {
@@ -8133,8 +8878,9 @@ window.addEventListener('online', () => {
 //   • Timer is started when the user enters the main app and stopped on logout.
 //
 // The warning threshold and logout threshold are tunable via the constants below.
-const INACTIVITY_WARN_MS   = 13 * 60 * 1000;  // 13 min → show warning
-const INACTIVITY_LOGOUT_MS =  2 * 60 * 1000;  //  2 min after warning → log out
+let SYNC_INTERVAL_MS     =  5 * 60 * 1000;  // configurable via preferences
+let INACTIVITY_WARN_MS   = 13 * 60 * 1000;  // 13 min → show warning
+let INACTIVITY_LOGOUT_MS =  2 * 60 * 1000;  //  2 min after warning → log out
 
 let _inactivityWarnTimer   = null;
 let _inactivityLogoutTimer = null;
@@ -8279,7 +9025,7 @@ function startPeriodicSync() {
       autoRestoreFromServer(true);   // pull ART records entered on other devices
       autoRestoreFromServerTB(true); // pull TB records entered on other devices
     }
-  }, 5 * 60 * 1000);   // every 5 minutes
+  }, SYNC_INTERVAL_MS);   // configurable via preferences (default 5 minutes)
 }
 
 function stopPeriodicSync() {
@@ -16016,7 +16762,8 @@ function truncateDisplayName(name = '') {
   if (!raw) return '';
 
   const normalized = raw.replace(/\s+/g, ' ');
-  const truncated = normalized.length > 15 ? normalized.substring(0, 15) : normalized;
+  const maxLen = getPrefs().nameTruncLength || 15;
+  const truncated = normalized.length > maxLen ? normalized.substring(0, maxLen) : normalized;
   return truncated.replace(/\b\w/g, char => char.toUpperCase());
 }
 

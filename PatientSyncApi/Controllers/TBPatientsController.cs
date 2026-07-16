@@ -34,6 +34,58 @@ public sealed class TBPatientsController : ControllerBase
     }
 
     // ───────────────────────────────────────────────────────────────────────
+    //  Per-user clinical preferences — loaded once per request from
+    //  UserPreferencesT. Defaults match the original hardcoded values so
+    //  existing users who have not yet saved prefs get identical behaviour.
+    // ───────────────────────────────────────────────────────────────────────
+    private sealed record TbPrefs(
+        int  TbLookbackDays      = 365,
+        int  OutcomeEligNewMin   = 168,
+        int  OutcomeEligNewMax   = 270,
+        int  OutcomeEligReTxMin  = 224,
+        int  OutcomeEligReTxMax  = 320,
+        int  DqNoOutcomeNewMin   = 180,
+        int  DqNoOutcomeNewMax   = 540,
+        int  DqNoOutcomeReTxMin  = 240,
+        int  DqNoOutcomeReTxMax  = 600,
+        int  DqDiagMethodDays    = 180,
+        bool DupNameCheckEnabled = true
+    );
+
+    private async Task<TbPrefs> GetTbPrefsAsync(SqlConnection conn, string userTID)
+    {
+        if (string.IsNullOrWhiteSpace(userTID)) return new TbPrefs();
+        try
+        {
+            await using var cmd = new SqlCommand("""
+                SELECT TbLookbackDays, OutcomeEligNewMin, OutcomeEligNewMax,
+                       OutcomeEligReTxMin, OutcomeEligReTxMax,
+                       DqNoOutcomeNewMin, DqNoOutcomeNewMax,
+                       DqNoOutcomeReTxMin, DqNoOutcomeReTxMax,
+                       DqDiagMethodDays, DupNameCheckEnabled
+                FROM UserPreferencesT WHERE UserTID = @UserTID
+                """, conn);
+            cmd.Parameters.AddWithValue("@UserTID", userTID);
+            await using var rdr = await cmd.ExecuteReaderAsync();
+            if (!await rdr.ReadAsync()) return new TbPrefs();
+            return new TbPrefs(
+                TbLookbackDays      : rdr.GetInt32(0),
+                OutcomeEligNewMin   : rdr.GetInt32(1),
+                OutcomeEligNewMax   : rdr.GetInt32(2),
+                OutcomeEligReTxMin  : rdr.GetInt32(3),
+                OutcomeEligReTxMax  : rdr.GetInt32(4),
+                DqNoOutcomeNewMin   : rdr.GetInt32(5),
+                DqNoOutcomeNewMax   : rdr.GetInt32(6),
+                DqNoOutcomeReTxMin  : rdr.GetInt32(7),
+                DqNoOutcomeReTxMax  : rdr.GetInt32(8),
+                DqDiagMethodDays    : rdr.GetInt32(9),
+                DupNameCheckEnabled : rdr.GetBoolean(10)
+            );
+        }
+        catch { return new TbPrefs(); }
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
     //  POST /api/tb-patients/sync-full
     //  Accepts a TBFullSyncPayload (patients + follow-ups) from the PWA and
     //  performs a MERGE upsert on PtDetailsT and DELETE/INSERT on PtFollowUpT.
@@ -639,6 +691,9 @@ public sealed class TBPatientsController : ControllerBase
         // Enforce facility scope from JWT (same pattern as ReportsController)
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
+        var userTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                   ?? string.Empty;
 
         var cleanIds = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
         int minYear  = (cfYear > 0 ? cfYear : DateTime.Today.Year) - 1;
@@ -660,6 +715,7 @@ public sealed class TBPatientsController : ControllerBase
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
+            var prefs = await GetTbPrefsAsync(conn, userTID);
 
             // Helper: run a COUNT(*) scalar and return the integer result
             async Task<int> Scalar(string sql)
@@ -678,7 +734,7 @@ public sealed class TBPatientsController : ControllerBase
             }
 
             // 1. Duplicate patients (same name + age + patient type + regdate, within report period)
-            int duplicates = await Scalar($"""
+            int duplicates = prefs.DupNameCheckEnabled ? await Scalar($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
                   AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
@@ -692,7 +748,7 @@ public sealed class TBPatientsController : ControllerBase
                           AND COALESCE(d.PtTypeID, -1) = COALESCE(p.PtTypeID, -1)
                           AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')
                             = COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
-                """);
+                """) : 0;
 
             // 2. Same TBMU number in same facility + year
             int sametbno = await Scalar($"""
@@ -703,7 +759,7 @@ public sealed class TBPatientsController : ControllerBase
                     FROM PtDetailsT p
                     WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!=''
                       AND p.RegDate IS NOT NULL
-                      AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                      AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.TbLookbackDays}
                       {facP}
                 ),
                 dupes AS (
@@ -775,8 +831,8 @@ public sealed class TBPatientsController : ControllerBase
                   AND p.DateRxStarted IS NOT NULL
                   AND p.PtTypeID NOT IN (0,5,7)
                   AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7)) {facP}
-                  AND (   (p.PtTypeID = 1            AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > 168)
-                       OR (p.PtTypeID IN (2,3,4,6)   AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > 224))
+                  AND (   (p.PtTypeID = 1            AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > {prefs.OutcomeEligNewMin})
+                       OR (p.PtTypeID IN (2,3,4,6)   AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > {prefs.OutcomeEligReTxMin}))
                 """);
 
             // 7. Smear-negative patient declared Cured
@@ -886,6 +942,9 @@ public sealed class TBPatientsController : ControllerBase
 
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
+        var userTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                   ?? string.Empty;
 
         var cleanIds = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
         int minYear  = (cfYear > 0 ? cfYear : DateTime.Today.Year) - 1;
@@ -931,6 +990,7 @@ public sealed class TBPatientsController : ControllerBase
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
+            var prefs = await GetTbPrefsAsync(conn, userTID);
 
             string sql = category.ToLowerInvariant() switch
             {
@@ -960,7 +1020,7 @@ public sealed class TBPatientsController : ControllerBase
                         FROM PtDetailsT p
                         WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!=''
                           AND p.RegDate IS NOT NULL
-                          AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                          AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.TbLookbackDays}
                           {facP}
                     ),
                     dupes AS (
@@ -1053,8 +1113,8 @@ public sealed class TBPatientsController : ControllerBase
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtTypeID NOT IN (0,5,7)
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7)) {facP}
-                      AND (   (p.PtTypeID=1            AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > 168)
-                           OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > 224))
+                      AND (   (p.PtTypeID=1            AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > {prefs.OutcomeEligNewMin})
+                           OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(day, p.DateRxStarted, GETDATE()) > {prefs.OutcomeEligReTxMin}))
                     ORDER BY p.DateRxStarted
                     """,
 
@@ -1361,6 +1421,9 @@ public sealed class TBPatientsController : ControllerBase
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
+        var userTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                   ?? string.Empty;
 
         var cleanIds  = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
         var (facP, facPrms) = FacFilter(cleanIds);
@@ -1370,6 +1433,7 @@ public sealed class TBPatientsController : ControllerBase
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
+            var prefs = await GetTbPrefsAsync(conn, userTID);
 
             async Task<int> MonCount(string extraWhere, int offset, int grace, bool sputum, string? daysLateOverride = null)
             {
@@ -1513,10 +1577,10 @@ public sealed class TBPatientsController : ControllerBase
                 var r8 = await cmd8.ExecuteScalarAsync();
                 sputum8 = r8 == null || r8 == DBNull.Value ? 0 : Convert.ToInt32(r8);
             }
-            // TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
-            int hiv      = await MonCount("AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-365,GETDATE()) AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))", 0, 0, sputum: false);
-            int cpt      = await MonCountInner("AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-365,GETDATE()) AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
-            int art      = await MonCountInner("AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-365,GETDATE()) AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
+            // User preference: TbLookbackDays controls the RegDate window for HIV/CPT/ART counts
+            int hiv      = await MonCount($"AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-{prefs.TbLookbackDays},GETDATE()) AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))", 0, 0, sputum: false);
+            int cpt      = await MonCountInner($"AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-{prefs.TbLookbackDays},GETDATE()) AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnCPT,0) = 0");
+            int art      = await MonCountInner($"AND p.PtName IS NOT NULL AND p.RegDate >= DATEADD(DAY,-{prefs.TbLookbackDays},GETDATE()) AND fu.HIVTestResultID = 2 AND COALESCE(fu.OnART,0) = 0");
             int outcome;
             {
                 var sql = $"""
@@ -1529,9 +1593,9 @@ public sealed class TBPatientsController : ControllerBase
                       AND p.PtName IS NOT NULL
                       AND p.PtTypeID <> 5
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
-                      -- TODO(user-prefs): day bounds for outcome — make configurable in user preferences
-                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 168 AND 270)
-                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 224 AND 320))
+                      -- Outcome eligibility window controlled by user preferences
+                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.OutcomeEligNewMin} AND {prefs.OutcomeEligNewMax})
+                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.OutcomeEligReTxMin} AND {prefs.OutcomeEligReTxMax}))
                       {facP}
                     """;
                 await using var cmd = new SqlCommand(sql, conn);
@@ -1569,10 +1633,23 @@ public sealed class TBPatientsController : ControllerBase
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
+        var userTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                   ?? string.Empty;
 
         var cleanIds        = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
         var (facP, facPrms) = FacFilter(cleanIds);
         bool missed         = mode != "due";
+
+        // Load user preferences before building SQL (thresholds are baked into query strings)
+        var prefs = new TbPrefs();
+        try
+        {
+            await using var prefsConn = new SqlConnection(_connectionString);
+            await prefsConn.OpenAsync();
+            prefs = await GetTbPrefsAsync(prefsConn, userTID);
+        }
+        catch { /* use defaults */ }
 
         // Base SELECT columns (sputum categories add DaysLate)
         const string baseColsSputum = """
@@ -1746,8 +1823,7 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
-                      -- TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
-                      AND p.RegDate >= DATEADD(DAY,-365,GETDATE())
+                      AND p.RegDate >= DATEADD(DAY,-{prefs.TbLookbackDays},GETDATE())
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.HIVTestResultID AS INT),0) IN (0,3,4))
                       {facP}
@@ -1761,8 +1837,7 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
-                      -- TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
-                      AND p.RegDate >= DATEADD(DAY,-365,GETDATE())
+                      AND p.RegDate >= DATEADD(DAY,-{prefs.TbLookbackDays},GETDATE())
                       AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnCPT,0) = 0
@@ -1777,8 +1852,7 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted = 0
                       AND p.DateRxStarted IS NOT NULL
                       AND p.PtName IS NOT NULL
-                      -- TODO(user-prefs): 365-day RegDate limit — make configurable in user preferences
-                      AND p.RegDate >= DATEADD(DAY,-365,GETDATE())
+                      AND p.RegDate >= DATEADD(DAY,-{prefs.TbLookbackDays},GETDATE())
                       AND COALESCE(fu.OutcomeID,0) IN (0,7)
                       AND fu.HIVTestResultID = 2
                       AND COALESCE(fu.OnART,0) = 0
@@ -1796,9 +1870,8 @@ public sealed class TBPatientsController : ControllerBase
                       AND p.PtName IS NOT NULL
                       AND p.PtTypeID <> 5
                       AND (fu.PtFollowUpTID IS NULL OR COALESCE(TRY_CAST(fu.OutcomeID AS INT),0) IN (0,7))
-                      -- TODO(user-prefs): day bounds for outcome — make configurable in user preferences
-                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 168 AND 270)
-                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 224 AND 320))
+                      AND ((p.PtTypeID = 1   AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.OutcomeEligNewMin} AND {prefs.OutcomeEligNewMax})
+                        OR (p.PtTypeID <> 1  AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.OutcomeEligReTxMin} AND {prefs.OutcomeEligReTxMax}))
                       {facP}
                     ORDER BY p.RegDate DESC, p.PtName
                     """;
@@ -1838,11 +1911,24 @@ public sealed class TBPatientsController : ControllerBase
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
+        var userTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                   ?? string.Empty;
 
         var cleanIds        = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
         var (facP, facPrms) = FacFilter(cleanIds);
         var (facD, facDPrms) = FacFilter(cleanIds, "d");
         int minYear = DateTime.Today.Year - 1;
+
+        // Load user preferences (one extra connection; Cnt helper uses per-query connections)
+        var prefs = new TbPrefs();
+        try
+        {
+            await using var prefsConn = new SqlConnection(_connectionString);
+            await prefsConn.OpenAsync();
+            prefs = await GetTbPrefsAsync(prefsConn, userTID);
+        }
+        catch { /* use defaults */ }
 
         try
         {
@@ -1864,16 +1950,16 @@ public sealed class TBPatientsController : ControllerBase
             }
 
             var tAll = Cnt($"SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP}");
-            var tDuplicates = Cnt($"""
+            var tDuplicates = prefs.DupNameCheckEnabled ? Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p WHERE p.Deleted=0 {facP} AND p.PtName!=''
-                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.TbLookbackDays}
                 AND EXISTS (SELECT 1 FROM PtDetailsT d
                             WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
                             AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
                             AND COALESCE(d.Age,     -1)=COALESCE(p.Age,     -1)
                             AND COALESCE(d.PtTypeID,-1)=COALESCE(p.PtTypeID,-1)
                             AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
-                """, facDPrms);
+                """, facDPrms) : Task.FromResult(0);
             var tSametbno = Cnt($"""
                 WITH norm AS (
                     SELECT p.PtDetailsTID, p.NearestHFID, YEAR(p.RegDate) AS RegYear,
@@ -1908,8 +1994,8 @@ public sealed class TBPatientsController : ControllerBase
                 AND COALESCE(fu.OutcomeID,0)=1
                 AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
                 AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5)
-                AND ((p.PtTypeID = 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 180 AND 540)
-                  OR (p.PtTypeID <> 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 240 AND 600)) {facP}
+                AND ((p.PtTypeID = 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN {prefs.DqNoOutcomeNewMin} AND {prefs.DqNoOutcomeNewMax})
+                  OR (p.PtTypeID <> 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN {prefs.DqNoOutcomeReTxMin} AND {prefs.DqNoOutcomeReTxMax})) {facP}
                 """);
             var tNooutcome = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
@@ -1917,15 +2003,13 @@ public sealed class TBPatientsController : ControllerBase
                 WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtName IS NOT NULL AND p.PtName!=''
                 AND p.PtTypeID NOT IN (0,5,7)
                 AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
-                -- TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
-                AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
-                  OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600)) {facP}
+                AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.DqNoOutcomeNewMin} AND {prefs.DqNoOutcomeNewMax})
+                  OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.DqNoOutcomeReTxMin} AND {prefs.DqNoOutcomeReTxMax})) {facP}
                 """);
             var tDiagmethod = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP}
-                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 180
-                -- TODO: user preference DQ_DIAGMETHOD_DAYS (default 180)
+                AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.DqDiagMethodDays}
                 """);
             var tNorxstart = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
@@ -1986,11 +2070,24 @@ public sealed class TBPatientsController : ControllerBase
     {
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         if (userFacilityId > 0) facilityIds = [userFacilityId];
+        var userTID = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                   ?? string.Empty;
 
         var cleanIds        = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
         var (facP, facPrms) = FacFilter(cleanIds);
         var (facD, facDPrms) = FacFilter(cleanIds, "d");
         int minYear = DateTime.Today.Year - 1;
+
+        // Load user preferences before building SQL (thresholds are baked into query strings)
+        var prefs = new TbPrefs();
+        try
+        {
+            await using var prefsConn = new SqlConnection(_connectionString);
+            await prefsConn.OpenAsync();
+            prefs = await GetTbPrefsAsync(prefsConn, userTID);
+        }
+        catch { /* use defaults */ }
 
         const string dqCols = """
             LOWER(CONVERT(nvarchar(36), p.PtDetailsTID)) AS PtDetailsTID,
@@ -2022,10 +2119,10 @@ public sealed class TBPatientsController : ControllerBase
                 querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 {facP} ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "duplicates":
-                querySql = $"""
+                querySql = prefs.DupNameCheckEnabled ? $"""
                     SELECT {dqCols} {dqJoins}
                     WHERE p.Deleted=0 {facP} AND p.PtName!=''
-                    AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                    AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.TbLookbackDays}
                     AND EXISTS (SELECT 1 FROM PtDetailsT d LEFT JOIN HealthFacilityT hfd ON d.NearestHFID=hfd.HealthFacilityID
                                 WHERE d.Deleted=0 AND d.PtDetailsTID!=p.PtDetailsTID {facD} AND d.PtName!=''
                                 AND UPPER(LTRIM(RTRIM(d.PtName)))=UPPER(LTRIM(RTRIM(p.PtName)))
@@ -2033,7 +2130,7 @@ public sealed class TBPatientsController : ControllerBase
                                 AND COALESCE(d.PtTypeID,-1)=COALESCE(p.PtTypeID,-1)
                                 AND COALESCE(CONVERT(nvarchar(10),d.RegDate,23),'')=COALESCE(CONVERT(nvarchar(10),p.RegDate,23),''))
                     ORDER BY p.PtName, p.RegDate
-                    """;
+                    """ : $"SELECT {dqCols} {dqJoins} WHERE 1=0";
                 break;
             case "sametbno":
                 querySql = $"""
@@ -2042,7 +2139,7 @@ public sealed class TBPatientsController : ControllerBase
                                TRY_CAST(REPLACE(COALESCE(p.UnitTBNo,''),'\','/') AS INT) AS TBNoB
                         FROM PtDetailsT p LEFT JOIN HealthFacilityT hf ON p.NearestHFID=hf.HealthFacilityID
                         WHERE p.Deleted=0 AND p.UnitTBNo IS NOT NULL AND p.UnitTBNo!='' AND p.RegDate IS NOT NULL
-                          AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 365 -- TODO: configurable via user preferences
+                          AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.TbLookbackDays}
                           {facP}
                     ),
                     dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
@@ -2064,8 +2161,8 @@ public sealed class TBPatientsController : ControllerBase
                     AND COALESCE(fu.OutcomeID,0)=1
                     AND COALESCE(fu.Mon0LabResultID,0) NOT IN (1,4,5,6)
                     AND COALESCE(fu.Mon0XpertResultID,0) NOT IN (3,4,5)
-                    AND ((p.PtTypeID = 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 180 AND 540)
-                      OR (p.PtTypeID <> 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN 240 AND 600)) {facP}
+                    AND ((p.PtTypeID = 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN {prefs.DqNoOutcomeNewMin} AND {prefs.DqNoOutcomeNewMax})
+                      OR (p.PtTypeID <> 1 AND DATEDIFF(DAY, p.DateRxStarted, GETDATE()) BETWEEN {prefs.DqNoOutcomeReTxMin} AND {prefs.DqNoOutcomeReTxMax})) {facP}
                     ORDER BY p.RegDate DESC, p.PtName
                     """;
                 break;
@@ -2112,15 +2209,13 @@ public sealed class TBPatientsController : ControllerBase
                     WHERE p.Deleted=0 AND p.DateRxStarted IS NOT NULL AND p.PtName IS NOT NULL AND p.PtName!=''
                     AND p.PtTypeID NOT IN (0,5,7)
                     AND (fu.PtFollowUpTID IS NULL OR COALESCE(fu.OutcomeID,0) IN (0,7))
-                    -- TODO: configurable via user preferences — DQ_NOOUTCOME_DAYS: new 180–540, retreatment 240–600
-                    AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 180 AND 540)
-                      OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN 240 AND 600)) {facP}
+                    AND ((p.PtTypeID=1 AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.DqNoOutcomeNewMin} AND {prefs.DqNoOutcomeNewMax})
+                      OR (p.PtTypeID IN (2,3,4,6) AND DATEDIFF(DAY,p.DateRxStarted,GETDATE()) BETWEEN {prefs.DqNoOutcomeReTxMin} AND {prefs.DqNoOutcomeReTxMax})) {facP}
                     ORDER BY p.DateRxStarted DESC
                     """;
                 break;
             case "diagmethod":
-                // TODO: user preference DQ_DIAGMETHOD_DAYS (default 180)
-                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} AND DATEDIFF(DAY, p.RegDate, GETDATE()) < 180 ORDER BY p.RegDate DESC, p.PtName";
+                querySql = $"SELECT {dqCols} {dqJoins} WHERE p.Deleted=0 AND COALESCE(p.DiagMethodID,0)=0 {facP} AND DATEDIFF(DAY, p.RegDate, GETDATE()) < {prefs.DqDiagMethodDays} ORDER BY p.RegDate DESC, p.PtName";
                 break;
             case "norxstart":
                 querySql = $"""

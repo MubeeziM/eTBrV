@@ -1457,23 +1457,218 @@ input[type="month"]:focus {
   gap: .55rem;
 }
 
-.btn-logout {
-  display: inline-flex;
-  align-items: center;
-  padding: .35rem .85rem;
-  background: transparent;
-  border: 1.5px solid rgba(255,255,255,.7);
-  color: #fff;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: .82rem;
-  font-weight: 600;
-  font-family: inherit;
-  transition: background var(--transition), border-color var(--transition);
-  white-space: nowrap;
+/* ── Avatar-only button in the header ────────────────────────────────── */
+.user-menu-wrap {
+  position: relative;
 }
 
-.btn-logout:hover { background: rgba(255,255,255,.15); border-color: #fff; }
+.btn-avatar-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: box-shadow var(--transition), opacity var(--transition);
+}
+.btn-avatar-only:hover { opacity: .85; box-shadow: 0 0 0 3px rgba(255,255,255,.35); }
+
+/* Avatar circle (used in header button and dropdown header) */
+.header-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.25);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+  border: 2px solid rgba(255,255,255,.6);
+}
+
+/* ── User dropdown panel ──────────────────────────────────────────────── */
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  z-index: 1100;
+  padding: .5rem 0 .4rem;
+  animation: ud-fade-in .12s ease;
+}
+@keyframes ud-fade-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.user-dropdown-header {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .55rem .9rem .45rem;
+}
+.ud-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #dbeafe;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .95rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background-size: cover;
+  background-position: center;
+}
+.ud-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ud-name {
+  font-weight: 700;
+  font-size: .9rem;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ud-sub {
+  font-size: .75rem;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ud-divider {
+  margin: .3rem 0;
+  border-color: #f3f4f6;
+}
+.ud-item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  width: 100%;
+  padding: .52rem .9rem;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: .88rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: background .12s;
+  font-family: inherit;
+}
+.ud-item:hover { background: #f9fafb; }
+.ud-item--danger { color: #dc2626; }
+.ud-item--danger:hover { background: #fef2f2; }
+
+/* Large avatar in the profile modal */
+.profile-avatar-lg {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #dbeafe;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background-size: cover;
+  background-position: center;
+  border: 2.5px solid #bfdbfe;
+}
+
+/* Read-only scope key/value list */
+.profile-scope-list {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: .55rem .75rem;
+  font-size: .9rem;
+  margin: 0;
+}
+.profile-scope-list dt {
+  font-weight: 600;
+  color: #6b7280;
+  margin: 0;
+  align-self: start;
+  padding-top: .1rem;
+}
+.profile-scope-list dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* ── Preferences tab ───────────────────────────────────────── */
+.prefs-section {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .65rem .9rem .5rem;
+  margin-bottom: .85rem;
+}
+.prefs-section legend {
+  font-size: .8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--primary);
+  padding: 0 .35rem;
+}
+.prefs-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .15rem .6rem;
+  align-items: center;
+  margin-bottom: .55rem;
+}
+.prefs-row label {
+  grid-column: 1;
+  font-weight: 500;
+  align-self: center;
+}
+.prefs-row input[type="number"],
+.prefs-row select {
+  grid-column: 2;
+  width: 90px;
+  font-size: .88rem;
+}
+.prefs-row select { width: auto; }
+.prefs-row .prefs-hint {
+  grid-column: 1 / -1;
+  font-size: .75rem;
+  color: var(--text-muted, #6c757d);
+}
+.prefs-row--toggle {
+  grid-template-columns: 1fr auto;
+}
+.prefs-row--toggle input[type="checkbox"] {
+  grid-column: 2;
+  width: 2.2em;
+  height: 1.2em;
+  cursor: pointer;
+}
+
+/* .btn-logout removed — logout is now inside the user dropdown */
 
 @media (max-width: 480px) {
   .auth-card { padding: 1.5rem 1.2rem 1rem; }
