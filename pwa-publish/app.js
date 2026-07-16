@@ -13,17 +13,18 @@
 'use strict';
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v160720262109';
+const APP_VERSION = 'v160720262316';
 
 // ─── Auth-screen flash prevention ────────────────────────────────────────
-// If the user has a stored (non-expired) token, hide the auth screen
+// If the user has a live (non-expired) session, hide the auth screen
 // immediately — before bootstrap()/initDB() complete — so they never see
 // the login page flash during a SW-triggered page reload.
+// The JWT now travels in an HttpOnly cookie, so we only check the expiry
+// timestamp in localStorage (not the token itself).
 (function _hideAuthIfLoggedIn() {
   try {
-    const token  = localStorage.getItem('art.token');
     const expiry = localStorage.getItem('art.expiry');
-    if (!token || !expiry) return;
+    if (!expiry) return;
     const expiryMs = isNaN(Number(expiry)) ? new Date(expiry).getTime() : Number(expiry);
     if (Date.now() >= expiryMs) return;   // expired — let bootstrap show auth
     const authEl = document.getElementById('auth-screen');
@@ -35,6 +36,42 @@ const APP_VERSION = 'v160720262109';
 
 // ─── API base URL ────────────────────────────────────────────────────────
 const API_BASE = 'https://api.etbr.org/api';
+
+// ─── API fetch interceptor ───────────────────────────────────────────────
+// The JWT is stored in an HttpOnly cookie (set by the API at login time),
+// which JavaScript cannot read.  For every request to the API we must:
+//   1. Set credentials:'include' so the browser attaches the cookie
+//      cross-origin (art.etbr.org → api.etbr.org, same-site).
+//   2. Remove any Authorization: Bearer header — it is redundant now and
+//      would expose the token if someone temporarily enables logging of
+//      request headers.  The cookie carries the credential instead.
+// This interceptor runs transparently before all existing call sites, so
+// no other code needs to be changed to adopt cookie-based auth.
+(function _installApiFetchInterceptor() {
+  const _orig = window.fetch.bind(window);
+  window.fetch = function(url, opts) {
+    opts = opts ? { ...opts } : {};
+    if (typeof url === 'string' && url.startsWith(API_BASE)) {
+      opts.credentials = 'include';
+      const h = new Headers(opts.headers || {});
+      // Migration path: users who logged in before the HttpOnly-cookie update
+      // still have art.token in localStorage.  Use it as the Authorization header
+      // so their session keeps working until they next log out and back in, at
+      // which point the API sets the cookie and art.token is no longer stored.
+      const legacyToken = localStorage.getItem('art.token');
+      if (legacyToken) {
+        h.set('Authorization', `Bearer ${legacyToken}`);
+      } else {
+        // Cookie-based auth: the JWT travels in the HttpOnly cookie.
+        // Remove any residual Authorization header — it is redundant and would
+        // expose the token in request logs if header logging is ever enabled.
+        h.delete('Authorization');
+      }
+      opts.headers = h;
+    }
+    return _orig(url, opts);
+  };
+}());
 
 // ─── DOM references ──────────────────────────────────────────────────────
 const form             = document.getElementById('patient-form');
@@ -4138,15 +4175,18 @@ const resetMsg        = document.getElementById('reset-msg');
 // ── Auth helpers ─────────────────────────────────────────────────────────
 
 function getToken() {
-  const token  = localStorage.getItem(AUTH_TOKEN_KEY);
+  // The JWT now lives in an HttpOnly cookie — JavaScript cannot read it.
+  // We check only the expiry timestamp to determine whether a session is live.
+  // The actual token is sent automatically by the browser via the cookie.
   const expiry = localStorage.getItem(AUTH_EXPIRY_KEY);
-  if (!token || !expiry) return null;
-  if (new Date() >= new Date(expiry)) {
+  if (!expiry) return null;
+  const expiryMs = isNaN(Number(expiry)) ? new Date(expiry).getTime() : Number(expiry);
+  if (Date.now() >= expiryMs) {
     // When offline, keep credentials so the offline PIN panel can show the user name
     if (navigator.onLine) clearAuth();
     return null;
   }
-  return token;
+  return 'cookie'; // truthy sentinel — the real JWT travels in the HttpOnly cookie
 }
 
 function getUser() {
@@ -4155,7 +4195,11 @@ function getUser() {
 }
 
 function saveAuth(resp) {
-  localStorage.setItem(AUTH_TOKEN_KEY,  resp.token);
+  // ── JWT token: set as HttpOnly cookie by the API — NOT stored here ──────
+  // Only persist non-sensitive session metadata needed to render the UI.
+  // avatarBase64 is intentionally excluded: the base64-encoded image can
+  // be hundreds of kilobytes and is not needed between page loads — it is
+  // fetched from the profile endpoint when the profile panel opens.
   localStorage.setItem(AUTH_EXPIRY_KEY, resp.expiresAt);
   localStorage.setItem(AUTH_USER_KEY,   JSON.stringify({
     userID:       resp.userID,
@@ -4178,12 +4222,16 @@ function saveAuth(resp) {
     adminID:      resp.adminID,
     superUserID:  resp.superUserID,
     roles:        resp.roles,
-    avatarBase64: resp.avatarBase64 ?? null,
   }));
 }
 
 function clearAuth() {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
+  // Tell the API to clear the HttpOnly auth cookie (best-effort; fire-and-forget).
+  if (navigator.onLine) {
+    fetch(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
+    // Note: credentials:'include' is injected automatically by the fetch interceptor.
+  }
+  localStorage.removeItem(AUTH_TOKEN_KEY);   // remove legacy key if still present
   localStorage.removeItem(AUTH_EXPIRY_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
   // Clear pull timestamps so the next login always does a full pull.
@@ -6968,8 +7016,8 @@ function _updateHeaderUser(user) {
       const data = await res.json();
 
       if (res.ok) {
-        // Persist refreshed JWT + updated user object
-        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        // API re-issues the HttpOnly cookie with the updated token — nothing to store here.
+        // Update the expiry and user object from the response.
         localStorage.setItem(AUTH_EXPIRY_KEY, new Date(data.expiresAt).getTime().toString());
         const currentUser = getUser() ?? {};
         const updatedUser = {
@@ -7945,7 +7993,11 @@ resetForm.addEventListener('submit', async e => {
 document.getElementById('logout-confirm-btn').addEventListener('click', () => {
   setOfflineSession(false);
   _stopInactivityWatcher();
-  // Clear the JWT but keep the user profile in localStorage so that
+  // Clear the HttpOnly auth cookie server-side (best-effort).
+  if (navigator.onLine) {
+    fetch(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
+  }
+  // Clear the JWT expiry but keep the user profile in localStorage so that
   // the offline PIN panel can identify the user if they go offline after logout.
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_EXPIRY_KEY);
@@ -8812,7 +8864,7 @@ async function triggerSync(silent = false, background = false, caller = 'unknown
 
     const token = getToken();
     if (!token) {
-      const rawToken  = !!localStorage.getItem(AUTH_TOKEN_KEY);
+      const rawToken  = !!localStorage.getItem(AUTH_EXPIRY_KEY); // session tracked by expiry; JWT is in HttpOnly cookie
       const rawExpiry = localStorage.getItem(AUTH_EXPIRY_KEY);
       const isExpired = rawExpiry ? new Date() >= new Date(rawExpiry) : null;
       logSync('ERROR', 'No auth token', { caller, tokenExists: rawToken, expiry: rawExpiry, now: new Date().toISOString(), expired: isExpired });
@@ -8945,6 +8997,10 @@ let _lastActivityReset     = 0;
 
 function _inactivitySignOut() {
   _stopInactivityWatcher();
+  // Clear the HttpOnly auth cookie server-side (best-effort).
+  if (navigator.onLine) {
+    fetch(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
+  }
   // Mirror the manual-logout flow: keep user profile for offline-PIN, remove token.
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_EXPIRY_KEY);
@@ -17111,6 +17167,9 @@ function _pcAttachListeners() {
       // does not fully close the PWA on the device.
       setOfflineSession(false);
       _stopInactivityWatcher();
+      if (navigator.onLine) {
+        fetch(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
+      }
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(AUTH_EXPIRY_KEY);
       showAuthScreen();

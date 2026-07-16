@@ -67,6 +67,16 @@ public sealed class ApiKeyMiddleware
                 return;
             }
 
+            // Requests authenticated via the HttpOnly cookie also skip the API
+            // key check.  The JWT in the cookie is validated by JwtBearer later
+            // in the pipeline — this just prevents a premature 401 here.
+            if (context.Request.Cookies.TryGetValue("art.jwt", out var cookieToken)
+                && !string.IsNullOrEmpty(cookieToken))
+            {
+                await _next(context);
+                return;
+            }
+
             if (!context.Request.Headers.TryGetValue(ApiKeyHeader, out var providedKey)
                 || !string.Equals(providedKey, _validKey, StringComparison.Ordinal))
             {

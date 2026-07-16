@@ -56,6 +56,58 @@ public sealed class AuthController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  HttpOnly cookie helpers
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  The JWT is stored in an HttpOnly cookie so that JavaScript running on the
+    //  page cannot read it (mitigates XSS token theft — OWASP A07:2021).
+    //
+    //  Cookie attributes:
+    //    HttpOnly  — JS cannot access document.cookie / localStorage for this value.
+    //    Secure    — transmitted over HTTPS only.
+    //    SameSite=Lax — art.etbr.org and api.etbr.org share the etbr.org eTLD+1
+    //                   so they are "same-site"; Lax is safe and prevents CSRF
+    //                   from third-party sites while allowing our own PWA to send it.
+    //    Path=/    — applies to all API paths.
+    //  No explicit Domain is set, so the cookie is scoped to api.etbr.org only
+    //  (the browser automatically sends it on all requests to api.etbr.org).
+    // ──────────────────────────────────────────────────────────────────────────
+    private void SetJwtCookie(string token, int expiryHours)
+    {
+        Response.Cookies.Append("art.jwt", token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure   = true,
+            SameSite = SameSiteMode.Lax,
+            Expires  = DateTimeOffset.UtcNow.AddHours(expiryHours),
+            Path     = "/"
+        });
+    }
+
+    private void ClearJwtCookie()
+    {
+        Response.Cookies.Delete("art.jwt", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure   = true,
+            SameSite = SameSiteMode.Lax,
+            Path     = "/"
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  POST /api/auth/logout
+    //  Clears the HttpOnly auth cookie so the browser no longer sends it.
+    //  The client should also clear its local session state (art.expiry etc.).
+    // ──────────────────────────────────────────────────────────────────────────
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    public IActionResult Logout()
+    {
+        ClearJwtCookie();
+        return Ok(new { message = "Logged out." });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  GET /api/auth/check-username?username=x
     //  Returns 200 { available: true } or 200 { available: false }.
     //  Used by the registration form to give real-time feedback before submit.
@@ -510,6 +562,9 @@ public sealed class AuthController : ControllerBase
 
             var token       = _tokenService.GenerateToken(tokenData);
             var expiryHours = _config.GetValue<int>("Jwt:ExpiryHours", 8);
+
+            // Set JWT as HttpOnly cookie so JavaScript cannot read it.
+            SetJwtCookie(token, expiryHours);
 
             _logger.LogInformation("User logged in: {UserTID}", tokenData.UserTID);
             await _audit.LogAsync(
@@ -1599,6 +1654,9 @@ public sealed class AuthController : ControllerBase
 
             var newToken    = _tokenService.GenerateToken(tokenData);
             var expiryHours = _config.GetValue<int>("Jwt:ExpiryHours", 8);
+
+            // Re-issue the HttpOnly cookie with the updated token.
+            SetJwtCookie(newToken, expiryHours);
 
             return Ok(new UpdateProfileResponse
             {

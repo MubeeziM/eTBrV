@@ -73,6 +73,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         // Return a JSON 401 instead of a redirect so the PWA can handle it.
         options.Events = new JwtBearerEvents
         {
+            // ── Read JWT from HttpOnly cookie (primary) ───────────────────────
+            // The PWA stores the token in an HttpOnly cookie set by the login
+            // endpoint so JavaScript cannot read or steal it (mitigates XSS token
+            // theft).  If the cookie is present we use it; otherwise we fall back
+            // to the Authorization: Bearer header for any legacy / tool callers.
+            OnMessageReceived = ctx =>
+            {
+                if (ctx.Request.Cookies.TryGetValue("art.jwt", out var cookieToken)
+                    && !string.IsNullOrEmpty(cookieToken))
+                {
+                    ctx.Token = cookieToken;
+                }
+                return Task.CompletedTask;
+            },
             OnChallenge = async ctx =>
             {
                 ctx.HandleResponse();
@@ -98,7 +112,10 @@ builder.Services.AddAuthorization();
 //
 // GET is added alongside POST so the lookup endpoint is reachable from the PWA.
 // Authorization header is whitelisted so the PWA can send JWT bearer tokens.
-// Credentials (cookies) remain disallowed — this API uses JWT, not cookies.
+// AllowCredentials() is required so the browser sends the HttpOnly auth cookie
+// on cross-origin requests (art.etbr.org → api.etbr.org).  This is safe because
+// we use WithOrigins() — never AllowAnyOrigin() — so only our own PWA can
+// trigger credentialed requests.
 
 var allowedOrigins = builder.Configuration
     .GetSection("AllowedOrigins")
@@ -112,7 +129,7 @@ builder.Services.AddCors(options =>
             .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
             .WithHeaders("Content-Type", "X-Api-Key", "Authorization")
             .WithExposedHeaders("Content-Disposition")
-            .DisallowCredentials());
+            .AllowCredentials());
 });
 
 // ─── Pipeline ─────────────────────────────────────────────────────────────────
