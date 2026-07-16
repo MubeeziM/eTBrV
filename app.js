@@ -4178,6 +4178,7 @@ function saveAuth(resp) {
     adminID:      resp.adminID,
     superUserID:  resp.superUserID,
     roles:        resp.roles,
+    avatarBase64: resp.avatarBase64 ?? null,
   }));
 }
 
@@ -6730,6 +6731,21 @@ function _updateHeaderUser(user) {
   if (!user) return;
   _renderAvatar(avatarEl, user.avatarBase64, user.fullName ?? user.userName ?? '');
   if (nameEl) nameEl.textContent = user.fullName ?? user.userName ?? '';
+
+  // Update the My Account dashboard card icon
+  const cardAvatar = document.getElementById('db-account-avatar');
+  const cardSvg    = document.getElementById('my-account-card-svg');
+  if (cardAvatar) {
+    if (user.avatarBase64 && user.avatarBase64.startsWith('data:')) {
+      cardAvatar.style.background = `url(${user.avatarBase64}) center/cover`;
+      cardAvatar.textContent      = '';
+      cardAvatar.style.display    = '';
+      if (cardSvg) cardSvg.style.display = 'none';
+    } else {
+      cardAvatar.style.display    = 'none';
+      if (cardSvg) cardSvg.style.display = '';
+    }
+  }
 }
 
 // ── Profile modal bootstrap ───────────────────────────────────────────────
@@ -7107,7 +7123,7 @@ function _updateHeaderUser(user) {
     set('pscope-facility', data.facility);
     set('pscope-county',   data.county);
     set('pscope-state',    data.state);
-    set('pscope-since',    data.createdAt ? new Date(data.createdAt).toLocaleDateString() : '—');
+    set('pscope-since',    data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
   }
 })();
 

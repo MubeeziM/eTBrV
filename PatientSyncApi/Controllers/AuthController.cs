@@ -433,7 +433,7 @@ public sealed class AuthController : ControllerBase
             await using var cmd = new SqlCommand(
                 """
                 SELECT u.UserID, u.UserTID, u.UserName, u.FullName, u.EmailAddress, u.PwdHash,
-                       u.DataSourceID, u.ApprovedID,
+                       u.DataSourceID, u.ApprovedID, u.AvatarBase64,
                        c.GroupID, c.CountyID, c.StateID, c.CountryID,
                        c.DTLS, c.Zonal, c.NTP, c.NGO,
                        c.SubRecID, c.LocationID,
@@ -475,7 +475,8 @@ public sealed class AuthController : ControllerBase
             bool ngo        = reader["NGO"]        != DBNull.Value && Convert.ToBoolean(reader["NGO"]);
             int  adminID    = reader["AdminID"]    == DBNull.Value ? 0 : Convert.ToInt32(reader["AdminID"]);
             int  superUser  = reader["SuperUserID"] == DBNull.Value ? 0 : Convert.ToInt32(reader["SuperUserID"]);
-            string ngoName  = reader["NgoName"]    == DBNull.Value ? string.Empty : reader["NgoName"].ToString()!;
+            string ngoName      = reader["NgoName"]     == DBNull.Value ? string.Empty : reader["NgoName"].ToString()!;
+            string? avatarBase64 = reader["AvatarBase64"] == DBNull.Value ? null        : reader["AvatarBase64"]?.ToString();
 
             var roles = new List<string>();
             if (superUser == 1) roles.Add("SuperUser");
@@ -538,7 +539,8 @@ public sealed class AuthController : ControllerBase
                 AdminID      = adminID,
                 SuperUserID  = superUser,
                 Roles        = roles,
-                NgoName      = ngoName
+                NgoName      = ngoName,
+                AvatarBase64 = avatarBase64
             });
         }
         catch (Exception ex)
@@ -749,6 +751,12 @@ public sealed class AuthController : ControllerBase
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
 
+            await using var adminCheck = new SqlCommand(
+                "SELECT ISNULL(AdminID,0) FROM CrossRefGpUsersT WHERE UserTID = @ApproverTID", conn);
+            adminCheck.Parameters.AddWithValue("@ApproverTID", approverTID);
+            var adminResult     = await adminCheck.ExecuteScalarAsync();
+            var approverIsAdmin = adminResult != null && Convert.ToInt32(adminResult) == 1;
+
             // Load the target user so we can check scope and send email.
             await using var loadCmd = new SqlCommand(
                 """
@@ -772,8 +780,8 @@ public sealed class AuthController : ControllerBase
                 targetSubRec = reader["SubRecID"] == DBNull.Value ? 0 : Convert.ToInt32(reader["SubRecID"]);
             }
 
-            // Scope check: approver can only approve users in their own organisation.
-            if (approverSubRec != targetSubRec)
+            // Scope check: approver can only approve users in their own organisation (unless admin).
+            if (!approverIsAdmin && approverSubRec != targetSubRec)
                 return Forbid(); // 403 — wrong organisation
 
             await using var cmd = new SqlCommand(
@@ -833,6 +841,12 @@ public sealed class AuthController : ControllerBase
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
 
+            await using var adminCheck = new SqlCommand(
+                "SELECT ISNULL(AdminID,0) FROM CrossRefGpUsersT WHERE UserTID = @ApproverTID", conn);
+            adminCheck.Parameters.AddWithValue("@ApproverTID", approverTID);
+            var adminResult     = await adminCheck.ExecuteScalarAsync();
+            var approverIsAdmin = adminResult != null && Convert.ToInt32(adminResult) == 1;
+
             // Load target user for scope check and email.
             await using var loadCmd = new SqlCommand(
                 """
@@ -856,7 +870,7 @@ public sealed class AuthController : ControllerBase
                 targetSubRec = reader["SubRecID"] == DBNull.Value ? 0 : Convert.ToInt32(reader["SubRecID"]);
             }
 
-            if (approverSubRec != targetSubRec)
+            if (!approverIsAdmin && approverSubRec != targetSubRec)
                 return Forbid();
 
             // ApprovedID = 2 = rejected; Deleted = 1 so they cannot log in.
@@ -913,6 +927,14 @@ public sealed class AuthController : ControllerBase
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
 
+            // Check AdminID live from DB — more reliable than the JWT claim
+            // in case AdminID was updated after the token was issued.
+            await using var adminCheck = new SqlCommand(
+                "SELECT ISNULL(AdminID,0) FROM CrossRefGpUsersT WHERE UserTID = @CallerTID", conn);
+            adminCheck.Parameters.AddWithValue("@CallerTID", callerTID);
+            var adminResult  = await adminCheck.ExecuteScalarAsync();
+            var callerIsAdmin = adminResult != null && Convert.ToInt32(adminResult) == 1;
+
             await using var cmd = new SqlCommand(
                 """
                 SELECT u.UserTID, u.FullName, u.UserName, u.EmailAddress,
@@ -926,12 +948,14 @@ public sealed class AuthController : ControllerBase
                 WHERE u.ApprovedID = 1
                   AND u.Deleted    = 0
                   AND u.UserTID   <> @CallerTID
-                  AND (c.SubRecID  = @CallerSubRec
+                  AND (@IsAdmin = 1
+                       OR c.SubRecID  = @CallerSubRec
                        OR (c.SubRecID IS NULL AND @CallerSubRec = 0))
                 ORDER BY u.FullName ASC
                 """, conn);
             cmd.Parameters.AddWithValue("@CallerTID",    callerTID);
             cmd.Parameters.AddWithValue("@CallerSubRec", callerSubRec);
+            cmd.Parameters.AddWithValue("@IsAdmin",      callerIsAdmin ? 1 : 0);
 
             await using var reader = await cmd.ExecuteReaderAsync();
             var results = new List<Dictionary<string, object?>>();
@@ -961,10 +985,10 @@ public sealed class AuthController : ControllerBase
     [Authorize(Roles = "Admin,SuperUser")]
     public async Task<IActionResult> DeleteUser(string userTID)
     {
-        var callerTID    = User.FindFirstValue(ClaimTypes.NameIdentifier)
+        var callerTID     = User.FindFirstValue(ClaimTypes.NameIdentifier)
                         ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
                         ?? string.Empty;
-        var callerSubRec = int.TryParse(User.FindFirstValue("sub_rec_id"), out var sr) ? sr : 0;
+        var callerSubRec  = int.TryParse(User.FindFirstValue("sub_rec_id"), out var sr) ? sr : 0;
 
         if (string.Equals(callerTID, userTID, StringComparison.OrdinalIgnoreCase))
             return BadRequest(new { error = "You cannot deactivate your own account." });
@@ -973,6 +997,12 @@ public sealed class AuthController : ControllerBase
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
+
+            await using var adminCheck = new SqlCommand(
+                "SELECT ISNULL(AdminID,0) FROM CrossRefGpUsersT WHERE UserTID = @CallerTID", conn);
+            adminCheck.Parameters.AddWithValue("@CallerTID", callerTID);
+            var adminResult   = await adminCheck.ExecuteScalarAsync();
+            var callerIsAdmin = adminResult != null && Convert.ToInt32(adminResult) == 1;
 
             // Load target to check scope.
             await using var loadCmd = new SqlCommand(
@@ -998,8 +1028,8 @@ public sealed class AuthController : ControllerBase
                 targetAdmin     = reader["AdminID"]     == DBNull.Value ? 0 : Convert.ToInt32(reader["AdminID"]);
             }
 
-            // Scope check.
-            if (callerSubRec != targetSubRec)
+            // Scope check — admins can manage any org.
+            if (!callerIsAdmin && callerSubRec != targetSubRec)
                 return Forbid();
 
             // Prevent deactivating another SuperUser or Admin (only a higher-level admin should do that).
@@ -1038,12 +1068,21 @@ public sealed class AuthController : ControllerBase
     [Authorize(Roles = "Admin,SuperUser")]
     public async Task<IActionResult> GetPendingUsers()
     {
+        var approverTID    = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                          ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                          ?? string.Empty;
         var approverSubRec = int.TryParse(User.FindFirstValue("sub_rec_id"), out var sr) ? sr : 0;
 
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
+
+            await using var adminCheck = new SqlCommand(
+                "SELECT ISNULL(AdminID,0) FROM CrossRefGpUsersT WHERE UserTID = @ApproverTID", conn);
+            adminCheck.Parameters.AddWithValue("@ApproverTID", approverTID);
+            var adminResult     = await adminCheck.ExecuteScalarAsync();
+            var approverIsAdmin = adminResult != null && Convert.ToInt32(adminResult) == 1;
 
             await using var cmd = new SqlCommand(
                 """
@@ -1057,11 +1096,13 @@ public sealed class AuthController : ControllerBase
                 LEFT JOIN SubRecT          s ON s.SubRecID = c.SubRecID
                 WHERE u.ApprovedID = 0
                   AND u.Deleted    = 0
-                  AND (c.SubRecID  = @ApproverSubRec
+                  AND (@IsAdmin = 1
+                       OR c.SubRecID  = @ApproverSubRec
                        OR (c.SubRecID IS NULL AND @ApproverSubRec = 0))
                 ORDER BY u.CreatedAt ASC
                 """, conn);
             cmd.Parameters.AddWithValue("@ApproverSubRec", approverSubRec);
+            cmd.Parameters.AddWithValue("@IsAdmin",        approverIsAdmin ? 1 : 0);
 
             await using var reader = await cmd.ExecuteReaderAsync();
             var results = new List<Dictionary<string, object?>>();

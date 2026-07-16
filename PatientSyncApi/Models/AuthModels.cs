@@ -88,6 +88,8 @@ public sealed class LoginResponse
     public List<string> Roles        { get; set; } = new();
     /// <summary>NGO/Sub-Recipient partner name from SubRecT.SubRec. Empty if user is not NGO-affiliated.</summary>
     public string       NgoName      { get; set; } = string.Empty;
+    /// <summary>Profile picture as a data-URI (e.g. "data:image/jpeg;base64,…"). Null if no avatar is set.</summary>
+    public string?      AvatarBase64 { get; set; }
 }
 
 /// <summary>Initiates a forgot-password flow — caller supplies their email address.</summary>

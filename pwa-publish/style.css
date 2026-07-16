@@ -288,6 +288,77 @@ textarea.invalid {
   transition: max-width 0.2s ease;
 }
 
+/* ── My Account modal — data-entry feel aligned with TB Register form ──
+   Profile, Change Password, and Preferences tabs share the sage-green
+   background, slate input borders, forest-green labels and focus ring
+   used in the TB/ART data-entry form sections (.form-section-body). ── */
+#ptab-info,
+#ptab-pwd,
+#ptab-prefs,
+#ptab-scope {
+  background: #f0f7f0;
+  border: 1.5px solid #b2d4b2;
+  border-radius: 8px;
+  padding: .9rem;
+  margin-top: .25rem;
+}
+
+/* Labels — forest green matching .form-section-body label */
+#profile-modal .field-group label {
+  color: #1b5e42;
+}
+
+/* Input borders — slate-gray matching .form-section-body inputs */
+#profile-modal .field-group input[type="text"],
+#profile-modal .field-group input[type="email"],
+#profile-modal .field-group input[type="tel"],
+#profile-modal .field-group input[type="password"] {
+  border-color: #94a3b8;
+}
+
+/* Focus ring — green instead of blue */
+#profile-modal .field-group input[type="text"]:focus,
+#profile-modal .field-group input[type="email"]:focus,
+#profile-modal .field-group input[type="tel"]:focus,
+#profile-modal .field-group input[type="password"]:focus {
+  border-color: #1b5e42;
+  box-shadow: 0 0 0 3px rgba(27,94,66,.15);
+}
+
+/* Show/hide toggle icon — green on hover to match the focus ring */
+#profile-modal .pwd-toggle:hover { color: #1b5e42; }
+
+/* Equal-width / equal-height action buttons (Cancel + Save/Change Password) */
+#profile-modal .btn-primary {
+  width: auto;      /* override the global width:100% on .btn-primary */
+  margin-top: 0;    /* override the global margin-top:.5rem on .btn-primary */
+}
+
+/* ── Preferences tab — controls styled to match TB Register + Change Password ──
+   Number inputs and selects use the same slate-gray border, blue value text,
+   and green focus ring as the TB/ART data-entry form and Change Password tab.  */
+.prefs-row input[type="number"],
+.prefs-row select {
+  border-color: #94a3b8;    /* slate-gray, same as .form-section-body inputs */
+  color: #0000F0;           /* blue value text, same as TB register filled fields */
+}
+
+.prefs-row input[type="number"]:focus,
+.prefs-row select:focus {
+  border-color: #1b5e42;
+  box-shadow: 0 0 0 3px rgba(27,94,66,.15);
+}
+
+/* Toggle switches — green checked state to match the palette */
+.prefs-row .form-check-input:checked {
+  background-color: #1b5e42;
+  border-color: #1b5e42;
+}
+.prefs-row .form-check-input:focus {
+  border-color: #1b5e42;
+  box-shadow: 0 0 0 3px rgba(27,94,66,.15);
+}
+
 /* ── Report modal ────────────────────────────────────────── */
 #art-report-modal .modal-dialog {
   max-width: 640px;
@@ -1465,6 +1536,8 @@ input[type="month"]:focus {
 /* ── Avatar-only button in the header ────────────────────────────────── */
 .user-menu-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .btn-avatar-only {
@@ -1604,29 +1677,27 @@ input[type="month"]:focus {
 }
 
 /* Read-only scope key/value list */
-.profile-scope-list {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: .55rem .75rem;
-  font-size: .9rem;
-  margin: 0;
-}
-.profile-scope-list dt {
-  font-weight: 600;
-  color: #6b7280;
-  margin: 0;
-  align-self: start;
-  padding-top: .1rem;
-}
-.profile-scope-list dd {
-  margin: 0;
-  color: var(--text);
-  word-break: break-word;
+/* Read-only scope value — looks like a disabled input, same palette as other tabs */
+.scope-value {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 .85rem;
+  border: 1.5px solid #94a3b8;
+  border-radius: 8px;
+  font-size: .95rem;
+  color: #0000F0;
+  background: #f8fafc;
+  box-sizing: border-box;
+  font-family: inherit;
 }
 
 /* ── Preferences tab ───────────────────────────────────────── */
+/* Unified sage-green palette — same as Profile/Change Password tabs */
 .prefs-section {
-  border: 1px solid var(--border);
+  background: #fff;
+  border: 1.5px solid #b2d4b2;
   border-radius: 10px;
   padding: .65rem .9rem .5rem;
   margin-bottom: .85rem;
@@ -1636,57 +1707,49 @@ input[type="month"]:focus {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .04em;
-  color: var(--primary);
+  color: #1b5e42;
   padding: 0 .35rem;
 }
-
-/* ── Per-section accent colours ─────────────────────────────────────── */
-.prefs-section[data-section="clinical"]   { background: #eff6ff; border-color: #bfdbfe; }
-.prefs-section[data-section="clinical"] legend   { color: #1d4ed8; }
-.prefs-section[data-section="data-entry"] { background: #f0fdf4; border-color: #bbf7d0; }
-.prefs-section[data-section="data-entry"] legend { color: #15803d; }
-.prefs-section[data-section="monitoring"] { background: #fffbeb; border-color: #fde68a; }
-.prefs-section[data-section="monitoring"] legend { color: #b45309; }
-.prefs-section[data-section="reports"]    { background: #f5f3ff; border-color: #ddd6fe; }
-.prefs-section[data-section="reports"] legend    { color: #6d28d9; }
-.prefs-section[data-section="session"]    { background: #fff1f2; border-color: #fecdd3; }
-.prefs-section[data-section="session"] legend    { color: #be123c; }
-.prefs-section[data-section="display"]    { background: #f8fafc; border-color: #e2e8f0; }
-.prefs-section[data-section="display"] legend    { color: #475569; }
-.prefs-section[data-section="appearance"] { background: #fdf4ff; border-color: #e9d5ff; }
-.prefs-section[data-section="appearance"] legend { color: #7e22ce; }
 .prefs-row {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: .15rem .6rem;
+  column-gap: .6rem;
+  row-gap: .3rem;         /* tight: only this gap between label and hint */
   align-items: center;
-  margin-bottom: .55rem;
+  margin-bottom: .99rem;
 }
 .prefs-row label {
   grid-column: 1;
+  grid-row: 1;
   font-weight: 500;
-  align-self: center;
+  align-self: end;        /* sit at the bottom of row 1, flush above hint */
 }
 .prefs-row input[type="number"],
 .prefs-row select {
   grid-column: 2;
+  grid-row: 1 / span 2;   /* span label row + hint row, centred vertically */
   width: 90px;
   font-size: .88rem;
+  align-self: center;
 }
 .prefs-row select { width: auto; }
 .prefs-row .prefs-hint {
-  grid-column: 1 / -1;
+  grid-column: 1;         /* confined to label column — no overflow into control column */
+  grid-row: 2;
   font-size: .75rem;
   color: var(--text-muted, #6c757d);
+  align-self: start;
 }
 .prefs-row--toggle {
   grid-template-columns: 1fr auto;
 }
 .prefs-row--toggle input[type="checkbox"] {
   grid-column: 2;
+  grid-row: 1 / span 2;
   width: 2.2em;
-  height: 1.2em;
+  height: 2.2em;
   cursor: pointer;
+  align-self: center;
 }
 
 /* ── Theme swatches ──────────────────────────────────────────────────── */
@@ -1754,14 +1817,28 @@ input[type="month"]:focus {
 [data-dark="1"] thead         { background: #1e293b; }
 [data-dark="1"] tbody tr:nth-child(odd) { background: #162032; }
 [data-dark="1"] tbody tr:hover          { background: var(--primary-light); }
-[data-dark="1"] .prefs-section[data-section="clinical"]   { background: #1a2840; border-color: #1e40af; }
-[data-dark="1"] .prefs-section[data-section="data-entry"] { background: #14291e; border-color: #166534; }
-[data-dark="1"] .prefs-section[data-section="monitoring"] { background: #2a2010; border-color: #92400e; }
-[data-dark="1"] .prefs-section[data-section="reports"]    { background: #1e1635; border-color: #4c1d95; }
-[data-dark="1"] .prefs-section[data-section="session"]    { background: #2d1515; border-color: #9f1239; }
-[data-dark="1"] .prefs-section[data-section="display"]    { background: #1a2030; border-color: #334155; }
-[data-dark="1"] .prefs-section[data-section="appearance"] { background: #231630; border-color: #6b21a8; }
-[data-dark="1"] .prefs-section legend { filter: brightness(1.4); }
+[data-dark="1"] .prefs-section { background: #1a2e1e; border-color: #2d5a3d; }
+[data-dark="1"] .prefs-section legend { color: #6ee7b7; }
+[data-dark="1"] .scope-value { background: #0f172a; color: #f1f5f9; border-color: #2d5a3d; }
+[data-dark="1"] #ptab-info,
+[data-dark="1"] #ptab-pwd,
+[data-dark="1"] #ptab-prefs,
+[data-dark="1"] #ptab-scope {
+  background: #14291e;
+  border-color: #2d5a3d;
+}
+[data-dark="1"] #profile-modal .field-group label { color: #6ee7b7; }
+[data-dark="1"] #profile-modal .field-group input[type="text"],
+[data-dark="1"] #profile-modal .field-group input[type="email"],
+[data-dark="1"] #profile-modal .field-group input[type="tel"],
+[data-dark="1"] #profile-modal .field-group input[type="password"] {
+  border-color: #2d5a3d;
+}
+[data-dark="1"] .prefs-row input[type="number"],
+[data-dark="1"] .prefs-row select {
+  border-color: #2d5a3d;
+  color: #f1f5f9;
+}
 [data-dark="1"] .user-dropdown,
 [data-dark="1"] .ud-item:hover { background: #1e293b; color: #f1f5f9; }
 [data-dark="1"] .ud-divider    { border-color: #334155; }
@@ -2143,6 +2220,38 @@ input[type="month"]:focus {
   text-transform: uppercase;
 }
 
+/* ── System section — teal accent ─────────────────────────────────────── */
+#system-section .db-section-hd          { color: #0e7490; border-color: #a5f3fc; }
+#system-section .db-section-hd svg      { stroke: #0e7490; }
+#system-section .db-card-body h4        { color: #0e7490; }
+#system-section .db-card-ico svg        { stroke: #0891b2; }
+/* Fixed height so both cards always have the same header area */
+#system-section .db-card-ico            { height: 82px; align-items: center; }
+
+/* Avatar circle shown in the My Account card when user has a photo */
+.db-account-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #ccfbf1;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0e7490;
+  background-size: cover;
+  background-position: center;
+  border: 2px solid #a5f3fc;
+}
+
+[data-dark="1"] #system-section .db-section-hd     { color: #22d3ee; border-color: #164e63; }
+[data-dark="1"] #system-section .db-section-hd svg { stroke: #22d3ee; }
+[data-dark="1"] #system-section .db-card-body h4   { color: #22d3ee; }
+[data-dark="1"] #system-section .db-card-ico svg   { stroke: #0e7490; }
+
 /* Open / action button inside active cards */
 .db-open-btn {
   display: inline-flex;
@@ -2174,6 +2283,11 @@ input[type="month"]:focus {
   background: #7c3aed;
 }
 .db-card--active:hover .db-open-btn--indigo { background: #6d28d9; }
+
+.db-open-btn--teal {
+  background: #0891b2;
+}
+.db-card--active:hover .db-open-btn--teal { background: #0e7490; }
 
 /* ── Register breadcrumb nav ────────────────────────────────────────── */
 .register-nav {

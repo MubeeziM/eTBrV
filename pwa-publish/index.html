@@ -617,7 +617,7 @@
       </div>
 
       <!-- ── Section 5: System ──────────────────────────────────────────── -->
-      <div class="db-section">
+      <div class="db-section" id="system-section">
         <h3 class="db-section-hd">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           System
@@ -626,23 +626,31 @@
 
           <div class="db-card db-card--active" style="cursor:pointer"
                data-bs-toggle="modal" data-bs-target="#profile-modal">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <div class="db-card-ico" id="my-account-card-ico" style="background:#cffafe">
+              <span id="db-account-avatar" class="db-account-avatar" style="display:none"></span>
+              <svg id="my-account-card-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
-            <div class="db-card-body">
+            <div class="db-card-body mt-3">
               <h4>My Account</h4>
               <p>Update your display name, profile picture, username, email address and password.</p>
             </div>
             <div class="db-card-foot">
-              <span class="db-badge" style="background:#dbeafe;color:#1d4ed8">Open</span>
+              <button class="db-open-btn db-open-btn--teal" tabindex="-1">
+                Open
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
             </div>
           </div>
 
           <div class="db-card db-card--soon">
-            <div class="db-card-ico">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div class="db-card-ico" style="background:#cffafe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true">
+                <path d="M3 18v-6a9 9 0 0118 0v6"/>
+                <path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3z"/>
+                <path d="M3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/>
+              </svg>
             </div>
-            <div class="db-card-body">
+            <div class="db-card-body mt-3">
               <h4>Help and Support</h4>
               <p>User guide, keyboard shortcuts, data entry guidelines and contact information for technical support.</p>
             </div>
@@ -2483,7 +2491,7 @@
 
   <!-- ========== PROFILE / MY ACCOUNT MODAL ========== -->
   <div class="modal fade" id="profile-modal" tabindex="-1" aria-labelledby="profile-modal-label" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:520px">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:572px">
       <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
 
         <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
@@ -2565,9 +2573,10 @@
                 </div>
 
                 <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="button" class="btn btn-info" data-bs-dismiss="modal"
+                          style="flex:1;border-radius:10px;font-weight:600">Cancel</button>
                   <button type="submit" id="profile-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Changes</button>
-                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
-                          style="border-radius:10px;font-weight:600">Cancel</button>
+                  
                 </div>
               </form>
             </div>
@@ -2614,9 +2623,10 @@
                   <div class="pwd-match" id="profile-pwd-match" aria-live="polite" hidden></div>
                 </div>
                 <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="button" class="btn btn-info" data-bs-dismiss="modal"
+                          style="flex:1;border-radius:10px;font-weight:600">Cancel</button>
                   <button type="submit" id="profile-pwd-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Change Password</button>
-                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
-                          style="border-radius:10px;font-weight:600">Cancel</button>
+                  
                 </div>
               </form>
             </div>
@@ -2635,7 +2645,7 @@
                     <span class="prefs-hint">How many days back to search for HIV/CPT/ART monitoring & duplicate TB numbers. Default: 365</span>
                   </div>
                   <div class="prefs-row">
-                    <label>Outcome Eligibility Window — New Patients (days since Rx Start)</label>
+                    <label>Outcome Eligibility Window — New TB Patients (days since Start of DOTS)</label>
                     <div style="display:flex;gap:.5rem;align-items:center">
                       <input type="number" id="pref-elig-new-min" min="60" max="365" step="1" style="width:80px" title="Minimum days" />
                       <span>to</span>
@@ -2644,7 +2654,7 @@
                     <span class="prefs-hint">Patients within this window show under "Outcome Due". Default: 168–270</span>
                   </div>
                   <div class="prefs-row">
-                    <label>Outcome Eligibility Window — Retreatment Patients (days since Rx Start)</label>
+                    <label>Outcome Eligibility Window — Retreatment TB Patients (days since Start of DOTS)</label>
                     <div style="display:flex;gap:.5rem;align-items:center">
                       <input type="number" id="pref-elig-retx-min" min="60" max="365" step="1" style="width:80px" />
                       <span>to</span>
@@ -2653,7 +2663,7 @@
                     <span class="prefs-hint">Default: 224–320</span>
                   </div>
                   <div class="prefs-row">
-                    <label>DQ Missing Outcome — New Patients (days since Rx Start)</label>
+                    <label>Data Quality Check: Missing Outcome — New Patients (days since start of DOTS)</label>
                     <div style="display:flex;gap:.5rem;align-items:center">
                       <input type="number" id="pref-dq-no-out-new-min" min="60" max="730" step="1" style="width:80px" />
                       <span>to</span>
@@ -2662,7 +2672,7 @@
                     <span class="prefs-hint">Default: 180–540</span>
                   </div>
                   <div class="prefs-row">
-                    <label>DQ Missing Outcome — Retreatment Patients (days since Rx Start)</label>
+                    <label>Data Quality Check: Missing Outcome — Retreatment Patients (days since start of DOTS)</label>
                     <div style="display:flex;gap:.5rem;align-items:center">
                       <input type="number" id="pref-dq-no-out-retx-min" min="60" max="730" step="1" style="width:80px" />
                       <span>to</span>
@@ -2671,9 +2681,9 @@
                     <span class="prefs-hint">Default: 240–600</span>
                   </div>
                   <div class="prefs-row">
-                    <label for="pref-dq-diagmethod">DQ Diagnosis Method Grace Period (days since Reg)</label>
+                    <label for="pref-dq-diagmethod">Data Quality Check: Diagnosis Method Grace Period (days since Registration)</label>
                     <input type="number" id="pref-dq-diagmethod" min="14" max="365" step="1" />
-                    <span class="prefs-hint">Patients registered within this many days are excluded from the "Missing Diag Method" DQ check. Default: 180</span>
+                    <span class="prefs-hint">Patients registered within this many days are excluded from the "Missing Diagnostic Method" data quality check. Default: 180</span>
                   </div>
                 </fieldset>
 
@@ -2697,7 +2707,7 @@
                   <legend>Monitoring</legend>
                   <div class="prefs-row">
                     <label for="pref-mon-mode">Default Monitoring View</label>
-                    <select id="pref-mon-mode" class="form-select form-select-sm" style="width:auto">
+                    <select id="pref-mon-mode" class="form-select form-select-sm" style="width:12rem">
                       <option value="missed">Missed (overdue)</option>
                       <option value="due">Due (upcoming)</option>
                     </select>
@@ -2714,7 +2724,7 @@
                   <legend>Reports</legend>
                   <div class="prefs-row">
                     <label for="pref-report-period">Default Report Period Type</label>
-                    <select id="pref-report-period" class="form-select form-select-sm" style="width:auto">
+                    <select id="pref-report-period" class="form-select form-select-sm" style="width:12rem">
                       <option value="monthly">Monthly</option>
                       <option value="quarterly">Quarterly</option>
                       <option value="semi-annual">Semi-Annual</option>
@@ -2765,13 +2775,13 @@
                     <span class="prefs-hint">Hides secondary columns in patient lists for smaller screens.</span>
                   </div>
                   <div class="prefs-row prefs-row--toggle">
-                    <label for="pref-dq-autoclose">Auto-Close DQ Panel When All Checks Pass</label>
+                    <label for="pref-dq-autoclose">When generating reports, auto-close the Data Quality Check panel when all checks pass</label>
                     <input type="checkbox" id="pref-dq-autoclose" class="form-check-input" role="switch" />
                   </div>
                   <div class="prefs-row prefs-row--toggle">
                     <label for="pref-pin-dismissed">Skip Offline PIN Enrollment Prompt</label>
                     <input type="checkbox" id="pref-pin-dismissed" class="form-check-input" role="switch" />
-                    <span class="prefs-hint">Check this if you do not want to use offline PIN access.</span>
+                    <span class="prefs-hint">Leave unchecked (recommended). An offline PIN lets you sign in without internet access — essential in areas with limited or unreliable connectivity.</span>
                   </div>
                 </fieldset>
 
@@ -2798,8 +2808,8 @@
                 </fieldset>
 
                 <div style="display:flex;gap:.75rem;margin-top:.5rem">
-                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
-                          style="border-radius:10px;font-weight:600">Cancel</button>
+                  <button type="button" class="btn btn-info" data-bs-dismiss="modal"
+                          style="flex:1;border-radius:10px;font-weight:600">Cancel</button>
                   <button type="submit" id="prefs-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Preferences</button>
                 </div>
               </form>
@@ -2807,16 +2817,27 @@
 
             <!-- ── Tab 4: My Scope (read-only) ────────────────────────── -->
             <div class="tab-pane fade" id="ptab-scope" role="tabpanel" aria-labelledby="ptab-scope-tab">
-              <p style="font-size:.83rem;color:#6b7280;margin-bottom:1rem"
-                 >Your facility, county, state and role are assigned by an administrator
-                 and cannot be changed here.</p>
-              <dl class="profile-scope-list">
-                <dt>Role</dt>       <dd id="pscope-role">—</dd>
-                <dt>Facility</dt>   <dd id="pscope-facility">—</dd>
-                <dt>County</dt>     <dd id="pscope-county">—</dd>
-                <dt>State</dt>      <dd id="pscope-state">—</dd>
-                <dt>Member since</dt><dd id="pscope-since">—</dd>
-              </dl>
+              <p style="font-size:.83rem;color:#6b7280;margin-bottom:1.1rem">Your facility, county, state and role are assigned by an administrator and cannot be changed here.</p>
+              <div class="field-group">
+                <label>Role</label>
+                <div class="scope-value" id="pscope-role">—</div>
+              </div>
+              <div class="field-group">
+                <label>Facility</label>
+                <div class="scope-value" id="pscope-facility">—</div>
+              </div>
+              <div class="field-group">
+                <label>County</label>
+                <div class="scope-value" id="pscope-county">—</div>
+              </div>
+              <div class="field-group">
+                <label>State</label>
+                <div class="scope-value" id="pscope-state">—</div>
+              </div>
+              <div class="field-group">
+                <label>User since</label>
+                <div class="scope-value" id="pscope-since">—</div>
+              </div>
             </div>
 
           </div><!-- /tab-content -->
