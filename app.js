@@ -5147,6 +5147,32 @@ document.getElementById('usermgmt-section')?.addEventListener('click', e => {
   }
 });
 
+// Help panel — close button (system-section)
+document.getElementById('system-section')?.addEventListener('click', e => {
+  const closeBtn = e.target.closest('.umgmt-panel-close');
+  if (closeBtn) {
+    const panel = document.getElementById(closeBtn.dataset.panel);
+    if (panel) panel.hidden = true;
+  }
+});
+
+// Help card click
+(function () {
+  const helpCard = document.getElementById('dash-help-card');
+  if (!helpCard) return;
+  function _toggleHelp() {
+    const panel = document.getElementById('help-panel');
+    if (!panel) return;
+    const wasHidden = panel.hidden;
+    panel.hidden = !wasHidden;
+    if (wasHidden) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  helpCard.addEventListener('click', _toggleHelp);
+  helpCard.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleHelp(); }
+  });
+}());
+
 // Card clicks
 const _umgmtCardApprovals = document.getElementById('umgmt-card-approvals');
 const _umgmtCardUsers     = document.getElementById('umgmt-card-users');
