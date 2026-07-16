@@ -636,16 +636,6 @@ async function initDB() {
 
   _db.exec(SEED_SQL);
 
-  // ── Extend YearT dynamically so the dropdown never hits a hard-coded ceiling ──
-  // YearID sequence: YearID = year - 2014  (1 = 2015, 13 = 2027, …)
-  {
-    const endYear = new Date().getFullYear() + 2;
-    for (let yr = 2015; yr <= endYear; yr++) {
-      const id = yr - 2014;
-      _db.run('INSERT OR IGNORE INTO YearT (YearID, YearName) VALUES (?, ?)', [id, yr]);
-    }
-  }
-
   // ── Schema migrations for existing databases ───────────────────────
   // Add StateID to HealthFacilityT if it was created before this column existed.
   try { _db.run('ALTER TABLE HealthFacilityT ADD COLUMN StateID INTEGER NOT NULL DEFAULT 0'); }
@@ -2842,11 +2832,11 @@ function getAllPtFollowUpTBForSync(ptDetailsTIDs) {
 async function upsertPresumptiveCase(data) {
   // One row per facility per month/year — find existing by (NearestHFID, MonthID, YearID).
   const existingR = _db.exec(
-    'SELECT PresumptiveCaseTID FROM PresumptiveCaseT WHERE NearestHFID = ? AND MonthID = ? AND YearID = ?',
+    'SELECT PresumptiveCaseTID, CreatedOn FROM PresumptiveCaseT WHERE NearestHFID = ? AND MonthID = ? AND YearID = ?',
     [data.NearestHFID, data.MonthID, data.YearID]
   );
   const existing = existingR.length && existingR[0].values.length
-    ? { tid: existingR[0].values[0][0] }
+    ? { tid: existingR[0].values[0][0], createdOn: existingR[0].values[0][1] }
     : null;
   const tid = existing ? existing.tid : generateGUID();
   const now = _now();
@@ -2906,63 +2896,6 @@ async function markTBRecordsSynced(ptDetailsTIDs) {
   );
   await _persistDB();
   console.log(`[DB] markTBRecordsSynced: ${ptDetailsTIDs.length} patient(s) marked clean.`);
-}
-
-/** Returns every PresumptiveCaseT row that has local unsaved changes (HasChanged=1). */
-function getAllPresumptiveCasesForSyncAll() {
-  const r = _db.exec('SELECT * FROM PresumptiveCaseT WHERE HasChanged = 1 ORDER BY YearID, MonthID');
-  if (!r.length) return [];
-  const { columns, values } = r[0];
-  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
-}
-
-/** Marks a set of PresumptiveCaseTIDs as synced (HasChanged = 0). */
-async function markPresumptiveCasesSynced(tids) {
-  if (!tids || !tids.length) return;
-  const placeholders = tids.map(() => '?').join(',');
-  _db.run(`UPDATE PresumptiveCaseT SET HasChanged = 0 WHERE PresumptiveCaseTID IN (${placeholders})`, tids);
-  await _persistDB();
-  console.log(`[DB] markPresumptiveCasesSynced: ${tids.length} record(s) marked clean.`);
-}
-
-/**
- * Merges presumptive case records received from the server into the local DB.
- * INSERT OR IGNORE for new records; UPDATE (when not locally modified) for existing ones.
- * Returns the count of rows inserted or updated.
- */
-async function importPresumptiveCasesFromServer(cases) {
-  if (!cases || !cases.length) return 0;
-  let count = 0;
-  for (const c of cases) {
-    if (c.PresumptiveCaseTID) c.PresumptiveCaseTID = c.PresumptiveCaseTID.toLowerCase();
-    _db.run(`
-      INSERT OR IGNORE INTO PresumptiveCaseT (
-        PresumptiveCaseTID, PresumptiveCase, MonthID, YearID,
-        NearestHFID, DataSourceID, CountyID, LocationID, SubRecID,
-        HasChanged, Uploaded, Imported, LastModOn, EnteredByID
-      ) VALUES (?,?,?,?,?,?,?,0,0,0,0,0,?,?)`,
-      [
-        c.PresumptiveCaseTID, c.PresumptiveCase ?? 0, c.MonthID, c.YearID,
-        c.NearestHFID || 0, c.DataSourceID || 0, c.CountyID || 0,
-        c.LastModOn || _now(), c.EnteredByID || '',
-      ]
-    );
-    if (_db.getRowsModified() > 0) {
-      count++;
-    } else {
-      // Server wins, but only overwrite if user has not made local changes.
-      _db.run(`
-        UPDATE PresumptiveCaseT SET
-          PresumptiveCase=?, LastModOn=?
-        WHERE PresumptiveCaseTID=? AND HasChanged=0`,
-        [c.PresumptiveCase ?? 0, c.LastModOn || _now(), c.PresumptiveCaseTID]
-      );
-      if (_db.getRowsModified() > 0) count++;
-    }
-  }
-  await _persistDB();
-  console.log(`[DB] importPresumptiveCasesFromServer: ${count} upserted of ${cases.length} record(s).`);
-  return count;
 }
 
 // ─── Offline Audit Log ───────────────────────────────────────────────────────────────────────
