@@ -16,6 +16,156 @@ const IDB_STORE      = 'sqliteStore';  // object store name for SQLite blob
 const IDB_AUTH_STORE = 'authStore';    // object store for offline PIN credential
 const IDB_KEY     = 'db';          // the single key we use to store the blob
 
+// ─── IndexedDB encryption ─────────────────────────────────────────────────
+//
+// Patient records are encrypted with AES-256-GCM before being written to
+// IndexedDB and decrypted on read.  This prevents the data being visible
+// to anyone who opens DevTools → Application → IndexedDB, or who copies
+// the browser profile directory from a lost / stolen device.
+//
+// Key derivation
+// ──────────────
+//   PBKDF2 / SHA-256, 100 000 iterations.
+//   password : userTID  (unique per user, read from art.user in localStorage)
+//   salt     : deviceSalt (32-byte random, generated once per device and
+//              stored in localStorage['art.deviceSalt']) concatenated with
+//              the fixed string '|art-etbr-pwa-db-v1'.
+//
+//   Both inputs survive browser restarts so the key is re-derivable fully
+//   offline.  The derived key is cached in sessionStorage for the lifetime
+//   of the tab to avoid repeating the 100k-iteration derivation on every
+//   database write.
+//
+// Encrypted blob format  (stored in sqliteStore under key 'db')
+// ──────────────────────
+//   Byte 0-1   : 0x01 0x01 — magic marker (distinguishes encrypted blobs
+//                from legacy SQLite files, which start with "SQLite format 3")
+//   Byte 2-13  : 12-byte random AES-GCM IV (nonce)
+//   Byte 14+   : AES-GCM ciphertext (+ 16-byte GCM authentication tag)
+//
+// Backward compatibility
+// ──────────────────────
+//   Existing unencrypted blobs are detected by the SQLite magic header and
+//   loaded as-is.  They are silently re-encrypted the next time the DB is
+//   saved.  No manual migration step is needed.
+//
+// Security note
+// ─────────────
+//   This protects against an attacker who obtains ONLY the IndexedDB files.
+//   An attacker with full device access (localStorage + IndexedDB) could
+//   in principle re-derive the key.  Full protection against a compromised
+//   device would require server-issued keys, which is incompatible with
+//   offline operation.
+// ──────────────────────────────────────────────────────────────────────────
+
+const ENC_MAGIC      = new Uint8Array([0x01, 0x01]);
+const ENC_MAGIC_LEN  = 2;
+const ENC_IV_LEN     = 12;
+const ENC_HEADER_LEN = ENC_MAGIC_LEN + ENC_IV_LEN;   // 14 bytes
+const DB_KEY_SESSION = 'art.dbKey';                   // sessionStorage — cached key (hex)
+const DEVICE_SALT_LS = 'art.deviceSalt';              // localStorage   — per-device salt (hex)
+
+/** Return the hex-encoded per-device salt, generating it on first call. */
+function _getOrCreateDeviceSalt() {
+  let salt = localStorage.getItem(DEVICE_SALT_LS);
+  if (!salt) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    salt = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem(DEVICE_SALT_LS, salt);
+  }
+  return salt;
+}
+
+function _hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++)
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+function _bytesToHex(bytes) {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Derives (or returns a cached) AES-GCM key for the current user.
+ * Reads userTID from localStorage['art.user'] automatically.
+ * Returns null if no userTID is available (e.g., before first login).
+ * @returns {Promise<CryptoKey|null>}
+ */
+async function _getDbEncryptionKey() {
+  // Check session cache — avoids re-running 100k PBKDF2 iterations per save
+  const cached = sessionStorage.getItem(DB_KEY_SESSION);
+  if (cached) {
+    try {
+      return await crypto.subtle.importKey(
+        'raw', _hexToBytes(cached),
+        { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+      );
+    } catch { sessionStorage.removeItem(DB_KEY_SESSION); /* stale — re-derive */ }
+  }
+
+  // Read userTID from the stored user profile
+  let userTID;
+  try {
+    const profile = JSON.parse(localStorage.getItem('art.user') || '{}');
+    userTID = profile.userTID;
+  } catch { /* ignore */ }
+  if (!userTID) return null;
+
+  const enc        = new TextEncoder();
+  const deviceSalt = _getOrCreateDeviceSalt();
+  const saltBytes  = enc.encode(deviceSalt + '|art-etbr-pwa-db-v1');
+
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(userTID), 'PBKDF2', false, ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBytes, iterations: 100_000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    true,   // extractable only so we can cache the raw bytes in sessionStorage
+    ['encrypt', 'decrypt']
+  );
+
+  // Cache the raw bytes in sessionStorage for the tab lifetime
+  const raw = await crypto.subtle.exportKey('raw', key);
+  sessionStorage.setItem(DB_KEY_SESSION, _bytesToHex(new Uint8Array(raw)));
+
+  // Return a non-extractable copy for actual use
+  return crypto.subtle.importKey(
+    'raw', new Uint8Array(raw),
+    { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+  );
+}
+
+/** Returns true if the blob carries the encrypted-format header. */
+function _isEncryptedBlob(data) {
+  return data instanceof Uint8Array
+      && data.length > ENC_HEADER_LEN
+      && data[0] === ENC_MAGIC[0]
+      && data[1] === ENC_MAGIC[1];
+}
+
+/** Encrypt a Uint8Array.  Returns the encrypted blob with header prepended. */
+async function _encryptBlob(key, plaintext) {
+  const iv        = crypto.getRandomValues(new Uint8Array(ENC_IV_LEN));
+  const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+  const out       = new Uint8Array(ENC_HEADER_LEN + cipherBuf.byteLength);
+  out.set(ENC_MAGIC, 0);
+  out.set(iv, ENC_MAGIC_LEN);
+  out.set(new Uint8Array(cipherBuf), ENC_HEADER_LEN);
+  return out;
+}
+
+/** Decrypt a blob produced by _encryptBlob.  Returns the plaintext Uint8Array. */
+async function _decryptBlob(key, data) {
+  const iv         = data.slice(ENC_MAGIC_LEN, ENC_HEADER_LEN);
+  const ciphertext = data.slice(ENC_HEADER_LEN);
+  const plain      = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  return new Uint8Array(plain);
+}
+
 /**
  * Normalises a raw userName into a safe IDB name suffix.
  * If the value looks like an email address, only the local part (before '@') is used.
@@ -109,33 +259,73 @@ function openIDB() {
 
 /**
  * Saves a Uint8Array (the serialised SQLite file) into IndexedDB.
+ * The data is encrypted with AES-256-GCM before storage.
+ * If no encryption key is available (no logged-in user) the data is stored
+ * as plaintext so the app can continue to function.
  * @param {Uint8Array} data
  */
 async function saveToIDB(data) {
+  let toStore = data;
+  try {
+    const key = await _getDbEncryptionKey();
+    if (key) {
+      toStore = await _encryptBlob(key, data);
+    } else {
+      console.warn('[IDB] No encryption key available — storing plaintext DB');
+    }
+  } catch (err) {
+    console.error('[IDB] Encryption failed — storing plaintext DB:', err);
+  }
   const idb = await openIDB();
   return new Promise((resolve, reject) => {
     const tx      = idb.transaction(IDB_STORE, 'readwrite');
     const store   = tx.objectStore(IDB_STORE);
-    const request = store.put(data, IDB_KEY);
+    const request = store.put(toStore, IDB_KEY);
     request.onsuccess = () => resolve();
     request.onerror   = (e) => reject(e.target.error);
   });
 }
 
 /**
- * Loads the SQLite blob from IndexedDB.
- * Returns a Uint8Array if found, or null if no data has been saved yet.
+ * Loads the SQLite blob from IndexedDB and decrypts it if necessary.
+ * Handles three cases:
+ *   1. Encrypted blob  — decrypt with the derived key.
+ *   2. Legacy plaintext blob (SQLite magic header) — return as-is; the DB
+ *      will be re-encrypted on the next _persistDB() call.
+ *   3. Nothing stored  — return null (fresh install / new user).
  * @returns {Promise<Uint8Array|null>}
  */
 async function loadFromIDB() {
   const idb = await openIDB();
-  return new Promise((resolve, reject) => {
+  const raw = await new Promise((resolve, reject) => {
     const tx      = idb.transaction(IDB_STORE, 'readonly');
     const store   = tx.objectStore(IDB_STORE);
     const request = store.get(IDB_KEY);
     request.onsuccess = (e) => resolve(e.target.result || null);
     request.onerror   = (e) => reject(e.target.error);
   });
+
+  if (!raw) return null;
+
+  if (_isEncryptedBlob(raw)) {
+    const key = await _getDbEncryptionKey();
+    if (!key) {
+      // No key available — cannot decrypt.  Return null so the app
+      // re-initialises from server data on next sync rather than crashing.
+      console.warn('[IDB] Encrypted blob found but no decryption key — DB will be re-synced from server');
+      return null;
+    }
+    try {
+      return await _decryptBlob(key, raw);
+    } catch (err) {
+      console.error('[IDB] Decryption failed (wrong key or corrupted data) — DB will be re-synced from server:', err);
+      return null;
+    }
+  }
+
+  // Legacy unencrypted blob — use as-is; will be re-encrypted on next save
+  console.log('[IDB] Legacy unencrypted DB detected — will encrypt on next save');
+  return raw;
 }
 
 // ─── Offline PIN helpers (IndexedDB authStore) ───────────────────────────
