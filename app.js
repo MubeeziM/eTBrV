@@ -3951,6 +3951,27 @@ const AUTH_TOKEN_KEY  = 'art.token';
 const AUTH_EXPIRY_KEY = 'art.expiry';
 const AUTH_USER_KEY   = 'art.user';
 const AUTH_PREFS_KEY  = 'art.prefs';
+const APPEARANCE_KEY  = 'art.appearance';
+
+// ── Appearance (theme + dark mode) — applied immediately, stored locally ─
+function _getAppearance() {
+  try {
+    const raw = localStorage.getItem(APPEARANCE_KEY);
+    if (raw) return { theme: 'blue', darkMode: false, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { theme: 'blue', darkMode: false };
+}
+
+function _applyAppearance(a) {
+  if (!a) a = _getAppearance();
+  const root = document.documentElement;
+  root.dataset.theme = a.theme || 'blue';
+  if (a.darkMode) root.dataset.dark = '1';
+  else delete root.dataset.dark;
+}
+
+// Apply before anything renders to avoid flash of unstyled content
+_applyAppearance();
 
 /** Factory — default preference values (mirrors server/DB defaults). */
 function _defaultPrefs() {
@@ -4079,10 +4100,7 @@ const logoutBtn       = document.getElementById('logout-btn');
   if (udProfile) {
     udProfile.addEventListener('click', () => {
       closeDropdown();
-      const profileModalEl = document.getElementById('profile-modal');
-      if (profileModalEl && window.bootstrap) {
-        window.bootstrap.Modal.getOrCreateInstance(profileModalEl).show();
-      }
+      document.getElementById('profile-modal-trigger')?.click();
     });
   }
 
@@ -4090,10 +4108,7 @@ const logoutBtn       = document.getElementById('logout-btn');
   if (udLogout) {
     udLogout.addEventListener('click', () => {
       closeDropdown();
-      const logoutModalEl = document.getElementById('logout-modal');
-      if (logoutModalEl && window.bootstrap) {
-        window.bootstrap.Modal.getOrCreateInstance(logoutModalEl).show();
-      }
+      document.getElementById('logout-modal-trigger')?.click();
     });
   }
 })();
@@ -6511,14 +6526,6 @@ document.getElementById('pin-enroll-skip-btn')?.addEventListener('click', e => {
 });
 
 
-document.querySelectorAll('.pwd-toggle').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const inp = document.getElementById(btn.dataset.target);
-    if (!inp) return;
-    inp.type = inp.type === 'password' ? 'text' : 'password';
-  });
-});
-
 // ── Password strength meter ───────────────────────────────────────────────
 (function () {
   const pwdInput     = document.getElementById('reg-password');
@@ -6775,8 +6782,7 @@ function _updateHeaderUser(user) {
   // ── Load profile data when modal opens ───────────────────────────────
   modalEl.addEventListener('shown.bs.modal', async () => {
     // Reset to Profile tab
-    const infoTab = document.getElementById('ptab-info-tab');
-    if (infoTab) bootstrap.Tab.getOrCreateInstance(infoTab).show();
+    document.getElementById('ptab-info-tab')?.click();
 
     _pendingAvatar   = null;
     _clearProfileMsg();
@@ -7152,12 +7158,46 @@ function _updateHeaderUser(user) {
     _setField('pref-compact-mode',       p.compactTableMode);
     _setField('pref-dq-autoclose',       p.dqAutoClose);
     _setField('pref-pin-dismissed',      p.pinEnrollDismissed);
+    // Appearance (localStorage-only)
+    const ap = _getAppearance();
+    _setField('pref-dark-mode', ap.darkMode);
+    document.querySelectorAll('.theme-swatch').forEach(s =>
+      s.classList.toggle('active', s.dataset.theme === (ap.theme || 'blue')));
   }
 
-  // Populate whenever the Preferences tab becomes visible
+  // Populate whenever the Preferences tab becomes visible; also widen the modal
   document.getElementById('ptab-prefs-tab')?.addEventListener('shown.bs.tab', () => {
     _clearMsg();
     _populateForm(getPrefs());
+    const dlg = document.querySelector('#profile-modal .modal-dialog');
+    if (dlg) dlg.style.maxWidth = '680px';
+  });
+
+  // Restore normal width when leaving Preferences
+  ['ptab-info-tab', 'ptab-pwd-tab', 'ptab-scope-tab'].forEach(id => {
+    document.getElementById(id)?.addEventListener('shown.bs.tab', () => {
+      const dlg = document.querySelector('#profile-modal .modal-dialog');
+      if (dlg) dlg.style.maxWidth = '520px';
+    });
+  });
+
+  // Appearance: apply immediately on interaction (no Save needed)
+  document.getElementById('pref-dark-mode')?.addEventListener('change', function () {
+    const a = _getAppearance();
+    a.darkMode = this.checked;
+    localStorage.setItem(APPEARANCE_KEY, JSON.stringify(a));
+    _applyAppearance(a);
+  });
+
+  document.querySelectorAll('.theme-swatch').forEach(swatch => {
+    swatch.addEventListener('click', function () {
+      const a = _getAppearance();
+      a.theme  = this.dataset.theme;
+      localStorage.setItem(APPEARANCE_KEY, JSON.stringify(a));
+      _applyAppearance(a);
+      document.querySelectorAll('.theme-swatch').forEach(s =>
+        s.classList.toggle('active', s === this));
+    });
   });
 
   form.addEventListener('submit', async e => {

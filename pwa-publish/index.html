@@ -48,15 +48,35 @@
       <span id="connection-status" class="status-badge bg-success text-white">Online</span>
       <!-- Logged-in user info + sign-out (shown after successful login) -->
       <div id="user-info-bar" class="user-info-bar" hidden>
-        <button id="logout-btn" class="btn-logout" type="button"
-                data-bs-toggle="modal" data-bs-target="#logout-modal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true" style="flex-shrink:0">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          Log Out
-        </button>
+        <!-- Avatar icon button — opens user dropdown -->
+        <div class="user-menu-wrap" id="user-menu-wrap">
+          <button id="my-account-btn" class="btn-avatar-only" type="button"
+                  aria-label="My Account" aria-haspopup="true" aria-expanded="false">
+            <span id="header-avatar" class="header-avatar" aria-hidden="true"></span>
+          </button>
+          <!-- Hidden: keep name/logout wired for JS compatibility -->
+          <span id="user-name-display" style="display:none"></span>
+          <button id="logout-btn" style="display:none" type="button"></button>
+          <!-- Dropdown panel -->
+          <div id="user-dropdown" class="user-dropdown" hidden>
+            <div class="user-dropdown-header">
+              <span id="ud-avatar" class="ud-avatar" aria-hidden="true"></span>
+              <div class="ud-info">
+                <span id="ud-name" class="ud-name"></span>
+                <span id="ud-sub" class="ud-sub"></span>
+              </div>
+            </div>
+            <hr class="ud-divider" />
+            <button class="ud-item" id="ud-profile-btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              Edit Profile
+            </button>
+            <button class="ud-item ud-item--danger" id="ud-logout-btn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Log Out
+            </button>
+          </div>
+        </div>
       </div>
       <!-- App version -->
       <span id="app-version" class="app-version"></span>
@@ -404,7 +424,7 @@
             </div>
             <div class="db-card-body mt-3">
               <h4>Data Entry</h4>
-              <p>Enter patient records for ART Register, Unit TB Register, and other clinical registers.</p>
+              <p>Enter patient records for ART Register, Unit TB Register, Presumptive TB Cases, and other clinical registers.</p>
             </div>
             <div class="db-card-foot">
               <button class="db-open-btn" style="background:#059669;border-color:#7c3aed;color:#fff" tabindex="-1">Enter Data
@@ -604,15 +624,18 @@
         </h3>
         <div class="db-grid db-grid--2">
 
-          <div class="db-card db-card--soon">
+          <div class="db-card db-card--active" style="cursor:pointer"
+               data-bs-toggle="modal" data-bs-target="#profile-modal">
             <div class="db-card-ico">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
             <div class="db-card-body">
-              <h4>User Settings and Preferences</h4>
-              <p>Manage your profile, change your password, configure notifications and application preferences.</p>
+              <h4>My Account</h4>
+              <p>Update your display name, profile picture, username, email address and password.</p>
             </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+            <div class="db-card-foot">
+              <span class="db-badge" style="background:#dbeafe;color:#1d4ed8">Open</span>
+            </div>
           </div>
 
           <div class="db-card db-card--soon">
@@ -881,6 +904,7 @@
                 <option value="">— Select Register —</option>
                 <option value="art">ART Register</option>
                 <option value="tb">Unit TB Register</option>
+                <option value="presumptive">Presumptive TB Cases</option>
                 <option value="index" disabled>Index Client Register (coming soon)</option>
                 <option value="dispensing" disabled>Dispensing Register (coming soon)</option>
               </select>
@@ -1937,6 +1961,85 @@
 
           </div><!-- /#tb-register-content -->
 
+          <!-- ══ Presumptive TB Cases ══════════════════════════════════ -->
+          <div id="presumptive-register-content" hidden>
+            <section class="card form-card">
+              <h2 class="section-title" id="pc-form-title">Presumptive TB Cases — Per Month</h2>
+
+              <!-- Step instructions -->
+              <p style="font-size:.85rem;color:#6b7280;margin:0 0 1.25rem">
+                Select the year and month, enter the number of presumptive TB cases examined by the lab that month, then click <strong>Save</strong>.
+              </p>
+
+              <div class="row g-4">
+
+                <!-- ── LEFT: year / month / count entry ──────────────── -->
+                <div class="col-md-5">
+                  <div class="form-section-body" style="border-radius:.5rem;border:1.5px solid #b2d4b2">
+                  <div class="field-group">
+                    <label for="pc-year-sel">Year <span class="required">*</span></label>
+                    <select id="pc-year-sel" class="form-select" style="font-size:.9rem">
+                      <option value="0">— Select A Year —</option>
+                    </select>
+                  </div>
+
+                  <div class="field-group mt-3">
+                    <label for="pc-month-sel">Month <span class="required">*</span></label>
+                    <select id="pc-month-sel" class="form-select" style="font-size:.9rem">
+                      <option value="0">— Select A Month —</option>
+                    </select>
+                  </div>
+
+                  <div class="field-group mt-3">
+                    <label for="pc-count">Number of Presumptive TB Cases Seen By The Lab <span class="required">*</span></label>
+                    <input type="number" id="pc-count" min="0" step="1" placeholder="e.g. 45"
+                           style="width:100%;padding:.5rem .75rem;font-size:1.6rem;font-weight:700;text-align:center;border:1.5px solid #d1d5db;border-radius:.375rem;color:#111827" />
+                    <span class="field-error" id="pc-count-error"></span>
+                  </div>
+
+                  <div class="mt-4 d-flex gap-2 align-items-center justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary" id="pc-clear-btn">Clear</button>
+                    <button type="button" class="btn btn-primary" id="pc-save-btn" style="min-width:110px">
+                      <span id="pc-save-spinner" class="spinner-border spinner-border-sm me-1 d-none"
+                            role="status" aria-hidden="true"></span>
+                      Save
+                    </button>
+                  </div>
+                  </div><!-- /.form-section-body -->
+
+                  <div id="pc-status" class="alert d-none mt-3 mb-0" style="font-size:.85rem" role="alert"></div>
+                </div>
+
+                <!-- ── RIGHT: summary table ───────────────────────────── -->
+                <div class="col-md-7">
+                  <div style="border:1px solid #e5e7eb;border-radius:.5rem;overflow:hidden">
+                    <div style="background:#1e3a5f;color:#fff;padding:.45rem .8rem;font-weight:700;font-size:.85rem;text-align:center">
+                      Presumptive TB Cases Seen In <span id="pc-table-year">—</span>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-bordered mb-0" style="font-size:.85rem">
+                        <thead>
+                          <tr style="background:#f9fafb">
+                            <th style="padding:.35rem .75rem;color:#6b7280;text-transform:uppercase;font-size:.75rem">Month</th>
+                            <th style="padding:.35rem .75rem;color:#6b7280;text-transform:uppercase;font-size:.75rem;text-align:center"># Presumptive TB Cases</th>
+                          </tr>
+                        </thead>
+                        <tbody id="pc-summary-tbody">
+                          <tr>
+                            <td colspan="2" style="text-align:center;color:#9ca3af;padding:.9rem">
+                              Select a year to view data
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- /.row -->
+            </section>
+          </div><!-- /#presumptive-register-content -->
+
           </div><!-- /#register-content -->
         </div><!-- /.register-main -->
       </div><!-- /.register-layout -->
@@ -2321,6 +2424,18 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
             Sync Now
           </button>
+          <button type="button" class="btn btn-secondary btn-sm" title="View sync diagnostic log"
+                  style="padding:.35rem .7rem;font-size:.78rem;display:flex;align-items:center;gap:4px"
+                  data-bs-toggle="modal" data-bs-target="#sync-log-modal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            Sync Log
+          </button>
           <span id="psearch-sync-status" style="font-size:0.83rem;color:#6b7280"></span>
         </div>
 
@@ -2362,6 +2477,354 @@
 
   </main>
 
+  <!-- Hidden trigger for the profile modal (avoids window.bootstrap dependency) -->
+  <button id="profile-modal-trigger" data-bs-toggle="modal" data-bs-target="#profile-modal"
+          hidden aria-hidden="true"></button>
+
+  <!-- ========== PROFILE / MY ACCOUNT MODAL ========== -->
+  <div class="modal fade" id="profile-modal" tabindex="-1" aria-labelledby="profile-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:520px">
+      <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+
+        <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
+          <div class="d-flex align-items-center gap-3">
+            <div style="width:44px;height:44px;border-radius:12px;background:#dbeafe;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" width="22" height="22" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <h5 class="modal-title mb-0" id="profile-modal-label" style="font-weight:700;font-size:1.1rem">My Account</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="margin-left:auto"></button>
+        </div>
+
+        <div class="modal-body" style="padding:1.25rem 1.5rem 0.5rem">
+
+          <!-- Bootstrap tabs -->
+          <ul class="nav nav-tabs mb-3" id="profile-tabs" role="tablist" style="font-size:.9rem">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="ptab-info-tab" data-bs-toggle="tab" data-bs-target="#ptab-info"
+                      type="button" role="tab" aria-controls="ptab-info" aria-selected="true">Profile</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="ptab-pwd-tab" data-bs-toggle="tab" data-bs-target="#ptab-pwd"
+                      type="button" role="tab" aria-controls="ptab-pwd" aria-selected="false">Change Password</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="ptab-prefs-tab" data-bs-toggle="tab" data-bs-target="#ptab-prefs"
+                      type="button" role="tab" aria-controls="ptab-prefs" aria-selected="false">Preferences</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="ptab-scope-tab" data-bs-toggle="tab" data-bs-target="#ptab-scope"
+                      type="button" role="tab" aria-controls="ptab-scope" aria-selected="false">My Scope</button>
+            </li>
+          </ul>
+
+          <div class="tab-content" id="profile-tabs-content">
+
+            <!-- ── Tab 1: Profile info ─────────────────────────────────── -->
+            <div class="tab-pane fade show active" id="ptab-info" role="tabpanel" aria-labelledby="ptab-info-tab">
+              <div id="profile-msg" class="auth-msg" hidden></div>
+              <form id="profile-form" novalidate autocomplete="off">
+
+                <!-- Avatar picker -->
+                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem">
+                  <div id="profile-avatar-preview" class="profile-avatar-lg" aria-hidden="true"></div>
+                  <div style="display:flex;flex-direction:column;gap:.5rem">
+                    <label class="btn btn-sm btn-outline-secondary" style="cursor:pointer;margin:0">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:4px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      Upload Photo
+                      <input type="file" id="profile-avatar-input" accept="image/jpeg,image/png,image/webp"
+                             style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+                    </label>
+                    <button type="button" id="profile-avatar-clear" class="btn btn-sm btn-outline-danger"
+                            style="display:none">Remove Photo</button>
+                    <span style="font-size:.75rem;color:#9ca3af">JPG / PNG / WEBP · max 200 KB</span>
+                  </div>
+                </div>
+
+                <div class="field-group">
+                  <label for="profile-fullname">Display Name</label>
+                  <input type="text" id="profile-fullname" autocomplete="name" placeholder="Your full name" />
+                </div>
+                <div class="field-group">
+                  <label for="profile-username">Username</label>
+                  <div style="position:relative">
+                    <input type="text" id="profile-username" autocomplete="username" placeholder="Username" />
+                    <span id="profile-username-status" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:.78rem"></span>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-email">Email Address</label>
+                  <div style="position:relative">
+                    <input type="email" id="profile-email" autocomplete="email" placeholder="you@example.com" />
+                    <span id="profile-email-status" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:.78rem"></span>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-phone">Phone Number <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
+                  <input type="tel" id="profile-phone" autocomplete="tel" placeholder="e.g. 0925123456" />
+                </div>
+
+                <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="submit" id="profile-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Changes</button>
+                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
+                          style="border-radius:10px;font-weight:600">Cancel</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ── Tab 2: Change Password ─────────────────────────────── -->
+            <div class="tab-pane fade" id="ptab-pwd" role="tabpanel" aria-labelledby="ptab-pwd-tab">
+              <div id="profile-pwd-msg" class="auth-msg" hidden></div>
+              <form id="profile-pwd-form" novalidate autocomplete="off">
+                <div class="field-group">
+                  <label for="profile-current-pwd">Current Password</label>
+                  <div class="pwd-wrap">
+                    <input type="password" id="profile-current-pwd" autocomplete="current-password"
+                           placeholder="Your current password" />
+                    <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="profile-current-pwd">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-new-pwd">New Password</label>
+                  <div class="pwd-wrap">
+                    <input type="password" id="profile-new-pwd" autocomplete="new-password"
+                           placeholder="Min. 8 characters" />
+                    <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="profile-new-pwd">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                  <div class="pwd-strength" id="profile-pwd-strength" aria-live="polite" hidden>
+                    <div class="pwd-strength-segments">
+                      <span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span><span class="pwd-seg"></span>
+                    </div>
+                    <span class="pwd-strength-label" id="profile-pwd-strength-label"></span>
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="profile-confirm-pwd">Confirm New Password</label>
+                  <div class="pwd-wrap">
+                    <input type="password" id="profile-confirm-pwd" autocomplete="new-password"
+                           placeholder="Repeat new password" />
+                    <button type="button" class="pwd-toggle" aria-label="Show/hide" data-target="profile-confirm-pwd">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                  <div class="pwd-match" id="profile-pwd-match" aria-live="polite" hidden></div>
+                </div>
+                <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="submit" id="profile-pwd-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Change Password</button>
+                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
+                          style="border-radius:10px;font-weight:600">Cancel</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ── Tab 3: Preferences ─────────────────────────────────── -->
+            <div class="tab-pane fade" id="ptab-prefs" role="tabpanel" aria-labelledby="ptab-prefs-tab">
+              <div id="prefs-msg" class="auth-msg" hidden></div>
+              <form id="prefs-form" novalidate autocomplete="off" style="font-size:.88rem">
+
+                <!-- Clinical Thresholds -->
+                <fieldset class="prefs-section" data-section="clinical">
+                  <legend>Clinical Thresholds</legend>
+                  <div class="prefs-row">
+                    <label for="pref-tb-lookback">TB Patient Data Lookback (days)</label>
+                    <input type="number" id="pref-tb-lookback" min="30" max="1825" step="1" />
+                    <span class="prefs-hint">How many days back to search for HIV/CPT/ART monitoring & duplicate TB numbers. Default: 365</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label>Outcome Eligibility Window — New Patients (days since Rx Start)</label>
+                    <div style="display:flex;gap:.5rem;align-items:center">
+                      <input type="number" id="pref-elig-new-min" min="60" max="365" step="1" style="width:80px" title="Minimum days" />
+                      <span>to</span>
+                      <input type="number" id="pref-elig-new-max" min="90" max="730" step="1" style="width:80px" title="Maximum days" />
+                    </div>
+                    <span class="prefs-hint">Patients within this window show under "Outcome Due". Default: 168–270</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label>Outcome Eligibility Window — Retreatment Patients (days since Rx Start)</label>
+                    <div style="display:flex;gap:.5rem;align-items:center">
+                      <input type="number" id="pref-elig-retx-min" min="60" max="365" step="1" style="width:80px" />
+                      <span>to</span>
+                      <input type="number" id="pref-elig-retx-max" min="90" max="730" step="1" style="width:80px" />
+                    </div>
+                    <span class="prefs-hint">Default: 224–320</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label>DQ Missing Outcome — New Patients (days since Rx Start)</label>
+                    <div style="display:flex;gap:.5rem;align-items:center">
+                      <input type="number" id="pref-dq-no-out-new-min" min="60" max="730" step="1" style="width:80px" />
+                      <span>to</span>
+                      <input type="number" id="pref-dq-no-out-new-max" min="90" max="1825" step="1" style="width:80px" />
+                    </div>
+                    <span class="prefs-hint">Default: 180–540</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label>DQ Missing Outcome — Retreatment Patients (days since Rx Start)</label>
+                    <div style="display:flex;gap:.5rem;align-items:center">
+                      <input type="number" id="pref-dq-no-out-retx-min" min="60" max="730" step="1" style="width:80px" />
+                      <span>to</span>
+                      <input type="number" id="pref-dq-no-out-retx-max" min="90" max="1825" step="1" style="width:80px" />
+                    </div>
+                    <span class="prefs-hint">Default: 240–600</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label for="pref-dq-diagmethod">DQ Diagnosis Method Grace Period (days since Reg)</label>
+                    <input type="number" id="pref-dq-diagmethod" min="14" max="365" step="1" />
+                    <span class="prefs-hint">Patients registered within this many days are excluded from the "Missing Diag Method" DQ check. Default: 180</span>
+                  </div>
+                </fieldset>
+
+                <!-- Data Entry -->
+                <fieldset class="prefs-section" data-section="data-entry">
+                  <legend>Data Entry</legend>
+                  <div class="prefs-row">
+                    <label for="pref-art-load">ART Patient Load Limit</label>
+                    <input type="number" id="pref-art-load" min="0" max="5000" step="50" />
+                    <span class="prefs-hint">Maximum ART records to pull from server (0 = all, up to 5 000). Lower values speed up sync on older devices.</span>
+                  </div>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-dup-name-check">Enable Duplicate Name Check</label>
+                    <input type="checkbox" id="pref-dup-name-check" class="form-check-input" role="switch" />
+                    <span class="prefs-hint">Counts and highlights patients who share the same name, age, type, and registration date.</span>
+                  </div>
+                </fieldset>
+
+                <!-- Monitoring -->
+                <fieldset class="prefs-section" data-section="monitoring">
+                  <legend>Monitoring</legend>
+                  <div class="prefs-row">
+                    <label for="pref-mon-mode">Default Monitoring View</label>
+                    <select id="pref-mon-mode" class="form-select form-select-sm" style="width:auto">
+                      <option value="missed">Missed (overdue)</option>
+                      <option value="due">Due (upcoming)</option>
+                    </select>
+                  </div>
+                  <div class="prefs-row">
+                    <label for="pref-mon-rows">Rows Loaded Per Page</label>
+                    <input type="number" id="pref-mon-rows" min="50" max="2000" step="50" />
+                    <span class="prefs-hint">Default: 500</span>
+                  </div>
+                </fieldset>
+
+                <!-- Reports -->
+                <fieldset class="prefs-section" data-section="reports">
+                  <legend>Reports</legend>
+                  <div class="prefs-row">
+                    <label for="pref-report-period">Default Report Period Type</label>
+                    <select id="pref-report-period" class="form-select form-select-sm" style="width:auto">
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="semi-annual">Semi-Annual</option>
+                      <option value="annual">Annual</option>
+                    </select>
+                  </div>
+                </fieldset>
+
+                <!-- Session & Security -->
+                <fieldset class="prefs-section" data-section="session">
+                  <legend>Session &amp; Security</legend>
+                  <div class="prefs-row">
+                    <label for="pref-inactivity-warn">Inactivity Warning After (minutes)</label>
+                    <input type="number" id="pref-inactivity-warn" min="1" max="60" step="1" />
+                    <span class="prefs-hint">Default: 13 minutes</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label for="pref-auto-logout">Auto-Logout After Warning (minutes)</label>
+                    <input type="number" id="pref-auto-logout" min="1" max="30" step="1" />
+                    <span class="prefs-hint">Default: 2 minutes</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label for="pref-sync-interval">Background Sync Every (minutes)</label>
+                    <input type="number" id="pref-sync-interval" min="1" max="60" step="1" />
+                    <span class="prefs-hint">Default: 5 minutes</span>
+                  </div>
+                </fieldset>
+
+                <!-- Display & Usability -->
+                <fieldset class="prefs-section" data-section="display">
+                  <legend>Display &amp; Usability</legend>
+                  <div class="prefs-row">
+                    <label for="pref-name-trunc">Patient Name Display Length (characters)</label>
+                    <input type="number" id="pref-name-trunc" min="5" max="50" step="1" />
+                    <span class="prefs-hint">Names longer than this are truncated in lists. Default: 15</span>
+                  </div>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-show-tb-section">Show TB Monitoring on Dashboard</label>
+                    <input type="checkbox" id="pref-show-tb-section" class="form-check-input" role="switch" />
+                  </div>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-show-dq-section">Show Data Quality on Dashboard</label>
+                    <input type="checkbox" id="pref-show-dq-section" class="form-check-input" role="switch" />
+                  </div>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-compact-mode">Compact Table Mode</label>
+                    <input type="checkbox" id="pref-compact-mode" class="form-check-input" role="switch" />
+                    <span class="prefs-hint">Hides secondary columns in patient lists for smaller screens.</span>
+                  </div>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-dq-autoclose">Auto-Close DQ Panel When All Checks Pass</label>
+                    <input type="checkbox" id="pref-dq-autoclose" class="form-check-input" role="switch" />
+                  </div>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-pin-dismissed">Skip Offline PIN Enrollment Prompt</label>
+                    <input type="checkbox" id="pref-pin-dismissed" class="form-check-input" role="switch" />
+                    <span class="prefs-hint">Check this if you do not want to use offline PIN access.</span>
+                  </div>
+                </fieldset>
+
+                <!-- Appearance -->
+                <fieldset class="prefs-section" data-section="appearance">
+                  <legend>Appearance</legend>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-dark-mode">Dark Mode</label>
+                    <input type="checkbox" id="pref-dark-mode" class="form-check-input" role="switch" />
+                    <span class="prefs-hint">Switch the entire app to a dark colour scheme.</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label>App Theme</label>
+                    <div class="theme-swatches" id="pref-theme-swatches">
+                      <button type="button" class="theme-swatch" data-theme="blue"   style="background:#2563eb" title="Ocean Blue"      aria-label="Ocean Blue"></button>
+                      <button type="button" class="theme-swatch" data-theme="green"  style="background:#16a34a" title="Forest Green"    aria-label="Forest Green"></button>
+                      <button type="button" class="theme-swatch" data-theme="red"    style="background:#dc2626" title="Ruby Red"        aria-label="Ruby Red"></button>
+                      <button type="button" class="theme-swatch" data-theme="purple" style="background:#7c3aed" title="Amethyst Purple"  aria-label="Amethyst Purple"></button>
+                      <button type="button" class="theme-swatch" data-theme="orange" style="background:#ea580c" title="Sunset Orange"   aria-label="Sunset Orange"></button>
+                      <button type="button" class="theme-swatch" data-theme="slate"  style="background:#475569" title="Graphite"        aria-label="Graphite"></button>
+                    </div>
+                    <span class="prefs-hint">Changes apply immediately and are saved on this device. Default: Ocean Blue.</span>
+                  </div>
+                </fieldset>
+
+                <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                  <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
+                          style="border-radius:10px;font-weight:600">Cancel</button>
+                  <button type="submit" id="prefs-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Preferences</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ── Tab 4: My Scope (read-only) ────────────────────────── -->
+            <div class="tab-pane fade" id="ptab-scope" role="tabpanel" aria-labelledby="ptab-scope-tab">
+              <p style="font-size:.83rem;color:#6b7280;margin-bottom:1rem"
+                 >Your facility, county, state and role are assigned by an administrator
+                 and cannot be changed here.</p>
+              <dl class="profile-scope-list">
+                <dt>Role</dt>       <dd id="pscope-role">—</dd>
+                <dt>Facility</dt>   <dd id="pscope-facility">—</dd>
+                <dt>County</dt>     <dd id="pscope-county">—</dd>
+                <dt>State</dt>      <dd id="pscope-state">—</dd>
+                <dt>Member since</dt><dd id="pscope-since">—</dd>
+              </dl>
+            </div>
+
+          </div><!-- /tab-content -->
+        </div><!-- /modal-body -->
+      </div>
+    </div>
+  </div>
+
   <!-- ========== LOGOUT MODAL ========== -->
   <div class="modal fade" id="logout-modal" tabindex="-1" aria-labelledby="logout-modal-label" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered" style="max-width:360px">
@@ -2400,6 +2863,10 @@
       </div>
     </div>
   </div>
+
+  <!-- Hidden trigger for the logout modal (avoids window.bootstrap dependency) -->
+  <button id="logout-modal-trigger" data-bs-toggle="modal" data-bs-target="#logout-modal"
+          hidden aria-hidden="true"></button>
 
   <!-- ========== QUIT CONFIRM MODAL ========== -->
   <div class="modal fade" id="quit-confirm-modal" tabindex="-1" aria-labelledby="quit-confirm-modal-label" aria-hidden="true">

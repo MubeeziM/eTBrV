@@ -2477,6 +2477,10 @@
 
   </main>
 
+  <!-- Hidden trigger for the profile modal (avoids window.bootstrap dependency) -->
+  <button id="profile-modal-trigger" data-bs-toggle="modal" data-bs-target="#profile-modal"
+          hidden aria-hidden="true"></button>
+
   <!-- ========== PROFILE / MY ACCOUNT MODAL ========== -->
   <div class="modal fade" id="profile-modal" tabindex="-1" aria-labelledby="profile-modal-label" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:520px">
@@ -2557,7 +2561,7 @@
                 </div>
                 <div class="field-group">
                   <label for="profile-phone">Phone Number <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
-                  <input type="tel" id="profile-phone" autocomplete="tel" placeholder="e.g. 0801234567" />
+                  <input type="tel" id="profile-phone" autocomplete="tel" placeholder="e.g. 0925123456" />
                 </div>
 
                 <div style="display:flex;gap:.75rem;margin-top:.5rem">
@@ -2623,7 +2627,7 @@
               <form id="prefs-form" novalidate autocomplete="off" style="font-size:.88rem">
 
                 <!-- Clinical Thresholds -->
-                <fieldset class="prefs-section">
+                <fieldset class="prefs-section" data-section="clinical">
                   <legend>Clinical Thresholds</legend>
                   <div class="prefs-row">
                     <label for="pref-tb-lookback">TB Patient Data Lookback (days)</label>
@@ -2674,7 +2678,7 @@
                 </fieldset>
 
                 <!-- Data Entry -->
-                <fieldset class="prefs-section">
+                <fieldset class="prefs-section" data-section="data-entry">
                   <legend>Data Entry</legend>
                   <div class="prefs-row">
                     <label for="pref-art-load">ART Patient Load Limit</label>
@@ -2689,7 +2693,7 @@
                 </fieldset>
 
                 <!-- Monitoring -->
-                <fieldset class="prefs-section">
+                <fieldset class="prefs-section" data-section="monitoring">
                   <legend>Monitoring</legend>
                   <div class="prefs-row">
                     <label for="pref-mon-mode">Default Monitoring View</label>
@@ -2706,7 +2710,7 @@
                 </fieldset>
 
                 <!-- Reports -->
-                <fieldset class="prefs-section">
+                <fieldset class="prefs-section" data-section="reports">
                   <legend>Reports</legend>
                   <div class="prefs-row">
                     <label for="pref-report-period">Default Report Period Type</label>
@@ -2720,7 +2724,7 @@
                 </fieldset>
 
                 <!-- Session & Security -->
-                <fieldset class="prefs-section">
+                <fieldset class="prefs-section" data-section="session">
                   <legend>Session &amp; Security</legend>
                   <div class="prefs-row">
                     <label for="pref-inactivity-warn">Inactivity Warning After (minutes)</label>
@@ -2740,7 +2744,7 @@
                 </fieldset>
 
                 <!-- Display & Usability -->
-                <fieldset class="prefs-section">
+                <fieldset class="prefs-section" data-section="display">
                   <legend>Display &amp; Usability</legend>
                   <div class="prefs-row">
                     <label for="pref-name-trunc">Patient Name Display Length (characters)</label>
@@ -2771,10 +2775,32 @@
                   </div>
                 </fieldset>
 
+                <!-- Appearance -->
+                <fieldset class="prefs-section" data-section="appearance">
+                  <legend>Appearance</legend>
+                  <div class="prefs-row prefs-row--toggle">
+                    <label for="pref-dark-mode">Dark Mode</label>
+                    <input type="checkbox" id="pref-dark-mode" class="form-check-input" role="switch" />
+                    <span class="prefs-hint">Switch the entire app to a dark colour scheme.</span>
+                  </div>
+                  <div class="prefs-row">
+                    <label>App Theme</label>
+                    <div class="theme-swatches" id="pref-theme-swatches">
+                      <button type="button" class="theme-swatch" data-theme="blue"   style="background:#2563eb" title="Ocean Blue"      aria-label="Ocean Blue"></button>
+                      <button type="button" class="theme-swatch" data-theme="green"  style="background:#16a34a" title="Forest Green"    aria-label="Forest Green"></button>
+                      <button type="button" class="theme-swatch" data-theme="red"    style="background:#dc2626" title="Ruby Red"        aria-label="Ruby Red"></button>
+                      <button type="button" class="theme-swatch" data-theme="purple" style="background:#7c3aed" title="Amethyst Purple"  aria-label="Amethyst Purple"></button>
+                      <button type="button" class="theme-swatch" data-theme="orange" style="background:#ea580c" title="Sunset Orange"   aria-label="Sunset Orange"></button>
+                      <button type="button" class="theme-swatch" data-theme="slate"  style="background:#475569" title="Graphite"        aria-label="Graphite"></button>
+                    </div>
+                    <span class="prefs-hint">Changes apply immediately and are saved on this device. Default: Ocean Blue.</span>
+                  </div>
+                </fieldset>
+
                 <div style="display:flex;gap:.75rem;margin-top:.5rem">
-                  <button type="submit" id="prefs-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Preferences</button>
                   <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"
                           style="border-radius:10px;font-weight:600">Cancel</button>
+                  <button type="submit" id="prefs-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Save Preferences</button>
                 </div>
               </form>
             </div>
@@ -2837,6 +2863,10 @@
       </div>
     </div>
   </div>
+
+  <!-- Hidden trigger for the logout modal (avoids window.bootstrap dependency) -->
+  <button id="logout-modal-trigger" data-bs-toggle="modal" data-bs-target="#logout-modal"
+          hidden aria-hidden="true"></button>
 
   <!-- ========== QUIT CONFIRM MODAL ========== -->
   <div class="modal fade" id="quit-confirm-modal" tabindex="-1" aria-labelledby="quit-confirm-modal-label" aria-hidden="true">
