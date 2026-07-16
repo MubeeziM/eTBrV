@@ -6600,6 +6600,163 @@ document.getElementById('pin-enroll-skip-btn')?.addEventListener('click', e => {
   showAppScreen();
 });
 
+// ── Profile modal: Offline PIN tab ───────────────────────────────────────
+
+// Wire OTP digit groups inside the profile modal PIN tab
+(function () {
+  function wireGroup(groupId) {
+    const group = document.getElementById(groupId);
+    if (!group) return;
+    const digits = Array.from(group.querySelectorAll('.otp-digit'));
+    digits.forEach((input, i) => {
+      input.addEventListener('input', e => {
+        const val = e.target.value.replace(/\D/g, '');
+        e.target.value = val.slice(-1);
+        e.target.classList.toggle('otp-filled', !!e.target.value);
+        if (e.target.value && i < digits.length - 1) digits[i + 1].focus();
+      });
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Backspace' && !input.value && i > 0) {
+          digits[i - 1].focus();
+          digits[i - 1].value = '';
+          digits[i - 1].classList.remove('otp-filled');
+        }
+      });
+    });
+  }
+  wireGroup('ptab-pin-group');
+  wireGroup('ptab-pin-confirm-group');
+}());
+
+/** Refresh the PIN status badge and button state in the profile PIN tab. */
+async function _refreshPinTabStatus() {
+  const statusEl   = document.getElementById('ptab-pin-status');
+  const statusIcon = document.getElementById('ptab-pin-status-icon');
+  const statusText = document.getElementById('ptab-pin-status-text');
+  const clearBtn   = document.getElementById('ptab-pin-clear-btn');
+  const saveBtn    = document.getElementById('ptab-pin-save-btn');
+  const newLabel   = document.getElementById('ptab-pin-new-label');
+  if (!statusEl) return;
+
+  try {
+    const user    = getUser();
+    const pinData = await loadOfflinePin();
+    const pinSet  = pinData && user && pinData.userTID === user.userTID;
+
+    if (pinSet) {
+      statusEl.style.background = '#f0fdf4';
+      statusEl.style.color      = '#166534';
+      statusIcon.setAttribute('d', '');   // swap icon to checkmark
+      statusIcon.innerHTML = '<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+      statusText.textContent = 'Offline PIN is set on this device.';
+      if (clearBtn) clearBtn.hidden = false;
+      if (saveBtn)  saveBtn.textContent = 'Change PIN';
+      if (newLabel) newLabel.textContent = 'New PIN';
+    } else {
+      statusEl.style.background = '#fefce8';
+      statusEl.style.color      = '#713f12';
+      statusIcon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+      statusText.textContent = 'No Offline PIN set on this device.';
+      if (clearBtn) clearBtn.hidden = true;
+      if (saveBtn)  saveBtn.textContent = 'Set PIN';
+      if (newLabel) newLabel.textContent = 'PIN';
+    }
+  } catch {
+    if (statusText) statusText.textContent = 'Could not load PIN status.';
+  }
+
+  // Reset the OTP inputs
+  document.querySelectorAll('#ptab-pin-group .otp-digit, #ptab-pin-confirm-group .otp-digit')
+    .forEach(d => { d.value = ''; d.classList.remove('otp-filled'); });
+  const msgEl = document.getElementById('ptab-pin-msg');
+  if (msgEl) msgEl.hidden = true;
+}
+
+// Load status when the Offline PIN tab is shown
+document.getElementById('ptab-pin-tab')?.addEventListener('shown.bs.tab', _refreshPinTabStatus);
+
+// Save / Change PIN
+document.getElementById('ptab-pin-save-btn')?.addEventListener('click', async () => {
+  const pin1    = Array.from(document.querySelectorAll('#ptab-pin-group .otp-digit')).map(d => d.value).join('');
+  const pin2    = Array.from(document.querySelectorAll('#ptab-pin-confirm-group .otp-digit')).map(d => d.value).join('');
+  const msgEl   = document.getElementById('ptab-pin-msg');
+  const saveBtn = document.getElementById('ptab-pin-save-btn');
+
+  msgEl.hidden = true;
+  msgEl.className = 'auth-msg';
+
+  if (pin1.length !== 6) {
+    msgEl.textContent = 'Please enter all 6 digits for the PIN.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+    return;
+  }
+  if (pin1 !== pin2) {
+    msgEl.textContent = 'PINs do not match. Please try again.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+    document.querySelectorAll('#ptab-pin-confirm-group .otp-digit').forEach(d => { d.value = ''; d.classList.remove('otp-filled'); });
+    document.querySelector('#ptab-pin-confirm-group .otp-digit')?.focus();
+    return;
+  }
+  if (/^(\d)\1{5}$/.test(pin1)) {
+    msgEl.textContent = 'PIN cannot be 6 identical digits. Please choose a different PIN.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+    return;
+  }
+
+  saveBtn.disabled    = true;
+  saveBtn.textContent = 'Saving…';
+  try {
+    await enrollOfflinePin(pin1);
+    // Also clear the "dismissed" flag so offline login works next time
+    try {
+      const prefs = getPrefs();
+      prefs.pinEnrollDismissed = false;
+      localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(prefs));
+    } catch { /* ignore */ }
+    await _refreshPinTabStatus();
+    msgEl.textContent = 'Offline PIN saved successfully.';
+    msgEl.classList.add('auth-msg--success');
+    msgEl.hidden = false;
+  } catch {
+    msgEl.textContent = 'Could not save PIN. Please try again.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = document.getElementById('ptab-pin-status-text')?.textContent?.includes('set on this device')
+      ? 'Change PIN' : 'Set PIN';
+  }
+});
+
+// Remove PIN
+document.getElementById('ptab-pin-clear-btn')?.addEventListener('click', async () => {
+  const msgEl    = document.getElementById('ptab-pin-msg');
+  const clearBtn = document.getElementById('ptab-pin-clear-btn');
+  msgEl.hidden   = true;
+  msgEl.className = 'auth-msg';
+
+  if (!confirm('Remove your offline PIN from this device? You will need an internet connection to log in next time.')) return;
+
+  clearBtn.disabled    = true;
+  clearBtn.textContent = 'Removing…';
+  try {
+    await clearOfflinePin();
+    await _refreshPinTabStatus();
+    msgEl.textContent = 'Offline PIN removed from this device.';
+    msgEl.classList.add('auth-msg--success');
+    msgEl.hidden = false;
+  } catch {
+    msgEl.textContent = 'Could not remove PIN. Please try again.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+  } finally {
+    clearBtn.disabled    = false;
+    clearBtn.textContent = 'Remove PIN';
+  }
+});
 
 // ── Password strength meter ───────────────────────────────────────────────
 (function () {
