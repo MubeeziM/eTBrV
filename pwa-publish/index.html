@@ -398,7 +398,7 @@
             <span id="db-stat-pending" class="db-stat-val">—</span>
             <span class="db-stat-lbl">Pending Sync</span>
           </button>
-          <div class="db-stat">
+          <div class="db-stat" id="db-stat-lastsync-tile">
             <span id="db-stat-lastsync" class="db-stat-val">—</span>
             <span class="db-stat-lbl">Last Synced</span>
           </div>
@@ -642,7 +642,7 @@
             </div>
           </div>
 
-          <div class="db-card db-card--soon">
+          <div class="db-card db-card--active" id="dash-help-card" role="button" tabindex="0" aria-label="Open Help and Support">
             <div class="db-card-ico" style="background:#cffafe">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="32" height="32" aria-hidden="true">
                 <path d="M3 18v-6a9 9 0 0118 0v6"/>
@@ -652,12 +652,443 @@
             </div>
             <div class="db-card-body mt-3">
               <h4>Help and Support</h4>
-              <p>User guide, keyboard shortcuts, data entry guidelines and contact information for technical support.</p>
+              <p>User guide, data entry guidelines and contact information for technical support.</p>
             </div>
-            <div class="db-card-foot"><span class="db-badge-soon">Coming Soon</span></div>
+            <div class="db-card-foot">
+              <button class="db-open-btn db-open-btn--teal" tabindex="-1">Open
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </button>
+            </div>
           </div>
 
         </div>
+
+        <!-- ── Panel: Help and Support ──────────────────────────────────── -->
+        <div id="help-panel" class="umgmt-panel" hidden>
+          <div class="umgmt-panel-hd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3z"/><path d="M3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg>
+            Help and Support
+            <button type="button" class="umgmt-panel-close" data-panel="help-panel" aria-label="Close">×</button>
+          </div>
+
+          <!-- Tab navigation -->
+          <ul class="nav nav-tabs help-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="help-tab-guide" data-bs-toggle="tab" data-bs-target="#help-pane-guide" type="button" role="tab" aria-selected="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+                User Guide
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="help-tab-entry" data-bs-toggle="tab" data-bs-target="#help-pane-entry" type="button" role="tab" aria-selected="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+                Data Entry Guidelines
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="help-tab-contact" data-bs-toggle="tab" data-bs-target="#help-pane-contact" type="button" role="tab" aria-selected="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14v2.92z"/></svg>
+                Contact Support
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content help-tab-content">
+
+            <!-- ─── TAB 1: USER GUIDE ──────────────────────────────────── -->
+            <div class="tab-pane fade show active" id="help-pane-guide" role="tabpanel">
+
+              <div class="help-section">
+                <h5 class="help-section-title">Getting Started</h5>
+                <div class="help-block">
+                  <h6>Creating an eTBr Account</h6>
+                  <ol>
+                    <li>Open <strong>art.etbr.org</strong> in your browser (Chrome or Edge recommended).</li>
+                    <li>Click <strong>Create an Account</strong> on the login screen and fill in your full name, username, email and password.</li>
+                    <li>Your account must be approved by an administrator before you can log in. Contact your supervisor or the support team if approval is delayed.</li>
+                  </ol>
+                  <h6 class="mt-3">Logging In</h6>
+                  <ol>
+                    <li>Enter your username and password, then click <strong>Sign In</strong>.</li>
+                    <li>If you forget your password, click <strong>Forgot password?</strong> and follow the reset instructions sent to your registered email.</li>
+                    <li>For security, you will be automatically signed out after a period of inactivity. Save your work regularly.</li>
+                  </ol>
+                  <h6 class="mt-3">Installing the App</h6>
+                  <p>The eTBr app can be installed on any device as a Progressive Web App (PWA) — this allows it to work offline and open like a native app:</p>
+                  <ul>
+                    <li><strong>Chrome / Edge on desktop:</strong> Click the install icon in the address bar, or click the <em>Install App</em> button at the top of the page.</li>
+                    <li><strong>Chrome on Android:</strong> Tap the three-dot menu → <em>Add to Home Screen</em>.</li>
+                    <li><strong>Safari on iPhone / iPad:</strong> Tap the share icon → <em>Add to Home Screen</em>.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">Dashboard Overview</h5>
+                <div class="help-block">
+                  <p>The dashboard is your home screen. It shows a summary of your data and gives access to all features.</p>
+                  <table class="help-table">
+                    <thead><tr><th>Section</th><th>Cards inside</th></tr></thead>
+                    <tbody>
+                      <tr><td><strong>Clinical Operations</strong></td><td>Data Entry &nbsp;·&nbsp; Monitor TB Patients &nbsp;·&nbsp; TB/HIV Reports</td></tr>
+                      <tr><td><strong>Data Management</strong></td><td>Search Patients &nbsp;·&nbsp; Check Data Quality &nbsp;·&nbsp; ART Baseline Data &nbsp;·&nbsp; Legacy Data Migration</td></tr>
+                      <tr><td><strong>System</strong></td><td>My Account &nbsp;·&nbsp; Help and Support</td></tr>
+                      <tr><td><strong>User Management</strong> <small>(admins only)</small></td><td>Account Approvals &nbsp;·&nbsp; Active Users &nbsp;·&nbsp; Active Sessions</td></tr>
+                    </tbody>
+                  </table>
+                  <p class="mt-2">The statistics tiles at the top of the dashboard show <strong>ART Patients</strong>, <strong>TB Patients</strong>, <strong>Pending Sync</strong> records, and the time of the last successful sync. Click a tile to open the corresponding patient list.</p>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">Working Offline</h5>
+                <div class="help-block">
+                  <p>The eTBr app is designed to work even when there is no internet connection. Here is how offline mode works:</p>
+                  <ul>
+                    <li>All patient data is stored locally on your device in an encrypted database. You can enter, edit, and view records without any network connection.</li>
+                    <li>New and edited records are marked as <strong>Pending Sync</strong> while offline. The count is shown on the dashboard.</li>
+                    <li>When you reconnect to the internet, tap the <strong>Sync</strong> button to upload your changes and download updates from the server.</li>
+                    <li>You can set up an <strong>Offline PIN</strong> from your profile (My Account → Offline PIN tab) so you can unlock the app without an internet connection.</li>
+                    <li>The connection status badge in the header shows <em>Online</em> (green) or <em>Offline</em> (red) at all times.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">Data Entry</h5>
+                <div class="help-block">
+                  <p>Click <strong>Data Entry</strong> on the dashboard to open the registers.</p>
+                  <ol>
+                    <li><strong>Select a Health Facility</strong> from the left-hand panel. If your account is linked to a single facility it will be pre-selected.</li>
+                    <li><strong>Choose a register</strong> from the drop-down: ART Register, Unit TB Register, or Presumptive TB Cases.</li>
+                    <li>Fill in the patient form and click <strong>Save Patient</strong>. The record is saved immediately to your local device.</li>
+                    <li>Saved patients appear in the list below the form. Click any row to view the full record, or click the <strong>Edit</strong> icon to correct it.</li>
+                    <li>To delete a record, open the patient row and click <strong>Delete</strong>. Deleted records are retained in the audit log.</li>
+                  </ol>
+                  <p><strong>ART follow-up visits</strong> are entered from the patient list — click the clock icon on an ART patient row to open the visit log.</p>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">Monitoring TB Patients</h5>
+                <div class="help-block">
+                  <p>Click <strong>Monitor TB Patients on Treatment</strong> on the dashboard. The monitoring list highlights:</p>
+                  <ul>
+                    <li>Patients with overdue or upcoming <strong>sputum smear</strong> tests (months 2, 3, 5, 6).</li>
+                    <li>TB patients who are <strong>HIV-positive</strong> but have not been started on ART or CPT.</li>
+                    <li>Patients whose <strong>treatment outcome</strong> has not been recorded but is due.</li>
+                  </ul>
+                  <p>Use the filter buttons at the top to focus on a specific monitoring category. You can export the list to Excel to facilitate patient follow-up during the review meetings.</p>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">TB/HIV Reports</h5>
+                <div class="help-block">
+                  <p>Click <strong>TB/HIV Reports</strong> on the dashboard to generate program reports.</p>
+                  <ul>
+                    <li>Select the <strong>report type</strong> (e.g. DS-TB NTP Quarterly Report, ART Monthly Report), the <strong>facility</strong>, and the <strong>reporting period</strong>.</li>
+                    <li>Click <strong>Generate</strong> to produce the report as an Excel file (.xlsx) which you can save, print, or email.</li>
+                    <li>For DHIS2 submission, select <em>Generate &amp; Send to DHIS2</em> — eTBr will map the data to the correct DHIS2 data elements and submit automatically. A confirmation with the DHIS2 import summary will be shown.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">Searching for Patients</h5>
+                <div class="help-block">
+                  <p>Click <strong>Search Patients</strong> on the dashboard, or click the search icon in the statistics bar. You can search across <em>all</em> registers by:</p>
+                  <ul>
+                    <li>Patient name (full or partial)</li>
+                    <li>ART number or Unit TB number</li>
+                    <li>Phone number</li>
+                    <li>Facility name</li>
+                  </ul>
+                  <p>Search results show which register a patient is in and their current status. Click a result to jump directly to that patient's record.</p>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">Data Quality Checks</h5>
+                <div class="help-block">
+                  <p>Click <strong>Check Data Quality</strong> on the dashboard to run automated quality checks on your DS-TB register. The tool flags:</p>
+                  <ul>
+                    <li>Duplicate Unit TB numbers within the same facility and year.</li>
+                    <li>Patients with missing mandatory fields (e.g. no diagnosis method recorded).</li>
+                    <li>Inconsistent treatment outcomes (e.g. outcome recorded before treatment started).</li>
+                    <li>HIV-positive TB patients who are not on ART or CPT.</li>
+                  </ul>
+                  <p>Click any issue row to go directly to that patient's record and correct the problem. Export the full quality report to Excel using the <strong>Export</strong> button.</p>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h5 class="help-section-title">My Account</h5>
+                <div class="help-block">
+                  <ul>
+                    <li><strong>Edit Profile:</strong> Update your display name, email address and profile picture from My Account → Profile.</li>
+                    <li><strong>Change Password:</strong> Go to My Account → Security to set a new password. Passwords must be at least 8 characters.</li>
+                    <li><strong>Offline PIN:</strong> Set a 4–6 digit PIN under My Account → Security so you can log in without an internet connection. Keep your PIN confidential.</li>
+                    <li><strong>Preferences:</strong> Adjust clinical thresholds (e.g. TB lookback window, outcome eligibility window) under My Account → Preferences.</li>
+                  </ul>
+                </div>
+              </div>
+
+            </div><!-- /#help-pane-guide -->
+
+            <!-- ─── TAB 2: DATA ENTRY GUIDELINES ──────────────────────── -->
+            <div class="tab-pane fade" id="help-pane-entry" role="tabpanel">
+
+              <!-- ART REGISTER -->
+              <div class="help-section">
+                <h5 class="help-section-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+                  ART Register — Field Guidance
+                </h5>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section A — Patient Registration</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>Required</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>ART Number</td><td><span class="help-req">Yes</span></td><td>Use the facility's official ART numbering format (e.g. <em>ART/001/2026</em>). Must be unique within the facility. Do not reuse numbers from discharged patients.</td></tr>
+                      <tr><td>Was HIV retested before ART initiation?</td><td>No</td><td>Select <em>Yes</em> if a confirmatory HIV test was done before starting the patient on ART. Select <em>No</em> if ART was initiated on the basis of the original test only.</td></tr>
+                      <tr><td>Full Patient Name</td><td><span class="help-req">Yes</span></td><td>Enter the patient's legal full name as written on their identification document. Use mixed case (e.g. <em>Kenyi Abraham</em>), not all caps.</td></tr>
+                      <tr><td>ART Start Date</td><td><span class="help-req">Yes</span></td><td>The date the patient took their first dose of ART. This drives all visit-month calculations in the ART register.</td></tr>
+                      <tr><td>Date Enrolled in Care</td><td>No</td><td>The date the patient was first enrolled in the HIV care programme — this may be earlier than the ART start date if the patient was on pre-ART follow-up.</td></tr>
+                      <tr><td>Date of Birth</td><td>No</td><td>Enter when available. The system will auto-calculate age in years (and lock the age field). Clear the DOB to enter age manually.</td></tr>
+                      <tr><td>Age (years)</td><td><span class="help-req">Yes</span></td><td>Age at the time of ART initiation, in whole years. For infants under 1 year, enter 0 here and use the <em>Age in months</em> field.</td></tr>
+                      <tr><td>Age in months</td><td>No</td><td>Only for children under 2 years when no date of birth is available. Enter the age in complete months (e.g. 14 months).</td></tr>
+                      <tr><td>Sex</td><td><span class="help-req">Yes</span></td><td>Select <em>Male</em> or <em>Female</em>. This determines whether the PMTCT section (Section C) is shown.</td></tr>
+                      <tr><td>Contact Phone #1 / #2</td><td>No</td><td>Enter 10-digit phone numbers (starting with 0). Used for patient tracing. Separate multiple contacts by using both fields.</td></tr>
+                      <tr><td>Residence Address</td><td>No</td><td>Neighbourhood, quarter, or landmark — enough to locate the patient if needed for defaulter tracing.</td></tr>
+                      <tr><td>Occupation</td><td>No</td><td>Select from the list. If not listed, select <em>Other</em> and type in the field that appears.</td></tr>
+                      <tr><td>Key Population</td><td>No</td><td>Select the most relevant key population group if applicable. Select <em>Other</em> and specify if none of the options match.</td></tr>
+                      <tr><td>Transferred In</td><td>No</td><td>Select <em>Yes</em> if the patient transferred from another ART site. A field will appear for the name of the referring facility.</td></tr>
+                      <tr><td>Guardian / Parent Name &amp; Phone</td><td>No</td><td>Shown automatically when the patient's age is under 18. Record the name and contact of the parent or legal guardian.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section B — Clinical Baseline</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>Required</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>Weight (kg)</td><td>No</td><td>Body weight at ART initiation in kilograms. Used to auto-calculate BMI when Height is also entered.</td></tr>
+                      <tr><td>Height (cm)</td><td>No</td><td>Patient height in centimetres. Together with Weight, auto-calculates BMI.</td></tr>
+                      <tr><td>MUAC (cm)</td><td>No</td><td>Mid-Upper Arm Circumference in centimetres. Used for nutritional assessment, particularly in children.</td></tr>
+                      <tr><td>BMI</td><td>—</td><td>Calculated automatically from Weight and Height. Read-only.</td></tr>
+                      <tr><td>WHO Clinical Stage</td><td>No</td><td>Select the WHO HIV clinical stage (I–IV) assessed at the time of ART initiation.</td></tr>
+                      <tr><td>CD4 Count / CD4%</td><td>No</td><td>Enter the most recent CD4 result before ART initiation. Tick <em>CD4 is %</em> for children under 5 years whose CD4 is reported as a percentage rather than an absolute count.</td></tr>
+                      <tr><td>CPT Start (Month/Year)</td><td>No</td><td>The month and year the patient was started on Co-trimoxazole Preventive Therapy (CPT). Use the month picker.</td></tr>
+                      <tr><td>CPT Drug</td><td>No</td><td>Select the CPT drug prescribed (e.g. Co-trimoxazole 960 mg).</td></tr>
+                      <tr><td>TB Rx Start (Month/Year)</td><td>No</td><td>The month and year the patient began TB treatment, if they were on TB therapy at ART initiation.</td></tr>
+                      <tr><td>Unit TB Reg Number</td><td>No</td><td>If the ART patient is also registered in the TB register, enter the Unit TB number here to link the two records.</td></tr>
+                      <tr><td>TB Status (Baseline)</td><td>No</td><td>Select the patient's TB status at the time of ART initiation.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section C — PMTCT <small>(females only)</small></p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>Breastfeeding Status</td><td>Select whether the patient is currently breastfeeding, was breastfeeding at ART initiation, or is not applicable.</td></tr>
+                      <tr><td>Pregnancies while on ART</td><td>Click <em>+ Add Pregnancy</em> for each pregnancy that occurred while the patient was on ART. Record the outcome (delivered, miscarriage, etc.) and the date.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section D — Regimen</p>
+                  <p>Record all regimen changes in chronological order:</p>
+                  <ul>
+                    <li><strong>1st Line — Original Regimen:</strong> Select the first ART regimen the patient was ever started on.</li>
+                    <li><strong>1st Line — Substitution:</strong> Use this if a drug in the original 1st-line regimen was substituted (e.g. d4T → TDF) without moving to a new line.</li>
+                    <li><strong>2nd Line:</strong> Fill in if and when the patient was switched to a 2nd-line regimen.</li>
+                    <li><strong>3rd Line:</strong> Fill in if and when the patient was switched to a 3rd-line regimen.</li>
+                  </ul>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section E — ART Follow-up Visits</p>
+                  <p>Follow-up visits are added from the <strong>patient list</strong>, not from the registration form. Find the patient in the list, click the <em>clock</em> icon, and click <strong>Add Visit</strong>. For each visit, record:</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>Visit Date</td><td>The date the patient attended the clinic for this visit.</td></tr>
+                      <tr><td>Weight (kg)</td><td>Current body weight at the time of this visit.</td></tr>
+                      <tr><td>Adherence</td><td>Select the adherence level reported or observed (Good / Fair / Poor).</td></tr>
+                      <tr><td>ARV Dispensed (months)</td><td>Number of months of ARVs dispensed at this visit.</td></tr>
+                      <tr><td>Viral Load Result</td><td>Enter the numeric viral load result (copies/mL). Select <em>Undetectable</em> if the result is below the detection limit.</td></tr>
+                      <tr><td>Viral Load Date</td><td>Date the viral load sample was collected.</td></tr>
+                      <tr><td>TB Screening Result</td><td>Select the outcome of routine TB screening at this visit.</td></tr>
+                      <tr><td>Patient Status</td><td>Select the patient's current treatment status: Active, Transferred Out, Lost to Follow-up, Died, or Stopped Treatment.</td></tr>
+                      <tr><td>Next Appointment Date</td><td>The date the patient is scheduled to return.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- TB REGISTER -->
+              <div class="help-section">
+                <h5 class="help-section-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  Unit TB Register — Field Guidance
+                </h5>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section A — Patient Registration</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>Required</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>Date of Registration</td><td><span class="help-req">Yes</span></td><td>The date the patient was formally registered in the TB unit register. This is usually the same as or close to the treatment start date.</td></tr>
+                      <tr><td>Unit TB Number</td><td><span class="help-req">Yes</span></td><td>Use the facility's sequential Unit TB number for the year (e.g. <em>001/2026</em>). Numbers must be unique per facility per year. Do not skip numbers; do not reuse numbers.</td></tr>
+                      <tr><td>Patient Full Name</td><td><span class="help-req">Yes</span></td><td>Legal full name as on ID. Use mixed case. Avoid abbreviations.</td></tr>
+                      <tr><td>Date of Birth</td><td>No</td><td>Enter when available. Auto-calculates and locks the age field.</td></tr>
+                      <tr><td>Age (years)</td><td><span class="help-req">Yes</span></td><td>Age at registration. For infants under 2 years, use the <em>age in months</em> field instead.</td></tr>
+                      <tr><td>Sex</td><td><span class="help-req">Yes</span></td><td>Select Male or Female.</td></tr>
+                      <tr><td>Referred By</td><td>No</td><td>Select the source of referral (e.g. Out-patient Department, Community, Another Facility).</td></tr>
+                      <tr><td>Village / Boma / Payam / County</td><td>No</td><td>Patient's home address. Enter as much detail as available. <em>Payam</em> and <em>County</em> are the administrative units used in South Sudan; adapt terminology to your country's geography if different.</td></tr>
+                      <tr><td>Phone Number</td><td>No</td><td>10-digit phone number for patient tracing and results notification.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section B — Diagnosis and Treatment</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>Required</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>TB Site</td><td><span class="help-req">Yes</span></td><td>Select <em>Pulmonary</em> (lungs) or <em>Extra-pulmonary</em> (other sites such as lymph node, spine, pleura). For a patient with both, use <em>Pulmonary</em>.</td></tr>
+                      <tr><td>Type of Patient</td><td><span class="help-req">Yes</span></td><td>Select from: <em>New</em> (never treated before or treated for less than 1 month), <em>Relapse</em>, <em>Treatment After Failure</em>, <em>Treatment After Lost to Follow-up</em>, <em>Transfer In</em>, or <em>Other Previously Treated</em>. This is critical for cohort analysis.</td></tr>
+                      <tr><td>Date Treatment Started</td><td>No</td><td>Date the patient took their first dose of TB medication.</td></tr>
+                      <tr><td>TB Treatment Regimen</td><td>No</td><td>Select the regimen prescribed (e.g. 2HRZE/4HR for new patients).</td></tr>
+                      <tr><td>Transferred In From (HF)</td><td>No</td><td>Shown when patient type is <em>Transfer In</em>. Enter the name of the facility the patient transferred from.</td></tr>
+                      <tr><td>Smear Month 0 Result</td><td>No</td><td>The baseline sputum smear result taken at the time of diagnosis. Select the result grade (e.g. 1+, 2+, 3+, Scanty, Negative) and enter the lab date and lab number.</td></tr>
+                      <tr><td>GeneXpert Result</td><td>No</td><td>Select the GeneXpert MTB/RIF result (e.g. MTB Detected – RIF Sensitive, MTB Not Detected). Enter the test date alongside.</td></tr>
+                      <tr><td>DST Result</td><td>No</td><td>Drug Sensitivity Testing result — enter as free text if available.</td></tr>
+                      <tr><td>Method Used To Diagnose TB</td><td><span class="help-req">Yes</span></td><td>Select the primary diagnostic method (e.g. Bacteriologically Confirmed by Smear, Bacteriologically Confirmed by GeneXpert, Clinically Diagnosed). This is required for NTP reporting.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section C — Follow-up Sputum Smears</p>
+                  <p>Record the results of follow-up smear microscopy tests at the standard monitoring time-points. Enter the result, date of test, and lab number for each available time-point. If a test was not done, leave the fields blank — do not enter <em>Not Done</em> as a result.</p>
+                  <table class="help-table">
+                    <thead><tr><th>Time-point</th><th>Applies to</th></tr></thead>
+                    <tbody>
+                      <tr><td>End of Month 2</td><td>All new pulmonary TB patients</td></tr>
+                      <tr><td>End of Month 3</td><td>Patients still smear-positive at month 2; retreatment patients</td></tr>
+                      <tr><td>End of Month 5</td><td>All new and retreatment patients (critical for detecting treatment failure)</td></tr>
+                      <tr><td>End of Month 6</td><td>All retreatment patients; new patients still smear-positive at month 5</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section D — TB/HIV Activities</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>Date of HIV Test</td><td>Date the TB patient was tested for HIV. All TB patients should be offered HIV testing.</td></tr>
+                      <tr><td>HIV Test Result</td><td>Select Positive, Negative, or Already Known Positive.</td></tr>
+                      <tr><td>Was the patient started on ART?</td><td>Select Yes if the HIV-positive TB patient was started on ART. Enter the ART Start Date.</td></tr>
+                      <tr><td>Was the patient started on CPT?</td><td>Select Yes if the HIV-positive TB patient was started on Co-trimoxazole Preventive Therapy. Enter the CPT Start Date.</td></tr>
+                    </tbody>
+                  </table>
+                  <p><strong>Important:</strong> All HIV-positive TB patients should be on both ART and CPT. The <em>Monitor TB Patients</em> screen flags patients missing these.</p>
+                </div>
+
+                <div class="help-block">
+                  <p class="help-section-sub">Section E — Treatment Outcome</p>
+                  <table class="help-table">
+                    <thead><tr><th>Field</th><th>How to fill</th></tr></thead>
+                    <tbody>
+                      <tr><td>Treatment Outcome</td><td>Select the final outcome: <em>Cured</em>, <em>Treatment Completed</em>, <em>Died</em>, <em>Treatment Failed</em>, <em>Lost to Follow-up</em>, or <em>Not Evaluated</em>. Record this only when the patient's treatment episode is fully concluded.</td></tr>
+                      <tr><td>Treatment Outcome Date</td><td>The date the outcome was determined or the patient left the cohort.</td></tr>
+                      <tr><td>Moved to 2nd line regimen?</td><td>Select Yes if the patient was switched to a second-line regimen due to treatment failure or drug resistance.</td></tr>
+                      <tr><td>Transferred Out To (HF)</td><td>Shown when outcome is <em>Transfer Out</em>. Enter the receiving facility name and county.</td></tr>
+                      <tr><td>Remarks</td><td>Use this free-text field for any clinical notes that do not fit the structured fields — for example, a reason for loss to follow-up or a note about concurrent illness.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- GENERAL TIPS -->
+              <div class="help-section">
+                <h5 class="help-section-title">General Data Entry Tips</h5>
+                <div class="help-block">
+                  <ul>
+                    <li><strong>Required fields</strong> are marked with a red asterisk (<span class="help-req">*</span>). You cannot save a record with required fields missing.</li>
+                    <li><strong>Dates:</strong> Always use the date picker — do not type dates manually to avoid format errors.</li>
+                    <li><strong>Duplicates:</strong> Before adding a new patient, use <em>Search Patients</em> to check they are not already registered. Duplicate records create errors in reports and monitoring.</li>
+                    <li><strong>Editing:</strong> Click the edit icon on any saved patient to correct a record. All changes are tracked in the audit log.</li>
+                    <li><strong>Sync regularly:</strong> Sync your data at least once per day when internet is available to ensure the central server stays up to date.</li>
+                  </ul>
+                </div>
+              </div>
+
+            </div><!-- /#help-pane-entry -->
+
+            <!-- ─── TAB 3: CONTACT SUPPORT ─────────────────────────────── -->
+            <div class="tab-pane fade" id="help-pane-contact" role="tabpanel">
+              <div class="help-section">
+                <h5 class="help-section-title">Technical Support</h5>
+                <div class="help-block help-contact-block">
+                  <p>If you encounter a problem with the eTBr app that you cannot resolve using this guide, please contact the technical support team through any of the channels below.</p>
+
+                  <div class="help-contact-cards">
+
+                    <div class="help-contact-card">
+                      <div class="help-contact-icon" style="background:#dcfce7">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" width="28" height="28" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+                      </div>
+                      <div class="help-contact-info">
+                        <span class="help-contact-label">WhatsApp</span>
+                        <a href="https://wa.me/211922930940" target="_blank" rel="noopener noreferrer" class="help-contact-value">+211 922 930 940</a>
+                      </div>
+                    </div>
+
+                    <div class="help-contact-card">
+                      <div class="help-contact-icon" style="background:#dbeafe">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" width="28" height="28" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      </div>
+                      <div class="help-contact-info">
+                        <span class="help-contact-label">Email</span>
+                        <a href="mailto:info@etbr.org" class="help-contact-value">info@etbr.org</a>
+                      </div>
+                    </div>
+
+                  </div><!-- /.help-contact-cards -->
+
+                  <div class="help-hours-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <div>
+                      <strong>Support Hours</strong><br>
+                      Monday – Friday &nbsp;·&nbsp; 9:00 AM – 5:00 PM
+                    </div>
+                  </div>
+
+                  <div class="help-tips-box">
+                    <strong>Tips for faster support</strong>
+                    <ul>
+                      <li>Note the exact error message or the screen where the problem occurs.</li>
+                      <li>Include your username, facility name, and the date/time the issue happened.</li>
+                      <li>If the app is offline and you cannot sync, try connecting to a different network first before contacting support.</li>
+                    </ul>
+                  </div>
+
+                </div>
+              </div>
+            </div><!-- /#help-pane-contact -->
+
+          </div><!-- /.tab-content -->
+        </div><!-- /#help-panel -->
+
       </div>
 
       <!-- ── Section: User Management (SuperUser / Admin only) ──────────── -->
@@ -2491,7 +2922,7 @@
 
   <!-- ========== PROFILE / MY ACCOUNT MODAL ========== -->
   <div class="modal fade" id="profile-modal" tabindex="-1" aria-labelledby="profile-modal-label" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:572px">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:680px">
       <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.18)">
 
         <div class="modal-header border-0 pb-0" style="padding:1.5rem 1.5rem 0">
@@ -2515,6 +2946,10 @@
             <li class="nav-item" role="presentation">
               <button class="nav-link" id="ptab-pwd-tab" data-bs-toggle="tab" data-bs-target="#ptab-pwd"
                       type="button" role="tab" aria-controls="ptab-pwd" aria-selected="false">Change Password</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="ptab-pin-tab" data-bs-toggle="tab" data-bs-target="#ptab-pin"
+                      type="button" role="tab" aria-controls="ptab-pin" aria-selected="false">Offline PIN</button>
             </li>
             <li class="nav-item" role="presentation">
               <button class="nav-link" id="ptab-prefs-tab" data-bs-toggle="tab" data-bs-target="#ptab-prefs"
@@ -2629,6 +3064,46 @@
                   
                 </div>
               </form>
+            </div>
+
+            <!-- ── Tab: Offline PIN ───────────────────────────────────── -->
+            <div class="tab-pane fade" id="ptab-pin" role="tabpanel" aria-labelledby="ptab-pin-tab">
+              <!-- Current PIN status -->
+              <div id="ptab-pin-status" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .85rem;border-radius:8px;font-size:.875rem;font-weight:600;margin-bottom:1rem;background:#f3f4f6;color:#6b7280">
+                <svg id="ptab-pin-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span id="ptab-pin-status-text">Checking…</span>
+              </div>
+              <div id="ptab-pin-msg" class="auth-msg" hidden></div>
+              <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1rem">
+                Set a 6-digit PIN so you can unlock this app when there is no internet connection.
+                Your PIN is stored only on this device and is never sent to the eTBr server.
+              </p>
+              <div class="field-group" style="text-align:center">
+                <label id="ptab-pin-new-label">New PIN</label>
+                <div class="otp-input-group" id="ptab-pin-group">
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                </div>
+              </div>
+              <div class="field-group mt-3" style="text-align:center">
+                <label>Confirm PIN</label>
+                <div class="otp-input-group" id="ptab-pin-confirm-group">
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                  <input class="otp-digit" type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" />
+                </div>
+              </div>
+              <div style="display:flex;gap:.75rem;margin-top:.85rem">
+                <button type="button" id="ptab-pin-save-btn" class="btn btn-primary" style="flex:1;border-radius:10px;font-weight:600">Set PIN</button>
+                <button type="button" id="ptab-pin-clear-btn" class="btn btn-outline-danger" style="border-radius:10px;font-weight:600" hidden>Remove PIN</button>
+              </div>
             </div>
 
             <!-- ── Tab 3: Preferences ─────────────────────────────────── -->

@@ -12,8 +12,12 @@
 
 'use strict';
 
+// ─── Silence verbose logs in production ───────────────────────────────────
+// console.log / info are replaced with no-ops on any non-localhost origin.
+// Production log silencing disabled — re-enabled for diagnostics.
+
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v160720262316';
+const APP_VERSION = 'v170720262122';
 
 // ─── Auth-screen flash prevention ────────────────────────────────────────
 // If the user has a live (non-expired) session, hide the auth screen
@@ -327,9 +331,9 @@ async function _pingConnectivity() {
   try {
     const ctrl = new AbortController();
     const tid  = setTimeout(() => ctrl.abort(), 3000);
-    // Any HTTP response (even 4xx/5xx) means the network is reachable.
+    // Any HTTP response means the network is reachable.
     // Only a TypeError (network error) means we're truly offline.
-    await fetch(`${API_BASE}/auth/login`, { method: 'HEAD', cache: 'no-store', signal: ctrl.signal });
+    await fetch(`${API_BASE}/auth/health`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
     clearTimeout(tid);
     _reallyOnline = true;
   } catch {
@@ -4423,22 +4427,44 @@ function userCanWrite() {
 }
 
 function applyReadOnlyMode() {
+  // ── ART Register ─────────────────────────────────────────────────────────
+  // Show the in-form "View Only" pill/banner
   const banner = document.getElementById('no-access-banner');
   if (banner) banner.hidden = false;
 
-  // Disable every input/select/textarea in the patient form
+  // Lock all inputs so nothing can be typed/changed
   const form = document.getElementById('patient-form');
   if (form) {
     form.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
   }
 
-  // Hide Save/Update and Sync buttons — nothing can be submitted
-  if (submitBtn) submitBtn.hidden = true;
-  if (syncBtn)   syncBtn.hidden   = true;
+  // Disable Save/Sync buttons (keep them visible so the UI shape is clear)
+  if (submitBtn) { submitBtn.disabled = true; }
+  if (syncBtn)   { syncBtn.disabled   = true; }
 
-  // Hide the new-patient form card entirely for read-only users
-  const newPatientCard = document.getElementById('patient-form')?.closest('.card');
-  if (newPatientCard) newPatientCard.hidden = true;
+  // ── Unit TB Register ──────────────────────────────────────────────────────
+  // Show the in-form "View Only" pill/banner
+  const tbBanner = document.getElementById('tb-no-access-banner');
+  if (tbBanner) tbBanner.hidden = false;
+
+  // Lock all inputs
+  const tbForm = document.getElementById('tb-patient-form');
+  if (tbForm) {
+    tbForm.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+  }
+
+  // Disable Save/Sync buttons
+  const tbSaveBtnEl = document.getElementById('tb-save-btn');
+  if (tbSaveBtnEl) tbSaveBtnEl.disabled = true;
+  const tbSyncBtnEl = document.getElementById('tb-sync-btn');
+  if (tbSyncBtnEl) tbSyncBtnEl.disabled = true;
+
+  // ── Presumptive TB Cases ──────────────────────────────────────────────────
+  // Disable all entry controls
+  ['pc-year-sel', 'pc-month-sel', 'pc-count', 'pc-save-btn', 'pc-clear-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
 }
 
 // ─── Dashboard screen references ─────────────────────────────────────────
@@ -4478,6 +4504,28 @@ function updateDashboardStats() {
       } else {
         elSync.textContent = 'Never';
       }
+    }
+
+    // For read-only users (supervisors, coordinators) the sync tiles are not
+    // applicable — they never create local records so the count is always 0
+    // and the timestamp is always "Never".  Keep the tiles visible but dim
+    // them and show "—" so it's clear they are inactive for this account,
+    // without implying any other feature (reports, settings, etc.) is locked.
+    const canWrite    = userCanWrite();
+    const pendingTile = document.getElementById('db-stat-pending-tile');
+    const lastSyncTile = document.getElementById('db-stat-lastsync-tile');
+    if (!canWrite) {
+      if (elPend) elPend.textContent = '—';
+      if (elSync) elSync.textContent = '—';
+    }
+    if (pendingTile) {
+      pendingTile.disabled             = !canWrite;
+      pendingTile.style.opacity        = canWrite ? '' : '0.4';
+      pendingTile.style.pointerEvents  = canWrite ? '' : 'none';
+      pendingTile.style.cursor         = canWrite ? '' : 'default';
+    }
+    if (lastSyncTile) {
+      lastSyncTile.style.opacity = canWrite ? '' : '0.4';
     }
   } catch { /* DB not ready yet — stats will be refreshed on next call */ }
 
@@ -5147,6 +5195,32 @@ document.getElementById('usermgmt-section')?.addEventListener('click', e => {
   }
 });
 
+// Help panel — close button (system-section)
+document.getElementById('system-section')?.addEventListener('click', e => {
+  const closeBtn = e.target.closest('.umgmt-panel-close');
+  if (closeBtn) {
+    const panel = document.getElementById(closeBtn.dataset.panel);
+    if (panel) panel.hidden = true;
+  }
+});
+
+// Help card click
+(function () {
+  const helpCard = document.getElementById('dash-help-card');
+  if (!helpCard) return;
+  function _toggleHelp() {
+    const panel = document.getElementById('help-panel');
+    if (!panel) return;
+    const wasHidden = panel.hidden;
+    panel.hidden = !wasHidden;
+    if (wasHidden) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  helpCard.addEventListener('click', _toggleHelp);
+  helpCard.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleHelp(); }
+  });
+}());
+
 // Card clicks
 const _umgmtCardApprovals = document.getElementById('umgmt-card-approvals');
 const _umgmtCardUsers     = document.getElementById('umgmt-card-users');
@@ -5563,8 +5637,43 @@ function _startMigrationPoll(dataSourceId) {
         }
 
       } else if (p.status === 'delta-done') {
-        // Reload panel to show accurate delta sync stats from the database
-        await loadLegacyMigrationPanel();
+        // Update the row in-place — no full panel reload needed.
+        const facRow        = document.getElementById(`migration-row-${dataSourceId}`);
+        const facName       = facRow?.dataset.name           || '';
+        const undoPts       = facRow?.dataset.preDeltaUndoPts  ?? '0';
+        const migratedChip  = facRow?.dataset.preDeltaMigratedHtml ?? '';
+        const syncedPts     = (p.importedPatients ?? 0).toLocaleString();
+        const d             = _formatMigrationDate(new Date());
+
+        if (statusEl) statusEl.innerHTML =
+          migratedChip +
+          ` <span class="migration-status-chip" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.72rem">&#8635; ${syncedPts} synced &bull; ${d}</span>`;
+
+        if (deltaEl) deltaEl.innerHTML =
+          `<button type="button"
+             class="migration-delta-btn"
+             data-dsid="${dataSourceId}"
+             data-name="${escHtml(facName)}"
+             style="flex-shrink:0;background:#1d4ed8;color:#fff;border:none;border-radius:6px;
+                    padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+             Sync Changes
+           </button>`;
+        if (undoEl) undoEl.innerHTML =
+          `<button type="button"
+             class="migration-reset-btn"
+             data-dsid="${dataSourceId}"
+             data-name="${escHtml(facName)}"
+             data-pts="${undoPts}"
+             style="flex-shrink:0;background:none;border:1px solid #dc2626;color:#dc2626;border-radius:6px;
+                    padding:0.22rem 0.6rem;font-size:0.78rem;cursor:pointer;font-weight:500;white-space:nowrap">
+             Undo
+           </button>`;
+
+        // Clean up saved attrs
+        if (facRow) {
+          delete facRow.dataset.preDeltaMigratedHtml;
+          delete facRow.dataset.preDeltaUndoPts;
+        }
       } else if (p.status === 'error') {
         const errorMsg = p.message || '';
         const rowEl   = document.getElementById(`migration-row-${dataSourceId}`);
@@ -5912,6 +6021,15 @@ document.getElementById('migration-panel')?.addEventListener('click', async e =>
     const statusEl = document.getElementById(`migration-status-${dataSourceId}`);
     const deltaEl  = document.getElementById(`migration-delta-${dataSourceId}`);
     const undoEl   = document.getElementById(`migration-undo-${dataSourceId}`);
+
+    // Save the current migrated-chip HTML and undo pts so we can restore
+    // the row in-place when delta-done fires (avoids a full panel reload).
+    const _rowEl = document.getElementById(`migration-row-${dataSourceId}`);
+    if (_rowEl) {
+      _rowEl.dataset.preDeltaMigratedHtml = statusEl?.querySelector('.migration-status-migrated')?.outerHTML ?? '';
+      _rowEl.dataset.preDeltaUndoPts      = undoEl?.querySelector('.migration-reset-btn')?.dataset.pts ?? '0';
+    }
+
     if (statusEl) statusEl.innerHTML = _migrationProgressBar(dataSourceId, 0, 'Syncing changes…');
     if (deltaEl)  deltaEl.innerHTML = '';
     if (undoEl)   undoEl.innerHTML = '';
@@ -6574,6 +6692,163 @@ document.getElementById('pin-enroll-skip-btn')?.addEventListener('click', e => {
   showAppScreen();
 });
 
+// ── Profile modal: Offline PIN tab ───────────────────────────────────────
+
+// Wire OTP digit groups inside the profile modal PIN tab
+(function () {
+  function wireGroup(groupId) {
+    const group = document.getElementById(groupId);
+    if (!group) return;
+    const digits = Array.from(group.querySelectorAll('.otp-digit'));
+    digits.forEach((input, i) => {
+      input.addEventListener('input', e => {
+        const val = e.target.value.replace(/\D/g, '');
+        e.target.value = val.slice(-1);
+        e.target.classList.toggle('otp-filled', !!e.target.value);
+        if (e.target.value && i < digits.length - 1) digits[i + 1].focus();
+      });
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Backspace' && !input.value && i > 0) {
+          digits[i - 1].focus();
+          digits[i - 1].value = '';
+          digits[i - 1].classList.remove('otp-filled');
+        }
+      });
+    });
+  }
+  wireGroup('ptab-pin-group');
+  wireGroup('ptab-pin-confirm-group');
+}());
+
+/** Refresh the PIN status badge and button state in the profile PIN tab. */
+async function _refreshPinTabStatus() {
+  const statusEl   = document.getElementById('ptab-pin-status');
+  const statusIcon = document.getElementById('ptab-pin-status-icon');
+  const statusText = document.getElementById('ptab-pin-status-text');
+  const clearBtn   = document.getElementById('ptab-pin-clear-btn');
+  const saveBtn    = document.getElementById('ptab-pin-save-btn');
+  const newLabel   = document.getElementById('ptab-pin-new-label');
+  if (!statusEl) return;
+
+  try {
+    const user    = getUser();
+    const pinData = await loadOfflinePin();
+    const pinSet  = pinData && user && pinData.userTID === user.userTID;
+
+    if (pinSet) {
+      statusEl.style.background = '#f0fdf4';
+      statusEl.style.color      = '#166534';
+      statusIcon.setAttribute('d', '');   // swap icon to checkmark
+      statusIcon.innerHTML = '<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+      statusText.textContent = 'Offline PIN is set on this device.';
+      if (clearBtn) clearBtn.hidden = false;
+      if (saveBtn)  saveBtn.textContent = 'Change PIN';
+      if (newLabel) newLabel.textContent = 'New PIN';
+    } else {
+      statusEl.style.background = '#fefce8';
+      statusEl.style.color      = '#713f12';
+      statusIcon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+      statusText.textContent = 'No Offline PIN set on this device.';
+      if (clearBtn) clearBtn.hidden = true;
+      if (saveBtn)  saveBtn.textContent = 'Set PIN';
+      if (newLabel) newLabel.textContent = 'PIN';
+    }
+  } catch {
+    if (statusText) statusText.textContent = 'Could not load PIN status.';
+  }
+
+  // Reset the OTP inputs
+  document.querySelectorAll('#ptab-pin-group .otp-digit, #ptab-pin-confirm-group .otp-digit')
+    .forEach(d => { d.value = ''; d.classList.remove('otp-filled'); });
+  const msgEl = document.getElementById('ptab-pin-msg');
+  if (msgEl) msgEl.hidden = true;
+}
+
+// Load status when the Offline PIN tab is shown
+document.getElementById('ptab-pin-tab')?.addEventListener('shown.bs.tab', _refreshPinTabStatus);
+
+// Save / Change PIN
+document.getElementById('ptab-pin-save-btn')?.addEventListener('click', async () => {
+  const pin1    = Array.from(document.querySelectorAll('#ptab-pin-group .otp-digit')).map(d => d.value).join('');
+  const pin2    = Array.from(document.querySelectorAll('#ptab-pin-confirm-group .otp-digit')).map(d => d.value).join('');
+  const msgEl   = document.getElementById('ptab-pin-msg');
+  const saveBtn = document.getElementById('ptab-pin-save-btn');
+
+  msgEl.hidden = true;
+  msgEl.className = 'auth-msg';
+
+  if (pin1.length !== 6) {
+    msgEl.textContent = 'Please enter all 6 digits for the PIN.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+    return;
+  }
+  if (pin1 !== pin2) {
+    msgEl.textContent = 'PINs do not match. Please try again.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+    document.querySelectorAll('#ptab-pin-confirm-group .otp-digit').forEach(d => { d.value = ''; d.classList.remove('otp-filled'); });
+    document.querySelector('#ptab-pin-confirm-group .otp-digit')?.focus();
+    return;
+  }
+  if (/^(\d)\1{5}$/.test(pin1)) {
+    msgEl.textContent = 'PIN cannot be 6 identical digits. Please choose a different PIN.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+    return;
+  }
+
+  saveBtn.disabled    = true;
+  saveBtn.textContent = 'Saving…';
+  try {
+    await enrollOfflinePin(pin1);
+    // Also clear the "dismissed" flag so offline login works next time
+    try {
+      const prefs = getPrefs();
+      prefs.pinEnrollDismissed = false;
+      localStorage.setItem(AUTH_PREFS_KEY, JSON.stringify(prefs));
+    } catch { /* ignore */ }
+    await _refreshPinTabStatus();
+    msgEl.textContent = 'Offline PIN saved successfully.';
+    msgEl.classList.add('auth-msg--success');
+    msgEl.hidden = false;
+  } catch {
+    msgEl.textContent = 'Could not save PIN. Please try again.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = document.getElementById('ptab-pin-status-text')?.textContent?.includes('set on this device')
+      ? 'Change PIN' : 'Set PIN';
+  }
+});
+
+// Remove PIN
+document.getElementById('ptab-pin-clear-btn')?.addEventListener('click', async () => {
+  const msgEl    = document.getElementById('ptab-pin-msg');
+  const clearBtn = document.getElementById('ptab-pin-clear-btn');
+  msgEl.hidden   = true;
+  msgEl.className = 'auth-msg';
+
+  if (!confirm('Remove your offline PIN from this device? You will need an internet connection to log in next time.')) return;
+
+  clearBtn.disabled    = true;
+  clearBtn.textContent = 'Removing…';
+  try {
+    await clearOfflinePin();
+    await _refreshPinTabStatus();
+    msgEl.textContent = 'Offline PIN removed from this device.';
+    msgEl.classList.add('auth-msg--success');
+    msgEl.hidden = false;
+  } catch {
+    msgEl.textContent = 'Could not remove PIN. Please try again.';
+    msgEl.classList.add('auth-msg--error');
+    msgEl.hidden = false;
+  } finally {
+    clearBtn.disabled    = false;
+    clearBtn.textContent = 'Remove PIN';
+  }
+});
 
 // ── Password strength meter ───────────────────────────────────────────────
 (function () {
@@ -7237,13 +7512,7 @@ function _updateHeaderUser(user) {
     if (dlg) dlg.style.maxWidth = '680px';
   });
 
-  // Restore normal width when leaving Preferences
-  ['ptab-info-tab', 'ptab-pwd-tab', 'ptab-scope-tab'].forEach(id => {
-    document.getElementById(id)?.addEventListener('shown.bs.tab', () => {
-      const dlg = document.querySelector('#profile-modal .modal-dialog');
-      if (dlg) dlg.style.maxWidth = '520px';
-    });
-  });
+
 
   // Appearance: apply immediately on interaction (no Save needed)
   document.getElementById('pref-dark-mode')?.addEventListener('change', function () {
@@ -8475,6 +8744,9 @@ document.getElementById('frb-open-sidebar-btn')?.addEventListener('click', _open
 document.getElementById('register-select')?.addEventListener('change', (e) => {
   _selectedRegister = e.target.value || null;
   applyFacilityGate();
+  if (_selectedFacility && _selectedRegister && !userCanWrite()) {
+    showToast('View only — your account level does not permit data entry.', 'warn');
+  }
   if (_selectedFacility && _selectedRegister === 'art') {
     renderPatients();
     // Re-check baseline warning whenever the user switches to the ART register
@@ -13100,36 +13372,47 @@ function resolveGeoScope(user, geo) {
         if (cfYear) qs.set('cfYear', cfYear);
         if (extra) Object.entries(extra).forEach(([k, v]) => qs.set(k, v));
         const ctrl = new AbortController();
-        const tid  = setTimeout(() => ctrl.abort(), 5_000);
+        const tid  = setTimeout(() => ctrl.abort(), 90_000);
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/${path}?${qs}`, {
             headers: { 'Authorization': `Bearer ${token}` },
             cache: 'no-store', signal: ctrl.signal,
           });
           clearTimeout(tid);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          if (!resp.ok) {
+            console.warn('[PreDQ] _serverDQ non-ok:', path, resp.status, resp.statusText);
+            throw new Error(`HTTP ${resp.status}`);
+          }
           return await resp.json();
         } catch (err) {
           clearTimeout(tid);
-          // Network failure or timeout = truly offline; update badge immediately
-          if (err instanceof TypeError || err.name === 'AbortError') {
-            _reallyOnline = false;
-            updateConnectionStatus();
-          }
+          console.warn('[PreDQ] _serverDQ error:', path, err?.message || err);
+          // Do NOT touch _reallyOnline here — only _pingConnectivity() is the
+          // authority on connection state. A slow-but-working server would
+          // otherwise flip the navbar to "Offline" and leave it wrong.
           return null;
         }
       }
 
       // Run counts after the modal opens
       setTimeout(async () => {
+        // 'server'  — live API call succeeded
+        // 'local'   — truly offline (navbar is red), used cached SQLite
+        // 'fallback'— navbar says online but API call still failed (slow server etc.)
         let _dqSource = 'server';
 
-        // 1. Try the live server
-        _counts = await _serverDQ('dq-counts');
-
-        // 2. Fall back to local SQLite if server is unreachable or times out
-        if (!_counts) {
+        // 1. Only attempt the live server when the navbar already considers us online.
+        //    This keeps the two indicators in sync: if _reallyOnline is false we skip
+        //    straight to local without an unnecessary network attempt.
+        if (_reallyOnline) {
+          _counts = await _serverDQ('dq-counts');
+          if (!_counts) _dqSource = 'fallback';   // online but server call failed
+        } else {
           _dqSource = 'local';
+        }
+
+        // 2. Fall back to local SQLite whenever we don't have server counts
+        if (!_counts) {
           try {
             _counts = (typeof getDQCountsForReport === 'function')
               ? getDQCountsForReport(facilityIds, cfRange.startDate, cfRange.endDate, toRange.startDate, toRange.endDate, cfYear, scRange.startDate, scRange.endDate)
@@ -13144,6 +13427,9 @@ function resolveGeoScope(user, geo) {
             if (_dqSource === 'server') {
               noteEl.innerHTML = '&#10003;&nbsp;Checked against live eTBr server data.';
               noteEl.style.color = '#059669';
+            } else if (_dqSource === 'fallback') {
+              noteEl.innerHTML = '&#9888;&nbsp;Server check failed &mdash; based on locally synced data.';
+              noteEl.style.color = '#d97706';
             } else {
               noteEl.innerHTML = '&#9888;&nbsp;Offline &mdash; based on locally synced data.';
               noteEl.style.color = '#d97706';
@@ -13257,7 +13543,9 @@ function resolveGeoScope(user, geo) {
         setTimeout(async () => {
           // Server-first: try live API, fall back to local SQLite
           let rows = null;
-          try { rows = await _serverDQ('dq-list', { category: cat }); } catch (_) {}
+          let _dqListErr = null;
+          try { rows = await _serverDQ('dq-list', { category: cat }); } catch (e) { _dqListErr = e; }
+          console.warn('[PreDQ] dq-list server response:', cat, Array.isArray(rows) ? `array(${rows.length})` : rows, _dqListErr || '');
           if (!rows) {
             try {
               rows = (typeof getDQListForReport === 'function')
@@ -16503,7 +16791,8 @@ function resolveGeoScope(user, geo) {
       const resp = await fetch(`${API_BASE}/baseline/${facilityId}`, {
         headers: await _authHeader(),
       });
-      if (resp.status === 404) { _cache[facilityId] = null; return null; }
+      // 404 = no baseline set yet; 403 = account level has no access to this facility
+      if (resp.status === 404 || resp.status === 403) { _cache[facilityId] = null; return null; }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const dto = await resp.json();
       _cache[facilityId] = dto;
