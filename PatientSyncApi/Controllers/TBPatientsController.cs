@@ -693,66 +693,65 @@ public sealed class TBPatientsController : ControllerBase
                    ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
                    ?? string.Empty;
 
+        // ── Resolve authorized facilities (separate connection) ────────────────
+        // Uses its own short-lived connection so that a timeout or error here
+        // cannot leave the main DQ query connection in a broken state.
+        var explicitIds = new List<int>();
+        try
+        {
+            await using var authConn = new SqlConnection(_connectionString);
+            await authConn.OpenAsync();
+            await using var assignCmd = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", authConn);
+            assignCmd.CommandTimeout = 5;
+            assignCmd.Parameters.AddWithValue("@UserTID", userTID);
+            await using var ar = await assignCmd.ExecuteReaderAsync();
+            while (await ar.ReadAsync())
+                explicitIds.Add(ar.GetInt32(0));
+        }
+        catch { /* table absent or timeout — fall back to JWT facility_id */ }
+
+        // Determine the user's authorized facility set:
+        //   explicit assignments  →  JWT facility_id  →  unrestricted (national)
+        int[] authorizedIds = explicitIds.Count > 0 ? [.. explicitIds]
+                            : userFacilityId > 0    ? [userFacilityId]
+                            :                          [];
+
+        // Use the intersection of what the client requested and what is authorized.
+        // For national/unrestricted users the intersection is just the requested list.
+        int[] cleanIds;
+        if (authorizedIds.Length > 0)
+        {
+            var requested = (facilityIds ?? []).Where(id => id > 0).ToHashSet();
+            cleanIds = requested.Count > 0
+                ? authorizedIds.Where(id => requested.Contains(id)).ToArray()
+                : authorizedIds;
+            if (cleanIds.Length == 0) cleanIds = authorizedIds;
+        }
+        else
+        {
+            cleanIds = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
+        }
+
+        int minYear = (cfYear > 0 ? cfYear : DateTime.Today.Year) - 1;
+
+        // Build parameterised facility IN clause (alias 'p' for outer, 'd' for inner)
+        string facP = string.Empty, facD = string.Empty;
+        var    facPrms = new List<(string Name, int Value)>();
+        if (cleanIds.Length > 0)
+        {
+            var names = cleanIds.Select((_, i) => $"@FId{i}").ToArray();
+            var inSql = string.Join(", ", names);
+            facP = $"AND p.NearestHFID IN ({inSql})";
+            facD = $"AND d.NearestHFID IN ({inSql})";
+            for (int i = 0; i < cleanIds.Length; i++)
+                facPrms.Add(($"@FId{i}", cleanIds[i]));
+        }
+
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
-
-            // ── Resolve authorized facilities ─────────────────────────────────
-            // UserFacilitiesT explicit assignments (set by an admin) override the
-            // facility_id JWT claim, so a user assigned to multiple facilities can
-            // request DQ data for any of them from the facility-tree selector.
-            // CommandTimeout=5 ensures a slow/locked table fails fast (not 30 s).
-            var explicitIds = new List<int>();
-            try
-            {
-                await using var assignCmd = new SqlCommand(
-                    "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn);
-                assignCmd.CommandTimeout = 5;
-                assignCmd.Parameters.AddWithValue("@UserTID", userTID);
-                await using var ar = await assignCmd.ExecuteReaderAsync();
-                while (await ar.ReadAsync())
-                    explicitIds.Add(ar.GetInt32(0));
-            }
-            catch { /* table absent or timeout — fall back to JWT facility_id */ }
-
-            // Determine the user's authorized facility set:
-            //   explicit assignments  →  JWT facility_id  →  unrestricted (national)
-            int[] authorizedIds = explicitIds.Count > 0 ? [.. explicitIds]
-                                : userFacilityId > 0    ? [userFacilityId]
-                                :                          [];
-
-            // Use the intersection of what the client requested and what is authorized.
-            // For national/unrestricted users the intersection is just the requested list.
-            int[] cleanIds;
-            if (authorizedIds.Length > 0)
-            {
-                var requested = (facilityIds ?? []).Where(id => id > 0).ToHashSet();
-                cleanIds = requested.Count > 0
-                    ? authorizedIds.Where(id => requested.Contains(id)).ToArray()
-                    : authorizedIds;
-                if (cleanIds.Length == 0) cleanIds = authorizedIds; // safety fallback
-            }
-            else
-            {
-                cleanIds = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
-            }
-
-            int minYear = (cfYear > 0 ? cfYear : DateTime.Today.Year) - 1;
-
-            // Build parameterised facility IN clause (alias 'p' for outer, 'd' for inner)
-            string facP = string.Empty, facD = string.Empty;
-            var    facPrms = new List<(string Name, int Value)>();
-            if (cleanIds.Length > 0)
-            {
-                var names = cleanIds.Select((_, i) => $"@FId{i}").ToArray();
-                var inSql = string.Join(", ", names);
-                facP = $"AND p.NearestHFID IN ({inSql})";
-                facD = $"AND d.NearestHFID IN ({inSql})";
-                for (int i = 0; i < cleanIds.Length; i++)
-                    facPrms.Add(($"@FId{i}", cleanIds[i]));
-            }
-
             var prefs = await GetTbPrefsAsync(conn, userTID);
 
             // Helper: run a COUNT(*) scalar and return the integer result
@@ -1008,61 +1007,58 @@ public sealed class TBPatientsController : ControllerBase
             LEFT JOIN HealthFacilityT hf ON p.NearestHFID  = hf.HealthFacilityID
             """;
 
+        // ── Resolve authorized facilities (separate connection) ────────────────
+        var explicitIds2 = new List<int>();
+        try
+        {
+            await using var authConn2 = new SqlConnection(_connectionString);
+            await authConn2.OpenAsync();
+            await using var assignCmd2 = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", authConn2);
+            assignCmd2.CommandTimeout = 5;
+            assignCmd2.Parameters.AddWithValue("@UserTID", userTID);
+            await using var ar2 = await assignCmd2.ExecuteReaderAsync();
+            while (await ar2.ReadAsync())
+                explicitIds2.Add(ar2.GetInt32(0));
+        }
+        catch { /* table absent or timeout — fall back to JWT facility_id */ }
+
+        int[] authorizedIds2 = explicitIds2.Count > 0 ? [.. explicitIds2]
+                             : userFacilityId > 0     ? [userFacilityId]
+                             :                           [];
+
+        int[] cleanIds2;
+        if (authorizedIds2.Length > 0)
+        {
+            var requested2 = (facilityIds ?? []).Where(id => id > 0).ToHashSet();
+            cleanIds2 = requested2.Count > 0
+                ? authorizedIds2.Where(id => requested2.Contains(id)).ToArray()
+                : authorizedIds2;
+            if (cleanIds2.Length == 0) cleanIds2 = authorizedIds2;
+        }
+        else
+        {
+            cleanIds2 = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
+        }
+
+        int minYear2 = (cfYear > 0 ? cfYear : DateTime.Today.Year) - 1;
+
+        string facP = string.Empty, facD = string.Empty;
+        var    facPrms = new List<(string Name, int Value)>();
+        if (cleanIds2.Length > 0)
+        {
+            var names = cleanIds2.Select((_, i) => $"@FId{i}").ToArray();
+            var inSql = string.Join(", ", names);
+            facP = $"AND p.NearestHFID IN ({inSql})";
+            facD = $"AND d.NearestHFID IN ({inSql})";
+            for (int i = 0; i < cleanIds2.Length; i++)
+                facPrms.Add(($"@FId{i}", cleanIds2[i]));
+        }
+
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
-
-            // ── Resolve authorized facilities ─────────────────────────────────
-            // CommandTimeout=5 ensures a slow/locked table fails fast (not 30 s).
-            var explicitIds = new List<int>();
-            try
-            {
-                await using var assignCmd = new SqlCommand(
-                    "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn);
-                assignCmd.CommandTimeout = 5;
-                assignCmd.Parameters.AddWithValue("@UserTID", userTID);
-                await using var ar = await assignCmd.ExecuteReaderAsync();
-                while (await ar.ReadAsync())
-                    explicitIds.Add(ar.GetInt32(0));
-            }
-            catch { /* table absent or timeout — fall back to JWT facility_id */ }
-
-            // Determine the user's authorized facility set:
-            //   explicit assignments  →  JWT facility_id  →  unrestricted (national)
-            int[] authorizedIds = explicitIds.Count > 0 ? [.. explicitIds]
-                                : userFacilityId > 0    ? [userFacilityId]
-                                :                          [];
-
-            // Use the intersection of what the client requested and what is authorized.
-            int[] cleanIds;
-            if (authorizedIds.Length > 0)
-            {
-                var requested = (facilityIds ?? []).Where(id => id > 0).ToHashSet();
-                cleanIds = requested.Count > 0
-                    ? authorizedIds.Where(id => requested.Contains(id)).ToArray()
-                    : authorizedIds;
-                if (cleanIds.Length == 0) cleanIds = authorizedIds; // safety fallback
-            }
-            else
-            {
-                cleanIds = (facilityIds ?? []).Where(id => id > 0).Distinct().ToArray();
-            }
-
-            int minYear = (cfYear > 0 ? cfYear : DateTime.Today.Year) - 1;
-
-            string facP = string.Empty, facD = string.Empty;
-            var    facPrms = new List<(string Name, int Value)>();
-            if (cleanIds.Length > 0)
-            {
-                var names = cleanIds.Select((_, i) => $"@FId{i}").ToArray();
-                var inSql = string.Join(", ", names);
-                facP = $"AND p.NearestHFID IN ({inSql})";
-                facD = $"AND d.NearestHFID IN ({inSql})";
-                for (int i = 0; i < cleanIds.Length; i++)
-                    facPrms.Add(($"@FId{i}", cleanIds[i]));
-            }
-
             var prefs = await GetTbPrefsAsync(conn, userTID);
 
             string sql = category.ToLowerInvariant() switch
@@ -1255,7 +1251,7 @@ public sealed class TBPatientsController : ControllerBase
             cmd.Parameters.AddWithValue("@ToEnd",   toE.ToDateTime(TimeOnly.MinValue));
             cmd.Parameters.AddWithValue("@ScStart", scS.HasValue ? scS.Value.ToDateTime(TimeOnly.MinValue) : (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@ScEnd",   scE.HasValue ? scE.Value.ToDateTime(TimeOnly.MinValue) : (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@MinYear", minYear);
+            cmd.Parameters.AddWithValue("@MinYear", minYear2);
             foreach (var (n, v) in facPrms) cmd.Parameters.AddWithValue(n, v);
 
             var rows = new List<Dictionary<string, object?>>();
