@@ -10,12 +10,7 @@
  */
 
 // ─── Silence verbose logs in production ───────────────────────────────────
-// Mirrors the same guard in app.js — db.js may be loaded standalone in tests.
-if (typeof location !== 'undefined' &&
-    location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-  // eslint-disable-next-line no-console
-  console.log = console.info = console.debug = () => {};
-}
+// Production log silencing disabled — re-enabled for diagnostics.
 
 // ─── IndexedDB constants ───────────────────────────────────────────────────
 let _idbName  = 'PatientPWA';   // IndexedDB database name — updated by setIDBUser() after login
