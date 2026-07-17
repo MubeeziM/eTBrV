@@ -13376,7 +13376,7 @@ function resolveGeoScope(user, geo) {
         if (cfYear) qs.set('cfYear', cfYear);
         if (extra) Object.entries(extra).forEach(([k, v]) => qs.set(k, v));
         const ctrl = new AbortController();
-        const tid  = setTimeout(() => ctrl.abort(), 15_000);
+        const tid  = setTimeout(() => ctrl.abort(), 30_000);
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/${path}?${qs}`, {
             headers: { 'Authorization': `Bearer ${token}` },
