@@ -702,15 +702,19 @@ public sealed class TBPatientsController : ControllerBase
             // UserFacilitiesT explicit assignments (set by an admin) override the
             // facility_id JWT claim, so a user assigned to multiple facilities can
             // request DQ data for any of them from the facility-tree selector.
+            // CommandTimeout=5 ensures a slow/locked table fails fast (not 30 s).
             var explicitIds = new List<int>();
-            await using (var assignCmd = new SqlCommand(
-                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn))
+            try
             {
+                await using var assignCmd = new SqlCommand(
+                    "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn);
+                assignCmd.CommandTimeout = 5;
                 assignCmd.Parameters.AddWithValue("@UserTID", userTID);
                 await using var ar = await assignCmd.ExecuteReaderAsync();
                 while (await ar.ReadAsync())
                     explicitIds.Add(ar.GetInt32(0));
             }
+            catch { /* table absent or timeout — fall back to JWT facility_id */ }
 
             // Determine the user's authorized facility set:
             //   explicit assignments  →  JWT facility_id  →  unrestricted (national)
@@ -1010,18 +1014,19 @@ public sealed class TBPatientsController : ControllerBase
             await conn.OpenAsync();
 
             // ── Resolve authorized facilities ─────────────────────────────────
-            // UserFacilitiesT explicit assignments (set by an admin) override the
-            // facility_id JWT claim, so a user assigned to multiple facilities can
-            // request DQ data for any of them from the facility-tree selector.
+            // CommandTimeout=5 ensures a slow/locked table fails fast (not 30 s).
             var explicitIds = new List<int>();
-            await using (var assignCmd = new SqlCommand(
-                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn))
+            try
             {
+                await using var assignCmd = new SqlCommand(
+                    "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", conn);
+                assignCmd.CommandTimeout = 5;
                 assignCmd.Parameters.AddWithValue("@UserTID", userTID);
                 await using var ar = await assignCmd.ExecuteReaderAsync();
                 while (await ar.ReadAsync())
                     explicitIds.Add(ar.GetInt32(0));
             }
+            catch { /* table absent or timeout — fall back to JWT facility_id */ }
 
             // Determine the user's authorized facility set:
             //   explicit assignments  →  JWT facility_id  →  unrestricted (national)
