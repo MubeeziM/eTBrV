@@ -11,7 +11,7 @@
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UserPreferencesT')
 BEGIN
     CREATE TABLE UserPreferencesT (
-        UserTID                 NVARCHAR(36)  NOT NULL,
+        UserTID                 VARCHAR(500)  NOT NULL,
 
         -- ── Clinical Thresholds (TB monitoring & DQ) ──────────────────────
         -- RegDate lookback used in monitoring HIV/CPT/ART patient counts and

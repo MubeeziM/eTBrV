@@ -288,6 +288,23 @@ textarea.invalid {
   transition: max-width 0.2s ease;
 }
 
+/* On narrow phones the dialog must shrink to fit the viewport */
+@media (max-width: 575.98px) {
+  #profile-modal .modal-dialog {
+    max-width: calc(100% - 1rem);
+    margin: 0.5rem auto;
+  }
+}
+
+/* Tab bar scrolls horizontally when tabs don't fit on small screens */
+#profile-modal .nav-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;        /* Firefox */
+}
+#profile-modal .nav-tabs::-webkit-scrollbar { display: none; }
+
 /* ── My Account modal — data-entry feel aligned with TB Register form ──
    Profile, Change Password, and Preferences tabs share the sage-green
    background, slate input borders, forest-green labels and focus ring
@@ -726,6 +743,7 @@ textarea { resize: vertical; }
 
 .toast.success { background: var(--success); }
 .toast.error   { background: var(--danger); }
+.toast.warn    { background: #b45309; }
 
 /* ---------- Patient List ---------- */
 .list-header {

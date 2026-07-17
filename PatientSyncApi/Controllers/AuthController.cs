@@ -467,6 +467,15 @@ public sealed class AuthController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  GET /api/auth/health
+    //  Lightweight liveness probe — no auth, no DB, always returns 200.
+    //  Used by the PWA connectivity ping to avoid hitting a POST-only endpoint.
+    // ──────────────────────────────────────────────────────────────────────────
+    [AllowAnonymous]
+    [HttpGet("health")]
+    public IActionResult Health() => Ok(new { status = "ok" });
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  POST /api/auth/login
     //  Validates credentials and returns a signed JWT on success.
     // ──────────────────────────────────────────────────────────────────────────

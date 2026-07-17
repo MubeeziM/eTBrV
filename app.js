@@ -327,9 +327,9 @@ async function _pingConnectivity() {
   try {
     const ctrl = new AbortController();
     const tid  = setTimeout(() => ctrl.abort(), 3000);
-    // Any HTTP response (even 4xx/5xx) means the network is reachable.
+    // Any HTTP response means the network is reachable.
     // Only a TypeError (network error) means we're truly offline.
-    await fetch(`${API_BASE}/auth/login`, { method: 'HEAD', cache: 'no-store', signal: ctrl.signal });
+    await fetch(`${API_BASE}/auth/health`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
     clearTimeout(tid);
     _reallyOnline = true;
   } catch {
@@ -4423,22 +4423,44 @@ function userCanWrite() {
 }
 
 function applyReadOnlyMode() {
+  // ── ART Register ─────────────────────────────────────────────────────────
+  // Show the in-form "View Only" pill/banner
   const banner = document.getElementById('no-access-banner');
   if (banner) banner.hidden = false;
 
-  // Disable every input/select/textarea in the patient form
+  // Lock all inputs so nothing can be typed/changed
   const form = document.getElementById('patient-form');
   if (form) {
     form.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
   }
 
-  // Hide Save/Update and Sync buttons — nothing can be submitted
-  if (submitBtn) submitBtn.hidden = true;
-  if (syncBtn)   syncBtn.hidden   = true;
+  // Disable Save/Sync buttons (keep them visible so the UI shape is clear)
+  if (submitBtn) { submitBtn.disabled = true; }
+  if (syncBtn)   { syncBtn.disabled   = true; }
 
-  // Hide the new-patient form card entirely for read-only users
-  const newPatientCard = document.getElementById('patient-form')?.closest('.card');
-  if (newPatientCard) newPatientCard.hidden = true;
+  // ── Unit TB Register ──────────────────────────────────────────────────────
+  // Show the in-form "View Only" pill/banner
+  const tbBanner = document.getElementById('tb-no-access-banner');
+  if (tbBanner) tbBanner.hidden = false;
+
+  // Lock all inputs
+  const tbForm = document.getElementById('tb-patient-form');
+  if (tbForm) {
+    tbForm.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+  }
+
+  // Disable Save/Sync buttons
+  const tbSaveBtnEl = document.getElementById('tb-save-btn');
+  if (tbSaveBtnEl) tbSaveBtnEl.disabled = true;
+  const tbSyncBtnEl = document.getElementById('tb-sync-btn');
+  if (tbSyncBtnEl) tbSyncBtnEl.disabled = true;
+
+  // ── Presumptive TB Cases ──────────────────────────────────────────────────
+  // Disable all entry controls
+  ['pc-year-sel', 'pc-month-sel', 'pc-count', 'pc-save-btn', 'pc-clear-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
 }
 
 // ─── Dashboard screen references ─────────────────────────────────────────
@@ -4478,6 +4500,28 @@ function updateDashboardStats() {
       } else {
         elSync.textContent = 'Never';
       }
+    }
+
+    // For read-only users (supervisors, coordinators) the sync tiles are not
+    // applicable — they never create local records so the count is always 0
+    // and the timestamp is always "Never".  Keep the tiles visible but dim
+    // them and show "—" so it's clear they are inactive for this account,
+    // without implying any other feature (reports, settings, etc.) is locked.
+    const canWrite    = userCanWrite();
+    const pendingTile = document.getElementById('db-stat-pending-tile');
+    const lastSyncTile = document.getElementById('db-stat-lastsync-tile');
+    if (!canWrite) {
+      if (elPend) elPend.textContent = '—';
+      if (elSync) elSync.textContent = '—';
+    }
+    if (pendingTile) {
+      pendingTile.disabled             = !canWrite;
+      pendingTile.style.opacity        = canWrite ? '' : '0.4';
+      pendingTile.style.pointerEvents  = canWrite ? '' : 'none';
+      pendingTile.style.cursor         = canWrite ? '' : 'default';
+    }
+    if (lastSyncTile) {
+      lastSyncTile.style.opacity = canWrite ? '' : '0.4';
     }
   } catch { /* DB not ready yet — stats will be refreshed on next call */ }
 
@@ -5589,8 +5633,43 @@ function _startMigrationPoll(dataSourceId) {
         }
 
       } else if (p.status === 'delta-done') {
-        // Reload panel to show accurate delta sync stats from the database
-        await loadLegacyMigrationPanel();
+        // Update the row in-place — no full panel reload needed.
+        const facRow        = document.getElementById(`migration-row-${dataSourceId}`);
+        const facName       = facRow?.dataset.name           || '';
+        const undoPts       = facRow?.dataset.preDeltaUndoPts  ?? '0';
+        const migratedChip  = facRow?.dataset.preDeltaMigratedHtml ?? '';
+        const syncedPts     = (p.importedPatients ?? 0).toLocaleString();
+        const d             = _formatMigrationDate(new Date());
+
+        if (statusEl) statusEl.innerHTML =
+          migratedChip +
+          ` <span class="migration-status-chip" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.72rem">&#8635; ${syncedPts} synced &bull; ${d}</span>`;
+
+        if (deltaEl) deltaEl.innerHTML =
+          `<button type="button"
+             class="migration-delta-btn"
+             data-dsid="${dataSourceId}"
+             data-name="${escHtml(facName)}"
+             style="flex-shrink:0;background:#1d4ed8;color:#fff;border:none;border-radius:6px;
+                    padding:0.22rem 0.65rem;font-size:0.78rem;cursor:pointer;font-weight:600;white-space:nowrap">
+             Sync Changes
+           </button>`;
+        if (undoEl) undoEl.innerHTML =
+          `<button type="button"
+             class="migration-reset-btn"
+             data-dsid="${dataSourceId}"
+             data-name="${escHtml(facName)}"
+             data-pts="${undoPts}"
+             style="flex-shrink:0;background:none;border:1px solid #dc2626;color:#dc2626;border-radius:6px;
+                    padding:0.22rem 0.6rem;font-size:0.78rem;cursor:pointer;font-weight:500;white-space:nowrap">
+             Undo
+           </button>`;
+
+        // Clean up saved attrs
+        if (facRow) {
+          delete facRow.dataset.preDeltaMigratedHtml;
+          delete facRow.dataset.preDeltaUndoPts;
+        }
       } else if (p.status === 'error') {
         const errorMsg = p.message || '';
         const rowEl   = document.getElementById(`migration-row-${dataSourceId}`);
@@ -5938,6 +6017,15 @@ document.getElementById('migration-panel')?.addEventListener('click', async e =>
     const statusEl = document.getElementById(`migration-status-${dataSourceId}`);
     const deltaEl  = document.getElementById(`migration-delta-${dataSourceId}`);
     const undoEl   = document.getElementById(`migration-undo-${dataSourceId}`);
+
+    // Save the current migrated-chip HTML and undo pts so we can restore
+    // the row in-place when delta-done fires (avoids a full panel reload).
+    const _rowEl = document.getElementById(`migration-row-${dataSourceId}`);
+    if (_rowEl) {
+      _rowEl.dataset.preDeltaMigratedHtml = statusEl?.querySelector('.migration-status-migrated')?.outerHTML ?? '';
+      _rowEl.dataset.preDeltaUndoPts      = undoEl?.querySelector('.migration-reset-btn')?.dataset.pts ?? '0';
+    }
+
     if (statusEl) statusEl.innerHTML = _migrationProgressBar(dataSourceId, 0, 'Syncing changes…');
     if (deltaEl)  deltaEl.innerHTML = '';
     if (undoEl)   undoEl.innerHTML = '';
@@ -7420,13 +7508,7 @@ function _updateHeaderUser(user) {
     if (dlg) dlg.style.maxWidth = '680px';
   });
 
-  // Restore normal width when leaving Preferences
-  ['ptab-info-tab', 'ptab-pwd-tab', 'ptab-scope-tab'].forEach(id => {
-    document.getElementById(id)?.addEventListener('shown.bs.tab', () => {
-      const dlg = document.querySelector('#profile-modal .modal-dialog');
-      if (dlg) dlg.style.maxWidth = '520px';
-    });
-  });
+
 
   // Appearance: apply immediately on interaction (no Save needed)
   document.getElementById('pref-dark-mode')?.addEventListener('change', function () {
@@ -8658,6 +8740,9 @@ document.getElementById('frb-open-sidebar-btn')?.addEventListener('click', _open
 document.getElementById('register-select')?.addEventListener('change', (e) => {
   _selectedRegister = e.target.value || null;
   applyFacilityGate();
+  if (_selectedFacility && _selectedRegister && !userCanWrite()) {
+    showToast('View only — your account level does not permit data entry.', 'warn');
+  }
   if (_selectedFacility && _selectedRegister === 'art') {
     renderPatients();
     // Re-check baseline warning whenever the user switches to the ART register
@@ -16686,7 +16771,8 @@ function resolveGeoScope(user, geo) {
       const resp = await fetch(`${API_BASE}/baseline/${facilityId}`, {
         headers: await _authHeader(),
       });
-      if (resp.status === 404) { _cache[facilityId] = null; return null; }
+      // 404 = no baseline set yet; 403 = account level has no access to this facility
+      if (resp.status === 404 || resp.status === 403) { _cache[facilityId] = null; return null; }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const dto = await resp.json();
       _cache[facilityId] = dto;
