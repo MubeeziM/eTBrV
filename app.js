@@ -13376,22 +13376,24 @@ function resolveGeoScope(user, geo) {
         if (cfYear) qs.set('cfYear', cfYear);
         if (extra) Object.entries(extra).forEach(([k, v]) => qs.set(k, v));
         const ctrl = new AbortController();
-        const tid  = setTimeout(() => ctrl.abort(), 5_000);
+        const tid  = setTimeout(() => ctrl.abort(), 15_000);
         try {
           const resp = await fetch(`${API_BASE}/tb-patients/${path}?${qs}`, {
             headers: { 'Authorization': `Bearer ${token}` },
             cache: 'no-store', signal: ctrl.signal,
           });
           clearTimeout(tid);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          if (!resp.ok) {
+            console.warn('[PreDQ] _serverDQ non-ok:', path, resp.status, resp.statusText);
+            throw new Error(`HTTP ${resp.status}`);
+          }
           return await resp.json();
         } catch (err) {
           clearTimeout(tid);
-          // Network failure or timeout = truly offline; update badge immediately
-          if (err instanceof TypeError || err.name === 'AbortError') {
-            _reallyOnline = false;
-            updateConnectionStatus();
-          }
+          console.warn('[PreDQ] _serverDQ error:', path, err?.message || err);
+          // Do NOT touch _reallyOnline here — only _pingConnectivity() is the
+          // authority on connection state. A slow-but-working server would
+          // otherwise flip the navbar to "Offline" and leave it wrong.
           return null;
         }
       }
@@ -13533,7 +13535,9 @@ function resolveGeoScope(user, geo) {
         setTimeout(async () => {
           // Server-first: try live API, fall back to local SQLite
           let rows = null;
-          try { rows = await _serverDQ('dq-list', { category: cat }); } catch (_) {}
+          let _dqListErr = null;
+          try { rows = await _serverDQ('dq-list', { category: cat }); } catch (e) { _dqListErr = e; }
+          console.warn('[PreDQ] dq-list server response:', cat, Array.isArray(rows) ? `array(${rows.length})` : rows, _dqListErr || '');
           if (!rows) {
             try {
               rows = (typeof getDQListForReport === 'function')
