@@ -12,6 +12,14 @@
 
 'use strict';
 
+// ─── Silence verbose logs in production ───────────────────────────────────
+// console.log / info are replaced with no-ops on any non-localhost origin.
+// console.warn and console.error are preserved so real problems still surface.
+if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+  // eslint-disable-next-line no-console
+  console.log = console.info = console.debug = () => {};
+}
+
 // ─── App version — stamped automatically at deploy time ──────────────────
 const APP_VERSION = 'v__BUILD__';
 
