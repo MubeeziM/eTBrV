@@ -758,6 +758,7 @@ public sealed class TBPatientsController : ControllerBase
             async Task<int> Scalar(string sql)
             {
                 await using var cmd = new SqlCommand(sql, conn);
+                cmd.CommandTimeout = 60;
                 cmd.Parameters.AddWithValue("@CfStart", cfS.ToDateTime(TimeOnly.MinValue));
                 cmd.Parameters.AddWithValue("@CfEnd",   cfE.ToDateTime(TimeOnly.MinValue));
                 cmd.Parameters.AddWithValue("@ToStart", toS.ToDateTime(TimeOnly.MinValue));

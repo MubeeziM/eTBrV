@@ -2822,6 +2822,7 @@ public sealed class ReportsController : ControllerBase
                     ["@CfEnd"]   = cfEnd.ToDateTime(TimeOnly.MinValue),
                 };
                 await using var cmd = new SqlCommand(cfSql, conn);
+                cmd.CommandTimeout = 120;
                 foreach (var (k, v) in p) cmd.Parameters.AddWithValue(k, v);
                 await using var rdr = await cmd.ExecuteReaderAsync(ct);
                 while (await rdr.ReadAsync(ct))
@@ -2907,6 +2908,7 @@ public sealed class ReportsController : ControllerBase
                     ["@ScEnd"]   = scEnd.ToDateTime(TimeOnly.MinValue),
                 };
                 await using var cmd = new SqlCommand(scSql, conn);
+                cmd.CommandTimeout = 120;
                 foreach (var (k, v) in p) cmd.Parameters.AddWithValue(k, v);
                 await using var rdr = await cmd.ExecuteReaderAsync(ct);
                 while (await rdr.ReadAsync(ct))
@@ -2938,6 +2940,7 @@ public sealed class ReportsController : ControllerBase
                     ["@ToEnd"]   = toEnd.ToDateTime(TimeOnly.MinValue),
                 };
                 await using var cmd = new SqlCommand(toSql, conn);
+                cmd.CommandTimeout = 120;
                 foreach (var (k, v) in p) cmd.Parameters.AddWithValue(k, v);
                 await using var rdr = await cmd.ExecuteReaderAsync(ct);
                 while (await rdr.ReadAsync(ct))
@@ -3089,6 +3092,7 @@ public sealed class ReportsController : ControllerBase
                     ["@CfEnd"]   = cfEnd.ToDateTime(TimeOnly.MinValue),
                 };
                 await using var cmd = new SqlCommand(presumptiveSql, conn);
+                cmd.CommandTimeout = 120;
                 foreach (var (k, v) in p) cmd.Parameters.AddWithValue(k, v);
                 var result = await cmd.ExecuteScalarAsync(ct);
                 cfSuspectsSeen = result is not null and not DBNull ? Convert.ToInt32(result) : 0;
