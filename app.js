@@ -13400,14 +13400,23 @@ function resolveGeoScope(user, geo) {
 
       // Run counts after the modal opens
       setTimeout(async () => {
+        // 'server'  — live API call succeeded
+        // 'local'   — truly offline (navbar is red), used cached SQLite
+        // 'fallback'— navbar says online but API call still failed (slow server etc.)
         let _dqSource = 'server';
 
-        // 1. Try the live server
-        _counts = await _serverDQ('dq-counts');
-
-        // 2. Fall back to local SQLite if server is unreachable or times out
-        if (!_counts) {
+        // 1. Only attempt the live server when the navbar already considers us online.
+        //    This keeps the two indicators in sync: if _reallyOnline is false we skip
+        //    straight to local without an unnecessary network attempt.
+        if (_reallyOnline) {
+          _counts = await _serverDQ('dq-counts');
+          if (!_counts) _dqSource = 'fallback';   // online but server call failed
+        } else {
           _dqSource = 'local';
+        }
+
+        // 2. Fall back to local SQLite whenever we don't have server counts
+        if (!_counts) {
           try {
             _counts = (typeof getDQCountsForReport === 'function')
               ? getDQCountsForReport(facilityIds, cfRange.startDate, cfRange.endDate, toRange.startDate, toRange.endDate, cfYear, scRange.startDate, scRange.endDate)
@@ -13422,6 +13431,9 @@ function resolveGeoScope(user, geo) {
             if (_dqSource === 'server') {
               noteEl.innerHTML = '&#10003;&nbsp;Checked against live eTBr server data.';
               noteEl.style.color = '#059669';
+            } else if (_dqSource === 'fallback') {
+              noteEl.innerHTML = '&#9888;&nbsp;Server check failed &mdash; based on locally synced data.';
+              noteEl.style.color = '#d97706';
             } else {
               noteEl.innerHTML = '&#9888;&nbsp;Offline &mdash; based on locally synced data.';
               noteEl.style.color = '#d97706';
