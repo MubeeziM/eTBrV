@@ -2585,13 +2585,50 @@ public sealed class ReportsController : ControllerBase
         if (cfEnd < cfStart)
         { Response.StatusCode = 400; await Response.WriteAsJsonAsync(new { error = "cfEndDate must be on or after cfStartDate." }); return; }
 
+
+        //original
+        //changed after Q2 of 2026 had a sputum conversion end date of 30/03/2026
         // ── Derive period length and all three cohort date ranges ─────────
         // Period in months (3 = quarterly, 6 = semiannual, 12 = annual)
-        int periodMonths = (cfEnd.Year - cfStart.Year) * 12 + cfEnd.Month - cfStart.Month + 1;
+        // int periodMonths = (cfEnd.Year - cfStart.Year) * 12 + cfEnd.Month - cfStart.Month + 1;
 
         // SC = one period immediately before CF
-        var scStart = cfStart.AddMonths(-periodMonths);
-        var scEnd   = cfEnd.AddMonths(-periodMonths);
+        // var scStart = cfStart.AddMonths(-periodMonths);
+        // var scEnd   = cfEnd.AddMonths(-periodMonths);
+
+        //second try. its perfect for quarterly but fails for semiannual and annual
+        // Period in months (3 = quarterly, 6 = semiannual, 12 = annual)
+        // int periodMonths = (cfEnd.Year - cfStart.Year) * 12
+        //                 + cfEnd.Month
+        //                 - cfStart.Month
+        //                 + 1;
+
+        // // SC = one complete period immediately before CF.
+        // // Do not subtract months from cfEnd: June 30 minus 3 months becomes March 30.
+        // var scStart = cfStart.AddMonths(-periodMonths);
+        // var scEnd   = cfStart.AddDays(-1);
+
+        //third try
+        // Period in months: 3 = quarterly, 6 = semiannual, 12 = annual
+        int periodMonths = (cfEnd.Year - cfStart.Year) * 12
+                        + cfEnd.Month
+                        - cfStart.Month
+                        + 1;
+
+        // Find the first month of the quarter containing the CF end date.
+        // E.g. cfEnd June 30 => April 1; cfEnd December 31 => October 1.
+        int cfEndQuarterStartMonth = ((cfEnd.Month - 1) / 3) * 3 + 1;
+        var cfEndQuarterStart = new DateOnly(cfEnd.Year, cfEndQuarterStartMonth, 1);
+
+        // SC must end on the final day of the previous quarter.
+        // E.g. CF ending June 30, 2026 => SC ends March 31, 2026.
+        var scEnd = cfEndQuarterStart.AddDays(-1);
+
+        // SC starts exactly one selected reporting period before the day after SC end.
+        // This keeps SC ranges aligned to complete quarters.
+        var scStart = scEnd.AddDays(1).AddMonths(-periodMonths);
+
+        
 
         // TO = same period one year before CF
         var toStart = cfStart.AddMonths(-12);
@@ -2728,6 +2765,9 @@ public sealed class ReportsController : ControllerBase
             await Emit(new { step, total = totalSteps, label });
         }
 
+        // ── Row counts (for no-data detection) ──────────────────────────────
+        int cfRowCount = 0, scRowCount = 0, toRowCount = 0;
+
         // ── Case Finding counters ─────────────────────────────────────────
         int cfPBCNew = 0, cfPBCRelapse = 0, cfPBCPrevTreat = 0, cfPBCOther = 0;
         int cfPCDNew = 0, cfPCDRelapse = 0, cfPCDPrevTreat = 0, cfPCDOther = 0;
@@ -2827,6 +2867,7 @@ public sealed class ReportsController : ControllerBase
                 await using var rdr = await cmd.ExecuteReaderAsync(ct);
                 while (await rdr.ReadAsync(ct))
                 {
+                    cfRowCount++;
                     int ptType    = rdr.IsDBNull(rdr.GetOrdinal("PtTypeID"))  ? 0 : rdr.GetInt32(rdr.GetOrdinal("PtTypeID"));
                     int tbType    = rdr.IsDBNull(rdr.GetOrdinal("TbTypeID"))  ? 0 : rdr.GetInt32(rdr.GetOrdinal("TbTypeID"));
                     int sexId     = rdr.IsDBNull(rdr.GetOrdinal("SexID"))     ? 0 : rdr.GetInt32(rdr.GetOrdinal("SexID"));
@@ -2868,8 +2909,11 @@ public sealed class ReportsController : ControllerBase
                     }
 
                     // Age-sex for new + relapse PBC
-                    if (pbc && ptType is 1 or 2)
-                        cfPBCNewRelapse[ag, si]++;
+                    // if (pbc && ptType is 1 or 2)
+                    //     cfPBCNewRelapse[ag, si]++;
+
+                    if ((pbc||pcd||ep) && ptType is 1 or 2) cfPBCNewRelapse[ag, si]++;
+
 
                     // All PBC (total bacteriologically confirmed)
                     if (pbc) cfPBCLab++;
@@ -2883,18 +2927,25 @@ public sealed class ReportsController : ControllerBase
                             case 2: cfMicroscopy++; if (IsSmearPos(lab))   cfMicroscopyPos++; break;
                             case 3: cfTBLam++;      break;  // TB-LAM positive = same as tested (row 28 = row 27)
                             case 4: cfTrueNat++;    if (IsXpertPos(xpert)) cfTrueNatPos++; break;
-                            case 5: cfXray++;       break;
+                            case 5:   
+                            case 0: 
+                                cfXray++; 
+                                break;
                         }
                     }
 
                     // TB/HIV activities
-                    if (hivRes > 0) cfTestedHIV++;
-                    if (hivRes == 2)
+                    // if (hivRes > 0) cfTestedHIV++;
+                    if (ptType is 1 or 2)
                     {
-                        cfTestedHIVPos++;
-                        cfHIVPos[ag, si]++;
-                        if (onART == 1) { cfTestedHIVART++; cfARTHIVPos[ag, si]++; }
-                        if (onCPT == 1) cfTestedHIVCPT++;
+                        if (hivRes == 1||hivRes == 2) cfTestedHIV++;
+                        if (hivRes == 2)
+                        {
+                            cfTestedHIVPos++;
+                            cfHIVPos[ag, si]++;
+                            if (onART == 1) { cfTestedHIVART++; cfARTHIVPos[ag, si]++; }
+                            if (onCPT == 1) cfTestedHIVCPT++;
+                        }
                     }
                 }
             }
@@ -2913,6 +2964,7 @@ public sealed class ReportsController : ControllerBase
                 await using var rdr = await cmd.ExecuteReaderAsync(ct);
                 while (await rdr.ReadAsync(ct))
                 {
+                    scRowCount++;
                     int ptType = rdr.IsDBNull(rdr.GetOrdinal("PtTypeID")) ? 0 : rdr.GetInt32(rdr.GetOrdinal("PtTypeID"));
                     int tbType = rdr.IsDBNull(rdr.GetOrdinal("TbTypeID")) ? 0 : rdr.GetInt32(rdr.GetOrdinal("TbTypeID"));
                     int lab    = rdr.IsDBNull(rdr.GetOrdinal("Mon0LabResultID"))   ? 0 : rdr.GetInt32(rdr.GetOrdinal("Mon0LabResultID"));
@@ -2945,6 +2997,7 @@ public sealed class ReportsController : ControllerBase
                 await using var rdr = await cmd.ExecuteReaderAsync(ct);
                 while (await rdr.ReadAsync(ct))
                 {
+                    toRowCount++;
                     int ptType  = rdr.IsDBNull(rdr.GetOrdinal("PtTypeID")) ? 0 : rdr.GetInt32(rdr.GetOrdinal("PtTypeID"));
                     int tbType  = rdr.IsDBNull(rdr.GetOrdinal("TbTypeID")) ? 0 : rdr.GetInt32(rdr.GetOrdinal("TbTypeID"));
                     int sexId   = rdr.IsDBNull(rdr.GetOrdinal("SexID"))    ? 0 : rdr.GetInt32(rdr.GetOrdinal("SexID"));
@@ -3132,6 +3185,7 @@ public sealed class ReportsController : ControllerBase
                 SW(ws2.Cell("Q8"), cfYearStr);
                 SW(ws2.Cell("N9"), today.ToString("dd/MM/yyyy"));
 
+                
                 SW(ws2.Cell("I13"), cfPBCNew);    SW(ws2.Cell("K13"), cfPBCRelapse);
                 SW(ws2.Cell("M13"), cfPBCPrevTreat); SW(ws2.Cell("O13"), cfPBCOther);
                 SW(ws2.Cell("I14"), cfPCDNew);    SW(ws2.Cell("K14"), cfPCDRelapse);
@@ -3170,6 +3224,11 @@ public sealed class ReportsController : ControllerBase
                 if (scOrdinal > 0) WriteQuarterOrdinal(ws3.Cell("L8"), scOrdinal);
                 SW(ws3.Cell("P8"), scYearStr);
                 SW(ws3.Cell("N9"), today.ToString("dd/MM/yyyy"));
+
+                // SW(ws3.Cell("U11"), scStart.ToDateTime(TimeOnly.MinValue));
+                // SW(ws3.Cell("U12"), scEnd.ToDateTime(TimeOnly.MinValue));
+                // SW(ws3.Cell("U13"), periodMonths);
+
 
                 SW(ws3.Cell("A14"), scNewPBC);
                 SW(ws3.Cell("F14"), scSmearND);
@@ -3274,7 +3333,8 @@ public sealed class ReportsController : ControllerBase
             var token = Guid.NewGuid().ToString("N");
             _cache.Set(token, new ReportCacheEntry(excelBytes, fileName),
                 new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
-            await Emit(new { done = true, token, filename = fileName, step, total = totalSteps });
+            bool noData = cfRowCount == 0 && scRowCount == 0 && toRowCount == 0 && cfSuspectsSeen == 0;
+            await Emit(new { done = true, token, filename = fileName, step, total = totalSteps, noData });
         }
         catch (OperationCanceledException) { return; }
         catch (Exception ex)
@@ -3645,7 +3705,8 @@ public sealed class ReportsController : ControllerBase
                         }
 
                         if (pbc) cfPBCLab++;
-                        if (pbc && ptType is 1 or 2) cfPBCNewRelapse[ag, si]++;
+                        // if (pbc && ptType is 1 or 2) cfPBCNewRelapse[ag, si]++;
+                        if ((pbc||pcd||ep) && ptType is 1 or 2) cfPBCNewRelapse[ag, si]++;
 
                         // Diagnostic method counts — new and relapse cases only
                         if (ptType is 1 or 2)
@@ -3656,17 +3717,24 @@ public sealed class ReportsController : ControllerBase
                                 case 2: cfMicroscopy++; if (LfaIsSmearPos(lab))   cfMicroscopyPos++; break;
                                 case 3: cfTBLam++;      break;
                                 case 4: cfTrueNat++;    if (LfaIsXpertPos(xpert)) cfTrueNatPos++; break;
-                                case 5: cfXray++;       break;
+                                case 5:   
+                                case 0: 
+                                    cfXray++; 
+                                    break;
                             }
                         }
 
-                        if (hivRes > 0) cfTestedHIV++;
-                        if (hivRes == 2)
+                        // if (hivRes > 0) cfTestedHIV++;
+                        if (ptType is 1 or 2)
                         {
-                            cfTestedHIVPos++;
-                            cfHIVPos[ag, si]++;
-                            if (onART == 1) { cfTestedHIVART++; cfARTHIVPos[ag, si]++; }
-                            if (onCPT == 1)  cfTestedHIVCPT++;
+                            if (hivRes == 1||hivRes == 2) cfTestedHIV++;
+                            if (hivRes == 2)
+                            {
+                                cfTestedHIVPos++;
+                                cfHIVPos[ag, si]++;
+                                if (onART == 1) { cfTestedHIVART++; cfARTHIVPos[ag, si]++; }
+                                if (onCPT == 1)  cfTestedHIVCPT++;
+                            }
                         }
                 }
 
@@ -4155,17 +4223,46 @@ public sealed class ReportsController : ControllerBase
         bool isZonal = User.IsInRole("StateCoordinator");
         bool isDtls  = User.IsInRole("CountySupervisor");
 
+        var userTIDStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                       ?? User.FindFirstValue("sub")
+                       ?? string.Empty;
+
         int.TryParse(User.FindFirstValue("facility_id"), out var userFacilityId);
         int.TryParse(User.FindFirstValue("state_id"),    out var userStateId);
         int.TryParse(User.FindFirstValue("county_id"),   out var userCountyId);
         int.TryParse(User.FindFirstValue("sub_rec_id"),  out var userSubRecId);
         int.TryParse(User.FindFirstValue("location_id"), out var userLocationId);
 
+        // ── Resolve explicit facility assignments ──────────────────────────────
+        // Supervisor-assigned facilities (UserFacilitiesT) take priority over the
+        // JWT facility_id (DataSourceID) so counts reflect all assigned facilities.
+        var facExplicit = new List<int>();
+        try
+        {
+            await using var authConn = new SqlConnection(_connectionString);
+            await authConn.OpenAsync();
+            await using var assignCmd = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", authConn);
+            assignCmd.CommandTimeout = 5;
+            assignCmd.Parameters.AddWithValue("@UserTID", userTIDStr);
+            await using var ar = await assignCmd.ExecuteReaderAsync();
+            while (await ar.ReadAsync()) facExplicit.Add(ar.GetInt32(0));
+        }
+        catch { /* fall back to JWT scope */ }
+
         // Build parameterised geo WHERE clause (same logic as report generation)
         var geoConditions = new List<string>();
         var sqlParams     = new Dictionary<string, object>();
 
-        if (userFacilityId > 0)
+        if (facExplicit.Count > 0)
+        {
+            // Explicit supervisor assignments — may be multiple facilities
+            var pnames = facExplicit.Select((_, i) => $"@FacId{i}").ToArray();
+            geoConditions.Add($"hf.HealthFacilityID IN ({string.Join(", ", pnames)})");
+            for (int i = 0; i < facExplicit.Count; i++)
+                sqlParams[$"@FacId{i}"] = facExplicit[i];
+        }
+        else if (userFacilityId > 0)
         {
             geoConditions.Add("hf.HealthFacilityID = @FacilityId");
             sqlParams["@FacilityId"] = userFacilityId;

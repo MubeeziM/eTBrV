@@ -332,14 +332,57 @@ public sealed class TBPatientsController : ControllerBase
         if (!Guid.TryParse(userTIDStr, out var enteredByID) || enteredByID == Guid.Empty)
             return BadRequest(new { error = "Invalid user identity in token." });
 
+        // ── Resolve effective facility scope ───────────────────────────────────
+        // Priority: supervisor-assigned facilities (UserFacilitiesT) →
+        //           JWT facility_id (DataSourceID) →
+        //           EnteredByID fallback (user has no facility).
+        var facilityStr = User.FindFirstValue("facility_id") ?? "0";
+        int.TryParse(facilityStr, out var jwtFacilityId);
+        var facExplicit = new List<int>();
+        try
+        {
+            await using var authConn = new SqlConnection(_connectionString);
+            await authConn.OpenAsync();
+            await using var assignCmd = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", authConn);
+            assignCmd.CommandTimeout = 5;
+            assignCmd.Parameters.AddWithValue("@UserTID", userTIDStr);
+            await using var ar = await assignCmd.ExecuteReaderAsync();
+            while (await ar.ReadAsync()) facExplicit.Add(ar.GetInt32(0));
+        }
+        catch { /* fall back to JWT facility_id / EnteredByID */ }
+
+        int[] effectiveFacIds = facExplicit.Count > 0 ? [.. facExplicit]
+                              : jwtFacilityId > 0    ? [jwtFacilityId]
+                              :                         [];
+        bool useFacScope = effectiveFacIds.Length > 0;
+
+        string facInPart = string.Empty; // "NearestHFID IN (@FacId0, ...)"
+        string facInSql  = string.Empty; // "AND NearestHFID IN (@FacId0, ...)"
+        var    facParams = new List<(string Name, int Value)>();
+        if (useFacScope)
+        {
+            var pnames  = effectiveFacIds.Select((_, i) => $"@FacId{i}").ToArray();
+            facInPart   = $"NearestHFID IN ({string.Join(", ", pnames)})";
+            facInSql    = $"AND {facInPart}";
+            for (int i = 0; i < effectiveFacIds.Length; i++)
+                facParams.Add(($"@FacId{i}", effectiveFacIds[i]));
+        }
+
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
 
-            bool isDelta         = since.HasValue;
-            var sinceClause      = isDelta            ? "AND LastModOn > @Since"      : "";
+            bool isDelta          = since.HasValue;
+            var sinceClause       = isDelta             ? "AND LastModOn > @Since"      : "";
             var regDateFromClause = regDateFrom.HasValue ? "AND RegDate >= @RegDateFrom" : "";
+
+            // Facility-scoped: download all records at assigned facilities.
+            // Fallback: only records entered by this user.
+            string patWhereClause = useFacScope
+                ? $"WHERE 1=1 {facInSql} {sinceClause} {regDateFromClause}"
+                : $"WHERE EnteredByID = @EnteredByID {sinceClause} {regDateFromClause}";
 
             var patSql = $"""
                 SELECT
@@ -357,15 +400,16 @@ public sealed class TBPatientsController : ControllerBase
                     CONVERT(nvarchar(10), DateRxStarted,   23) AS DateRxStarted,
                     RegimenID, DiagMethodID, CountryID
                 FROM PtDetailsT
-                WHERE EnteredByID = @EnteredByID
-                {sinceClause}
-                {regDateFromClause}
+                {patWhereClause}
                 ORDER BY LastModOn DESC
                 """;
 
             await using var patCmd = new SqlCommand(patSql, conn);
-            patCmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
-            if (isDelta)           patCmd.Parameters.AddWithValue("@Since",        since!.Value);
+            if (useFacScope)
+                foreach (var (name, val) in facParams) patCmd.Parameters.AddWithValue(name, val);
+            else
+                patCmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
+            if (isDelta)              patCmd.Parameters.AddWithValue("@Since",        since!.Value);
             if (regDateFrom.HasValue) patCmd.Parameters.AddWithValue("@RegDateFrom", regDateFrom.Value.Date);
 
             var patients = new List<Dictionary<string, object?>>();
@@ -389,7 +433,19 @@ public sealed class TBPatientsController : ControllerBase
             List<Dictionary<string, object?>> followUps;
             if (isDelta)
             {
-                const string fuDeltaSql = """
+                // Facility-scoped delta: use NearestHFID subquery; fallback to EnteredByID.
+                string fuDeltaWhere = useFacScope
+                    ? $"""
+                      WHERE LastModOn > @Since
+                        AND CAST(PtDetailsTID AS nvarchar(36)) IN (
+                            SELECT CAST(PtDetailsTID AS nvarchar(36))
+                            FROM PtDetailsT
+                            WHERE {facInPart}
+                        )
+                      """
+                    : "WHERE EnteredByID = @EnteredByID AND LastModOn > @Since";
+
+                string fuDeltaSql = $"""
                     SELECT
                         CAST(PtFollowUpTID AS nvarchar(36)) AS PtFollowUpTID,
                         CAST(PtDetailsTID  AS nvarchar(36)) AS PtDetailsTID,
@@ -419,10 +475,13 @@ public sealed class TBPatientsController : ControllerBase
                         CONVERT(nvarchar(10), CPTDate,           23) AS CPTDate,
                         MovedTo2ndLine, Remarks
                     FROM PtFollowUpT
-                    WHERE EnteredByID = @EnteredByID AND LastModOn > @Since
+                    {fuDeltaWhere}
                     """;
                 await using var fuCmd = new SqlCommand(fuDeltaSql, conn);
-                fuCmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
+                if (useFacScope)
+                    foreach (var (name, val) in facParams) fuCmd.Parameters.AddWithValue(name, val);
+                else
+                    fuCmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
                 fuCmd.Parameters.AddWithValue("@Since", since!.Value);
                 followUps = new List<Dictionary<string, object?>>();
                 await using (var rdr = await fuCmd.ExecuteReaderAsync())
@@ -514,9 +573,39 @@ public sealed class TBPatientsController : ControllerBase
     [HttpGet("mine-presumptive")]
     public async Task<IActionResult> GetMinePresumptive([FromQuery] DateTime? since = null)
     {
+        var userTIDStr  = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                       ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                       ?? string.Empty;
         var facilityStr = User.FindFirstValue("facility_id") ?? "0";
-        if (!int.TryParse(facilityStr, out var facilityId) || facilityId <= 0)
-            return Ok(Array.Empty<object>()); // no linked facility — return empty list
+        int.TryParse(facilityStr, out var jwtFacilityId);
+
+        // ── Resolve effective facility scope ───────────────────────────────────
+        var facExplicit = new List<int>();
+        try
+        {
+            await using var authConn = new SqlConnection(_connectionString);
+            await authConn.OpenAsync();
+            await using var assignCmd = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", authConn);
+            assignCmd.CommandTimeout = 5;
+            assignCmd.Parameters.AddWithValue("@UserTID", userTIDStr);
+            await using var ar = await assignCmd.ExecuteReaderAsync();
+            while (await ar.ReadAsync()) facExplicit.Add(ar.GetInt32(0));
+        }
+        catch { /* fall back */ }
+
+        int[] effectiveFacIds = facExplicit.Count > 0 ? [.. facExplicit]
+                              : jwtFacilityId > 0    ? [jwtFacilityId]
+                              :                         [];
+
+        if (effectiveFacIds.Length == 0)
+            return Ok(Array.Empty<object>()); // no facility — return empty
+
+        var    facParams = new List<(string Name, int Value)>();
+        var    pnames    = effectiveFacIds.Select((_, i) => $"@FacId{i}").ToArray();
+        string facInSql  = $"NearestHFID IN ({string.Join(", ", pnames)})";
+        for (int i = 0; i < effectiveFacIds.Length; i++)
+            facParams.Add(($"@FacId{i}", effectiveFacIds[i]));
 
         try
         {
@@ -532,13 +621,13 @@ public sealed class TBPatientsController : ControllerBase
                     CONVERT(nvarchar(30), LastModOn, 126) AS LastModOn,
                     CAST(EnteredByID AS nvarchar(36))     AS EnteredByID
                 FROM PresumptiveCaseT
-                WHERE NearestHFID = @FacilityID
+                WHERE {facInSql}
                 {sinceClause}
                 ORDER BY YearID, MonthID
                 """;
 
             await using var cmd = new SqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("@FacilityID", facilityId);
+            foreach (var (name, val) in facParams) cmd.Parameters.AddWithValue(name, val);
             if (since.HasValue) cmd.Parameters.AddWithValue("@Since", since.Value);
 
             var cases = new List<Dictionary<string, object?>>();
@@ -554,14 +643,14 @@ public sealed class TBPatientsController : ControllerBase
             }
 
             _logger.LogInformation(
-                "TB GetMinePresumptive: {Count} case(s) for facility {FacilityId}.",
-                cases.Count, facilityId);
+                "TB GetMinePresumptive: {Count} case(s) for facilities [{FacIds}].",
+                cases.Count, string.Join(",", effectiveFacIds));
 
             return Ok(cases);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in GetMinePresumptive for facility {FacilityId}.", facilityId);
+            _logger.LogError(ex, "Error in GetMinePresumptive for facilities [{FacIds}].", string.Join(",", effectiveFacIds));
             return StatusCode(500, new { error = "Could not retrieve presumptive case records." });
         }
     }
@@ -811,16 +900,28 @@ public sealed class TBPatientsController : ControllerBase
                 WHERE n.TBNoB > 0
                 """);
 
+            // // 3. Missing essential registration fields
+            // int missingreg = await Scalar($"""
+            //     SELECT COUNT(*) FROM PtDetailsT p
+            //     WHERE p.Deleted=0 {facP}
+            //       AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
+            //       AND (p.PtName IS NULL OR p.PtName=''
+            //         OR p.Age=0 OR p.Age IS NULL
+            //         OR p.SexID=0 OR p.TbTypeID=0 OR p.PtTypeID=0
+            //         OR p.RegDate IS NULL
+            //         OR p.DateRxStarted IS NULL OR p.DiagMethodID=0)
+            //     """);
+
             // 3. Missing essential registration fields
             int missingreg = await Scalar($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
-                  AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
-                  AND (p.PtName IS NULL OR p.PtName=''
+                AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
+                AND (p.PtName IS NULL OR p.PtName=''
                     OR p.Age=0 OR p.Age IS NULL
                     OR p.SexID=0 OR p.TbTypeID=0 OR p.PtTypeID=0
                     OR p.RegDate IS NULL
-                    OR p.DateRxStarted IS NULL OR p.DiagMethodID=0)
+                    OR p.DateRxStarted IS NULL)
                 """);
 
             // 4. Diagnostic method not recorded
@@ -1107,25 +1208,46 @@ public sealed class TBPatientsController : ControllerBase
                     ORDER BY n.RegYear DESC, n.TBNoB, p.RegDate
                     """,
 
+                // "missingreg" => $"""
+                //     SELECT {StdCols},
+                //            STUFF(
+                //              CASE WHEN p.PtName IS NULL OR p.PtName='' THEN ', Patient Name' ELSE '' END +
+                //              CASE WHEN p.Age=0  OR p.Age IS NULL       THEN ', Age'          ELSE '' END +
+                //              CASE WHEN p.SexID=0                       THEN ', Sex'          ELSE '' END +
+                //              CASE WHEN p.TbTypeID=0                    THEN ', TB Site'      ELSE '' END +
+                //              CASE WHEN p.PtTypeID=0                    THEN ', Patient Type' ELSE '' END +
+                //              CASE WHEN p.RegDate IS NULL                THEN ', Reg Date'     ELSE '' END +
+                //              CASE WHEN p.DateRxStarted IS NULL          THEN ', Rx Start'     ELSE '' END +
+                //              CASE WHEN p.DiagMethodID=0                THEN ', Diag Method'  ELSE '' END
+                //            , 1, 2, '') AS MissingFields
+                //     {StdJoins}
+                //     WHERE p.Deleted=0 {facP}
+                //       AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
+                //       AND (p.PtName IS NULL OR p.PtName=''
+                //         OR p.Age=0 OR p.Age IS NULL OR p.SexID=0
+                //         OR p.TbTypeID=0 OR p.PtTypeID=0 OR p.RegDate IS NULL
+                //         OR p.DateRxStarted IS NULL OR p.DiagMethodID=0)
+                //     ORDER BY p.PtName
+                //     """,
+
                 "missingreg" => $"""
                     SELECT {StdCols},
-                           STUFF(
-                             CASE WHEN p.PtName IS NULL OR p.PtName='' THEN ', Patient Name' ELSE '' END +
-                             CASE WHEN p.Age=0  OR p.Age IS NULL       THEN ', Age'          ELSE '' END +
-                             CASE WHEN p.SexID=0                       THEN ', Sex'          ELSE '' END +
-                             CASE WHEN p.TbTypeID=0                    THEN ', TB Site'      ELSE '' END +
-                             CASE WHEN p.PtTypeID=0                    THEN ', Patient Type' ELSE '' END +
-                             CASE WHEN p.RegDate IS NULL                THEN ', Reg Date'     ELSE '' END +
-                             CASE WHEN p.DateRxStarted IS NULL          THEN ', Rx Start'     ELSE '' END +
-                             CASE WHEN p.DiagMethodID=0                THEN ', Diag Method'  ELSE '' END
-                           , 1, 2, '') AS MissingFields
+                        STUFF(
+                            CASE WHEN p.PtName IS NULL OR p.PtName='' THEN ', Patient Name' ELSE '' END +
+                            CASE WHEN p.Age=0 OR p.Age IS NULL THEN ', Age' ELSE '' END +
+                            CASE WHEN p.SexID=0 THEN ', Sex' ELSE '' END +
+                            CASE WHEN p.TbTypeID=0 THEN ', TB Site' ELSE '' END +
+                            CASE WHEN p.PtTypeID=0 THEN ', Patient Type' ELSE '' END +
+                            CASE WHEN p.RegDate IS NULL THEN ', Reg Date' ELSE '' END +
+                            CASE WHEN p.DateRxStarted IS NULL THEN ', Rx Start' ELSE '' END
+                        , 1, 2, '') AS MissingFields
                     {StdJoins}
                     WHERE p.Deleted=0 {facP}
-                      AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
-                      AND (p.PtName IS NULL OR p.PtName=''
+                    AND p.RegDate >= @CfStart AND p.RegDate <= @CfEnd
+                    AND (p.PtName IS NULL OR p.PtName=''
                         OR p.Age=0 OR p.Age IS NULL OR p.SexID=0
                         OR p.TbTypeID=0 OR p.PtTypeID=0 OR p.RegDate IS NULL
-                        OR p.DateRxStarted IS NULL OR p.DiagMethodID=0)
+                        OR p.DateRxStarted IS NULL)
                     ORDER BY p.PtName
                     """,
 
@@ -2039,6 +2161,24 @@ public sealed class TBPatientsController : ControllerBase
                 dupes AS (SELECT NearestHFID,RegYear,TBNoB FROM norm WHERE TBNoB>0 GROUP BY NearestHFID,RegYear,TBNoB HAVING COUNT(*)>1)
                 SELECT COUNT(*) FROM norm n JOIN dupes dk ON dk.NearestHFID=n.NearestHFID AND dk.RegYear=n.RegYear AND dk.TBNoB=n.TBNoB WHERE n.TBNoB>0
                 """);
+            // var tMissingreg = Cnt($"""
+            //     SELECT COUNT(*) FROM PtDetailsT p
+            //     WHERE p.Deleted=0 {facP}
+            //     AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 180)
+            //     AND (
+            //         p.PtName IS NULL OR p.PtName=''
+            //         OR p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))=''
+            //         OR p.Age IS NULL OR p.Age=0
+            //         OR p.SexID IS NULL OR p.SexID IN (0,3)
+            //         OR p.TbTypeID IS NULL OR p.TbTypeID IN (0,4)
+            //         OR p.PtTypeID IS NULL OR p.PtTypeID IN (0,7)
+            //         OR p.NearestHFID IS NULL OR p.NearestHFID=0
+            //         OR p.RegDate IS NULL
+            //         OR p.DateRxStarted IS NULL
+            //         OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
+            //     )
+            //     """);
+
             var tMissingreg = Cnt($"""
                 SELECT COUNT(*) FROM PtDetailsT p
                 WHERE p.Deleted=0 {facP}
@@ -2053,7 +2193,6 @@ public sealed class TBPatientsController : ControllerBase
                     OR p.NearestHFID IS NULL OR p.NearestHFID=0
                     OR p.RegDate IS NULL
                     OR p.DateRxStarted IS NULL
-                    OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
                 )
                 """);
             var tSmearcured = Cnt($"""
@@ -2236,20 +2375,52 @@ public sealed class TBPatientsController : ControllerBase
                     ORDER BY p.RegDate DESC, p.PtName
                     """;
                 break;
+
+            // case "missingreg":
+            //     querySql = $"""
+            //         SELECT {dqCols},
+            //         RTRIM(LTRIM(
+            //           CASE WHEN p.PtName IS NULL OR p.PtName='' THEN 'Patient Name, ' ELSE '' END +
+            //           CASE WHEN p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))='' THEN 'Unit TB No, ' ELSE '' END +
+            //           CASE WHEN p.Age IS NULL OR p.Age=0 THEN 'Age, ' ELSE '' END +
+            //           CASE WHEN p.SexID IS NULL OR p.SexID IN (0,3) THEN 'Sex, ' ELSE '' END +
+            //           CASE WHEN p.TbTypeID IS NULL OR p.TbTypeID IN (0,4) THEN 'TB Site, ' ELSE '' END +
+            //           CASE WHEN p.PtTypeID IS NULL OR p.PtTypeID IN (0,7) THEN 'Patient Type, ' ELSE '' END +
+            //           CASE WHEN p.NearestHFID IS NULL OR p.NearestHFID=0 THEN 'Treatment Facility, ' ELSE '' END +
+            //           CASE WHEN p.RegDate IS NULL THEN 'Reg Date, ' ELSE '' END +
+            //           CASE WHEN p.DateRxStarted IS NULL THEN 'Rx Start Date, ' ELSE '' END +
+            //           CASE WHEN p.DiagMethodID IS NULL OR p.DiagMethodID=0 THEN 'Diag Method, ' ELSE '' END
+            //         )) AS MissingFields
+            //         {dqJoins}
+            //         WHERE p.Deleted=0 {facP}
+            //         AND (p.RegDate IS NULL OR DATEDIFF(DAY, p.RegDate, GETDATE()) < 180)
+            //         AND (
+            //             p.PtName IS NULL OR p.PtName=''
+            //             OR p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))=''
+            //             OR p.Age IS NULL OR p.Age=0
+            //             OR p.SexID IS NULL OR p.SexID IN (0,3)
+            //             OR p.TbTypeID IS NULL OR p.TbTypeID IN (0,4)
+            //             OR p.PtTypeID IS NULL OR p.PtTypeID IN (0,7)
+            //             OR p.NearestHFID IS NULL OR p.NearestHFID=0
+            //             OR p.RegDate IS NULL
+            //             OR p.DateRxStarted IS NULL
+            //             OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
+            //         )
+            //         ORDER BY p.RegDate DESC, p.PtName
+            //         """;
             case "missingreg":
                 querySql = $"""
                     SELECT {dqCols},
                     RTRIM(LTRIM(
-                      CASE WHEN p.PtName IS NULL OR p.PtName='' THEN 'Patient Name, ' ELSE '' END +
-                      CASE WHEN p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))='' THEN 'Unit TB No, ' ELSE '' END +
-                      CASE WHEN p.Age IS NULL OR p.Age=0 THEN 'Age, ' ELSE '' END +
-                      CASE WHEN p.SexID IS NULL OR p.SexID IN (0,3) THEN 'Sex, ' ELSE '' END +
-                      CASE WHEN p.TbTypeID IS NULL OR p.TbTypeID IN (0,4) THEN 'TB Site, ' ELSE '' END +
-                      CASE WHEN p.PtTypeID IS NULL OR p.PtTypeID IN (0,7) THEN 'Patient Type, ' ELSE '' END +
-                      CASE WHEN p.NearestHFID IS NULL OR p.NearestHFID=0 THEN 'Treatment Facility, ' ELSE '' END +
-                      CASE WHEN p.RegDate IS NULL THEN 'Reg Date, ' ELSE '' END +
-                      CASE WHEN p.DateRxStarted IS NULL THEN 'Rx Start Date, ' ELSE '' END +
-                      CASE WHEN p.DiagMethodID IS NULL OR p.DiagMethodID=0 THEN 'Diag Method, ' ELSE '' END
+                    CASE WHEN p.PtName IS NULL OR p.PtName='' THEN 'Patient Name, ' ELSE '' END +
+                    CASE WHEN p.UnitTBNo IS NULL OR LTRIM(RTRIM(p.UnitTBNo))='' THEN 'Unit TB No, ' ELSE '' END +
+                    CASE WHEN p.Age IS NULL OR p.Age=0 THEN 'Age, ' ELSE '' END +
+                    CASE WHEN p.SexID IS NULL OR p.SexID IN (0,3) THEN 'Sex, ' ELSE '' END +
+                    CASE WHEN p.TbTypeID IS NULL OR p.TbTypeID IN (0,4) THEN 'TB Site, ' ELSE '' END +
+                    CASE WHEN p.PtTypeID IS NULL OR p.PtTypeID IN (0,7) THEN 'Patient Type, ' ELSE '' END +
+                    CASE WHEN p.NearestHFID IS NULL OR p.NearestHFID=0 THEN 'Treatment Facility, ' ELSE '' END +
+                    CASE WHEN p.RegDate IS NULL THEN 'Reg Date, ' ELSE '' END +
+                    CASE WHEN p.DateRxStarted IS NULL THEN 'Rx Start Date, ' ELSE '' END
                     )) AS MissingFields
                     {dqJoins}
                     WHERE p.Deleted=0 {facP}
@@ -2264,7 +2435,6 @@ public sealed class TBPatientsController : ControllerBase
                         OR p.NearestHFID IS NULL OR p.NearestHFID=0
                         OR p.RegDate IS NULL
                         OR p.DateRxStarted IS NULL
-                        OR p.DiagMethodID IS NULL OR p.DiagMethodID=0
                     )
                     ORDER BY p.RegDate DESC, p.PtName
                     """;

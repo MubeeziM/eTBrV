@@ -1,0 +1,51 @@
+# ==========================================
+# 🛑 .NET 8 / C# BUILD & COMPILE OUTPUTS
+# ==========================================
+bin/
+obj/
+_ReSharper*/
+[Bb]in/
+[Oo]bj/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ==========================================
+# 🛑 IDE, CACHE & SYSTEM JUNK
+# ==========================================
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# 🛑 PWA / WEB FRONTEND DEPENDENCIES & BUILD
+# ==========================================
+node_modules/
+bower_components/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.angular/
+.svelte-kit/
+
+# ==========================================
+# 🛑 ENVIRONMENT SECRETS & LOCAL LOGS
+# ==========================================
+appsettings.Development.json
+*.env
+*.env.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================
+# 🛑 GIT & PLATFORM SPECIFIC
+# ==========================================
+.git/
+.github/

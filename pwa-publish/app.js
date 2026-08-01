@@ -17,7 +17,7 @@
 // Production log silencing disabled — re-enabled for diagnostics.
 
 // ─── App version — stamped automatically at deploy time ──────────────────
-const APP_VERSION = 'v170720262122';
+const APP_VERSION = 'v010820261923';
 
 // ─── Auth-screen flash prevention ────────────────────────────────────────
 // If the user has a live (non-expired) session, hide the auth screen
@@ -4978,7 +4978,14 @@ function _umfBuildTree(items, preChecked) {
       const ccbs = [...sn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county > .rpt-tree-cb')];
       setParent(scb, ccbs);
     }
+    for (const cn of treeEl.querySelectorAll('.rpt-tree-country')) {
+      const ccb  = cn.querySelector(':scope > .rpt-tree-cb');
+      const scbs = [...cn.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state > .rpt-tree-cb')];
+      setParent(ccb, scbs);
+    }
   };
+
+  const chipsEl = document.getElementById('umf-sel-chips');
 
   const updateSummary = () => {
     if (!summaryEl) return;
@@ -4988,14 +4995,28 @@ function _umfBuildTree(items, preChecked) {
     if (n === 0) {
       summaryEl.textContent = 'No facilities selected \u2014 default scope will apply.';
       summaryEl.style.color = '#6b7280';
+      if (chipsEl) chipsEl.innerHTML = '';
     } else if (n === allFacCbs.length) {
       summaryEl.textContent = `All ${n} facilities selected.`;
       summaryEl.style.color = '#059669';
+      if (chipsEl) chipsEl.innerHTML = '';
     } else {
       summaryEl.textContent = `${n} of ${allFacCbs.length} facilit${n === 1 ? 'y' : 'ies'} selected.`;
       summaryEl.style.color = '#2563eb';
     }
+    // Render removable chips for individually-selected facilities
+    if (chipsEl && n > 0 && n < allFacCbs.length) {
+      const escape = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      chipsEl.innerHTML =
+        `<div class="rpt-summary-header">${n} facilit${n === 1 ? 'y' : 'ies'} selected:</div>` +
+        `<div class="rpt-summary-list">${checkedFacs.map(cb => {
+          const name = escape(cb.nextElementSibling?.textContent?.trim() ?? `Facility ${cb.dataset.id}`);
+          return `<span class="rpt-summary-chip">${name}<button class="rpt-summary-chip-close" data-facid="${cb.dataset.id}" aria-label="Deselect ${name}" title="Deselect">&times;</button></span>`;
+        }).join('')}</div>`;
+    }
   };
+
+  const countryChildren = mkEl('div', 'rpt-tree-children');
 
   for (const [stateId, stateData] of [...stateMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))) {
     const stateNode     = mkEl('div', 'rpt-tree-node rpt-tree-state');
@@ -5047,8 +5068,26 @@ function _umfBuildTree(items, preChecked) {
     stateToggle.addEventListener('click', () => toggleChildren(stateChildren, stateToggle));
 
     stateNode.append(stateToggle, stateCb, stateLabel, stateChildren);
-    treeEl.appendChild(stateNode);
+    countryChildren.appendChild(stateNode);
   }
+
+  // ── South Sudan root node (select-all / collapse-all) ─────────────────
+  const countryCb       = mkCb('country', 0);
+  const countryLabel    = mkEl('span', 'rpt-tree-label', 'South Sudan');
+  const countryToggle   = mkEl('span', 'rpt-tree-toggle open');
+  const countryNode     = mkEl('div', 'rpt-tree-node rpt-tree-country');
+  countryChildren.classList.add('open');
+  countryCb.addEventListener('change', () => {
+    countryChildren.querySelectorAll('.rpt-tree-cb').forEach(cb => {
+      cb.checked = countryCb.checked; cb.indeterminate = false;
+    });
+    countryCb.indeterminate = false;
+    updateSummary();
+  });
+  countryLabel.addEventListener('click', () => countryCb.click());
+  countryToggle.addEventListener('click', () => toggleChildren(countryChildren, countryToggle));
+  countryNode.append(countryToggle, countryCb, countryLabel, countryChildren);
+  treeEl.appendChild(countryNode);
 
   // Auto-expand states/counties that contain pre-checked facilities.
   if (preChecked.size > 0) {
@@ -5067,9 +5106,74 @@ function _umfBuildTree(items, preChecked) {
 
   refreshAncestors();
   updateSummary();
+
+  // Clear any previous search and apply filter
+  const umfSearchEl = document.getElementById('umf-tree-search');
+  if (umfSearchEl) { umfSearchEl.value = ''; }
 }
 
-// Save-button handler for the facility assignment modal.
+/**
+ * Filters the umf-tree, showing only facilities whose names match `term`.
+ * Ancestor nodes (county, state, country) are shown/hidden accordingly.
+ * @param {string} term
+ */
+function _umfFilterTree(term) {
+  const treeEl = document.getElementById('umf-tree');
+  if (!treeEl) return;
+  const q = term.trim().toLowerCase();
+  for (const facNode of treeEl.querySelectorAll('.rpt-tree-facility')) {
+    const label = facNode.querySelector('.rpt-tree-label')?.textContent?.toLowerCase() ?? '';
+    facNode.style.display = (!q || label.includes(q)) ? '' : 'none';
+  }
+  for (const countyNode of treeEl.querySelectorAll('.rpt-tree-county')) {
+    const vis = [...countyNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-facility')]
+      .some(n => n.style.display !== 'none');
+    countyNode.style.display = vis ? '' : 'none';
+    if (q && vis) {
+      const ch  = countyNode.querySelector(':scope > .rpt-tree-children');
+      const tog = countyNode.querySelector(':scope > .rpt-tree-toggle');
+      if (ch && !ch.classList.contains('open')) { ch.classList.add('open'); tog?.classList.add('open'); }
+    }
+  }
+  for (const stateNode of treeEl.querySelectorAll('.rpt-tree-state')) {
+    const vis = [...stateNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-county')]
+      .some(n => n.style.display !== 'none');
+    stateNode.style.display = vis ? '' : 'none';
+    if (q && vis) {
+      const ch  = stateNode.querySelector(':scope > .rpt-tree-children');
+      const tog = stateNode.querySelector(':scope > .rpt-tree-toggle');
+      if (ch && !ch.classList.contains('open')) { ch.classList.add('open'); tog?.classList.add('open'); }
+    }
+  }
+  for (const countryNode of treeEl.querySelectorAll('.rpt-tree-country')) {
+    const vis = [...countryNode.querySelectorAll(':scope > .rpt-tree-children > .rpt-tree-state')]
+      .some(n => n.style.display !== 'none');
+    countryNode.style.display = vis ? '' : 'none';
+  }
+}
+
+// Wire up the search box and modal-close reset for facility assignment modal.
+document.getElementById('umf-tree-search')?.addEventListener('input', e => {
+  _umfFilterTree(e.target.value);
+});
+document.getElementById('usermgmt-facilities-modal')?.addEventListener('hidden.bs.modal', () => {
+  const s = document.getElementById('umf-tree-search');
+  if (s) { s.value = ''; _umfFilterTree(''); }
+  const chips = document.getElementById('umf-sel-chips');
+  if (chips) chips.innerHTML = '';
+});
+
+// Delegated click: × on a chip unchecks that facility in the tree and refreshes
+document.getElementById('umf-sel-chips')?.addEventListener('click', e => {
+  const btn = e.target.closest('.rpt-summary-chip-close');
+  if (!btn) return;
+  const treeEl = document.getElementById('umf-tree');
+  const cb = treeEl?.querySelector(`.rpt-tree-cb[data-level="facility"][data-id="${btn.dataset.facid}"]`);
+  if (cb) {
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+});
 document.getElementById('umf-save-btn')?.addEventListener('click', async () => {
   const treeEl  = document.getElementById('umf-tree');
   const saveBtn = document.getElementById('umf-save-btn');
@@ -10163,7 +10267,7 @@ async function _monLoadNextPage(cat) {
       _monFacilityIDs.forEach(id => qs.append('facilityIds', id));
       const resp = await fetch(`${API_BASE}/tb-patients/monitor-patients?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(60000),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const pd = await resp.json();
@@ -12463,8 +12567,17 @@ function resolveGeoScope(user, geo) {
     cfYearSel.value    = String(_prevQYear);
   })();
 
+  // Determines the default Data Source option based on the logged-in user:
+  //   - DataSourceID > 0  → facility-linked data entrant → "This Computer"
+  //   - Anything else (0, null, super/national users) → "eTBr Server" (current default)
+  function defaultDataSourceValue() {
+    const u = getUser();
+    return (u && u.dataSourceID > 0) ? 'this-computer' : 'etbr-server';
+  }
+
   // Pre-select: HIV programme → ART Monthly, previous month
   const prevMonth = new Date(); prevMonth.setDate(1); prevMonth.setMonth(prevMonth.getMonth() - 1);
+  if (dataSourceSel) dataSourceSel.value = defaultDataSourceValue();
   programmeSel.value = 'art';
   populateSubTypes();
   subTypeSel.value = 'art-monthly';
@@ -12493,11 +12606,13 @@ function resolveGeoScope(user, geo) {
       populateSubTypes();
     } else {
       // "Generate Reports" card or any other trigger → reset to defaults
-      if (dataSourceSel) dataSourceSel.value = 'etbr-server';
+      // (default Data Source depends on the logged-in user's DataSourceID)
+      if (dataSourceSel) dataSourceSel.value = defaultDataSourceValue();
       programmeSel.value = 'art';
       populateSubTypes();
       subTypeSel.value = 'art-monthly';
     }
+
 
     applySubType();  // re-apply so state is consistent on each open
     const user = getUser();
@@ -13205,7 +13320,7 @@ function resolveGeoScope(user, geo) {
    * @param {{ startDate:string, endDate:string }} toRange  Treatment-outcomes (TO) period
    * @param {number} cfYear  Year of the CF period
    */
-  async function _runPreReportDQCheck(facilityIds, cfRange, toRange, cfYear) {
+  async function _runPreReportDQCheck(facilityIds, cfRange, toRange, cfYear, forceLocal = false) {
     return new Promise(resolve => {
       const modalEl       = document.getElementById('pre-report-dq-modal');
       const proceedBtn    = document.getElementById('pre-dq-proceed-btn');
@@ -13358,6 +13473,7 @@ function resolveGeoScope(user, geo) {
       // On any network failure (TypeError / AbortError) we immediately update
       // _reallyOnline and the nav-bar badge, then fall through to local SQLite.
       async function _serverDQ(path, extra) {
+        if (forceLocal) return null;               // "This Computer" selected — never hit the server
         if (!_reallyOnline) return null;          // already known offline — skip immediately
         const token = (typeof getToken === 'function') ? getToken() : null;
         if (!token) return null;
@@ -13891,6 +14007,7 @@ function resolveGeoScope(user, geo) {
       let buf = '';
       let downloadToken    = null;
       let downloadFilename = null;
+      let noDataFlag       = false;
 
       streamLoop: while (true) {
         const { done, value } = await reader.read();
@@ -13917,6 +14034,7 @@ function resolveGeoScope(user, geo) {
           if (evt.done) {
             downloadToken    = evt.token;
             downloadFilename = evt.filename;
+            noDataFlag       = evt.noData === true;
             setProgress(evt.total ?? 1, evt.total ?? 1, 'Finalising…');
             break streamLoop;
           }
@@ -13931,6 +14049,21 @@ function resolveGeoScope(user, geo) {
         setStatus('Report generation incomplete. Please try again.', 'danger');
         clearProgress();
         return;
+      }
+
+      // ── No-data check ───────────────────────────────────────────────
+      if (noDataFlag) {
+        const proceed = await showGenericConfirmModal(
+          'No Data Found',
+          'The eTBr server did not find any data for the selected period and facility.\n\n' +
+          'The report will contain zeros. Would you like to open it anyway?',
+          'Open Report'
+        );
+        if (!proceed) {
+          setStatus('Report cancelled — no data found for the selected period.', 'warning');
+          clearProgress();
+          return;
+        }
       }
 
       setStatus('Downloading report…', 'info');
@@ -14265,6 +14398,24 @@ function resolveGeoScope(user, geo) {
       showToast(_noFacMsg, 'error');
       return;
     }
+
+// ── Pre-report data quality check ───────────────────────────────────────
+    {
+      // Subtract exactly one year by decrementing the year digit — timezone-safe.
+      // Quarters always start on the 1st and end on the last day of a month,
+      // so decrementing the year is always correct (no leap-year edge cases).
+      const _cfYear    = parseInt(cfRange.startDate.slice(0, 4), 10);
+      const _cfEndYear = parseInt(cfRange.endDate.slice(0, 4), 10);
+      const _toRange   = {
+        startDate: `${_cfYear    - 1}-${cfRange.startDate.slice(5)}`,
+        endDate:   `${_cfEndYear - 1}-${cfRange.endDate.slice(5)}`,
+      };
+      const _ok = await _runPreReportDQCheck(facilityIds, cfRange, _toRange, _cfYear);
+      if (!_ok) { generateBtn.disabled = false; return; }
+    }
+    // ── End pre-report DQ check ─────────────────────────────────────────────
+
+
 
     const sseUrl = `${API_BASE}/reports/tb-lfa-progress`;
     setStatus('Generating DS-TB LFA Verification Report\u2026', 'info');
@@ -14888,7 +15039,7 @@ function resolveGeoScope(user, geo) {
         startDate: `${_cfYear    - 1}-${cfRange.startDate.slice(5)}`,
         endDate:   `${_cfEndYear - 1}-${cfRange.endDate.slice(5)}`,
       };
-      const _ok = await _runPreReportDQCheck(facilityIds, cfRange, _toRange, _cfYear);
+      const _ok = await _runPreReportDQCheck(facilityIds, cfRange, _toRange, _cfYear, true);
       if (!_ok) return;
     }
     // ── End pre-report DQ check ─────────────────────────────────────────────
@@ -14999,6 +15150,9 @@ function resolveGeoScope(user, geo) {
         age < 5  ? 0 : age < 10 ? 1 : age < 15 ? 2 : age < 20 ? 3 : age < 25 ? 4 :
         age < 35 ? 5 : age < 45 ? 6 : age < 55 ? 7 : age < 65 ? 8 : 9;
 
+      // ── Row counts for no-data detection ─────────────────────────────
+      let cfRowCount = 0, scRowCount = 0, toRowCount = 0;
+
       // ── Case Finding counters ─────────────────────────────────────────
       let cfPBCNew = 0, cfPBCRelapse = 0, cfPBCPrevTreat = 0, cfPBCOther = 0;
       let cfPCDNew = 0, cfPCDRelapse = 0, cfPCDPrevTreat = 0, cfPCDOther = 0;
@@ -15028,6 +15182,7 @@ function resolveGeoScope(user, geo) {
             AND pd.RegDate BETWEEN ? AND ?
             ${geoClausePt}`;
         const cfRows = execSql(cfSql, [cfStart, cfEnd, ...facilityIds]);
+        cfRowCount = cfRows.length;
         for (const r of cfRows) {
           const ptType   = r.PtTypeID   || 0;
           const tbType   = r.TbTypeID   || 0;
@@ -15104,6 +15259,7 @@ function resolveGeoScope(user, geo) {
             AND pd.RegDate BETWEEN ? AND ?
             ${geoClausePt}`;
         const scRows = execSql(scSql, [scStart, scEnd, ...facilityIds]);
+        scRowCount = scRows.length;
         for (const r of scRows) {
           const ptType = r.PtTypeID || 0;
           const tbType = r.TbTypeID || 0;
@@ -15176,6 +15332,7 @@ function resolveGeoScope(user, geo) {
             AND pd.RegDate BETWEEN ? AND ?
             ${geoClausePt}`;
         const toRows = execSql(toSql, [toStart, toEnd, ...facilityIds]);
+        toRowCount = toRows.length;
         for (const r of toRows) {
           const ptType  = r.PtTypeID || 0;
           const tbType  = r.TbTypeID || 0;
@@ -15296,6 +15453,23 @@ function resolveGeoScope(user, geo) {
             ${geoClausePc}`;
         const pcRows = execSql(presumptiveSql, [cfStart, cfEnd, ...facilityIds]);
         cfSuspectsSeen = pcRows.length ? (pcRows[0].Total || 0) : 0;
+      }
+
+      // ── No-data check ─────────────────────────────────────────────────
+      // If ALL four queries returned no data, warn the user before opening
+      // a report that will contain only zeros.
+      if (cfRowCount === 0 && scRowCount === 0 && toRowCount === 0 && cfSuspectsSeen === 0) {
+        const proceed = await showGenericConfirmModal(
+          'No Data Found',
+          'The eTBr did not find any data for the selected period and facility.\n\n' +
+          'The report will contain zeros. Would you like to open it anyway?',
+          'Open Report'
+        );
+        if (!proceed) {
+          setStatus('Report cancelled — no data found for the selected period.', 'warning');
+          clearProgress();
+          return;
+        }
       }
 
       // ── Load and fill Excel template ──────────────────────────────────

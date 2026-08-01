@@ -644,6 +644,43 @@ public sealed class PatientsController : ControllerBase
         if (limit < 0)    limit = 0;
         if (limit > 5000) limit = 5000; // sanity cap
 
+        // ── Resolve effective facility scope ─────────────────────────────────
+        // Priority: supervisor-assigned facilities (UserFacilitiesT) →
+        //           JWT facility_id (DataSourceID) →
+        //           EnteredByID fallback.
+        var facilityStr = User.FindFirstValue("facility_id") ?? "0";
+        int.TryParse(facilityStr, out var jwtFacilityId);
+        var facExplicit = new List<int>();
+        try
+        {
+            await using var authConn = new SqlConnection(_connectionString);
+            await authConn.OpenAsync();
+            await using var assignCmd = new SqlCommand(
+                "SELECT HealthFacilityID FROM UserFacilitiesT WHERE UserTID = @UserTID", authConn);
+            assignCmd.CommandTimeout = 5;
+            assignCmd.Parameters.AddWithValue("@UserTID", userTIDStr);
+            await using var ar = await assignCmd.ExecuteReaderAsync();
+            while (await ar.ReadAsync()) facExplicit.Add(ar.GetInt32(0));
+        }
+        catch { /* fall back to JWT facility_id / EnteredByID */ }
+
+        int[] effectiveFacIds = facExplicit.Count > 0 ? [.. facExplicit]
+                              : jwtFacilityId > 0    ? [jwtFacilityId]
+                              :                         [];
+        bool useFacScope = effectiveFacIds.Length > 0;
+
+        string facInPart = string.Empty;
+        string facInSql  = string.Empty;
+        var    facParams = new List<(string Name, int Value)>();
+        if (useFacScope)
+        {
+            var pnames  = effectiveFacIds.Select((_, i) => $"@FacId{i}").ToArray();
+            facInPart   = $"NearestHFID IN ({string.Join(", ", pnames)})";
+            facInSql    = $"AND {facInPart}";
+            for (int i = 0; i < effectiveFacIds.Length; i++)
+                facParams.Add(($"@FacId{i}", effectiveFacIds[i]));
+        }
+
         bool isDelta    = since.HasValue;
 
         try
@@ -654,6 +691,11 @@ public sealed class PatientsController : ControllerBase
             // â”€â”€ Patients â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var topClause   = (!isDelta && limit > 0) ? $"TOP ({limit})" : "";
             var sinceClause = isDelta ? "AND LastModOn > @Since" : "";
+
+            string patWhereClause = useFacScope
+                ? $"WHERE 1=1 {facInSql} {sinceClause}"
+                : $"WHERE EnteredByID = @EnteredByID {sinceClause}";
+
             var patSql = $"""
                 SELECT {topClause}
                     CAST(PtDetailsTID AS nvarchar(36))  AS PtDetailsTID,
@@ -679,13 +721,15 @@ public sealed class PatientsController : ControllerBase
                     BreastfeedingID, IsTransferIn, TransferFromFacility,
                     GuardianName, GuardianPhone1
                 FROM PtDetailsARTT
-                WHERE EnteredByID = @EnteredByID
-                {sinceClause}
+                {patWhereClause}
                 ORDER BY LastModOn DESC
                 """;
 
             await using var patCmd = new SqlCommand(patSql, conn);
-            patCmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
+            if (useFacScope)
+                foreach (var (name, val) in facParams) patCmd.Parameters.AddWithValue(name, val);
+            else
+                patCmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
             if (isDelta) patCmd.Parameters.AddWithValue("@Since", since!.Value);
 
             var patients = new List<Dictionary<string, object?>>();
@@ -724,10 +768,31 @@ public sealed class PatientsController : ControllerBase
 
             if (isDelta)
             {
+                // Facility-scoped delta: scope child records via NearestHFID subquery.
+                // Fallback: original EnteredByID + Since filter.
+                string deltaChildWhere = useFacScope
+                    ? $"""
+                      WHERE LastModOn > @Since
+                        AND CAST(PtDetailsTID AS nvarchar(36)) IN (
+                            SELECT CAST(PtDetailsTID AS nvarchar(36))
+                            FROM PtDetailsARTT
+                            WHERE {facInPart}
+                        )
+                      """
+                    : "WHERE EnteredByID = @EnteredByID AND LastModOn > @Since";
+
                 async Task<List<Dictionary<string, object?>>> ReadDeltaChild(string sql)
                 {
+                    // Substitute the WHERE clause when using facility scope.
+                    if (useFacScope)
+                        sql = sql.Replace(
+                            "WHERE EnteredByID = @EnteredByID AND LastModOn > @Since",
+                            deltaChildWhere, StringComparison.Ordinal);
                     await using var cmd = new SqlCommand(sql, conn);
-                    cmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
+                    if (useFacScope)
+                        foreach (var (name, val) in facParams) cmd.Parameters.AddWithValue(name, val);
+                    else
+                        cmd.Parameters.AddWithValue("@EnteredByID", enteredByID);
                     cmd.Parameters.AddWithValue("@Since", since!.Value);
                     var rows = new List<Dictionary<string, object?>>();
                     await using var rdr = await cmd.ExecuteReaderAsync();
