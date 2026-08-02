@@ -1251,9 +1251,9 @@ public sealed class PatientsController : ControllerBase
                 geoWhere = "1=1"; // National MoH — no additional geo filter
             }
 
-            async Task<List<object>> QueryTable(string tableName, string patientNoCol, string phoneCol)
+            async Task<List<object>> QueryTable(string tableName, string patientNoCol, string phoneCol, string enrolledDateExpr)
             {
-                // SECURITY: tableName/patientNoCol/phoneCol are only ever passed
+                // SECURITY: tableName/patientNoCol/phoneCol/enrolledDateExpr are only ever passed
                 // as hardcoded literals from the two call-sites below.
                 var sql = $"""
                     SELECT TOP 200
@@ -1265,7 +1265,8 @@ public sealed class PatientsController : ControllerBase
                         COALESCE(s.Sex, '')                   AS Sex,
                         COALESCE(p.{phoneCol}, '')            AS Phone,
                         COALESCE(hf.HealthFacility, '')       AS HealthFacility,
-                        COALESCE(p.NearestHFID, 0)            AS NearestHFID
+                        COALESCE(p.NearestHFID, 0)            AS NearestHFID,
+                        {enrolledDateExpr}                    AS EnrolledDate
                     FROM   {tableName} p
                     JOIN   HealthFacilityT hf ON hf.HealthFacilityID = p.NearestHFID
                     LEFT JOIN SexT         s  ON s.SexID = p.SexID
@@ -1273,7 +1274,7 @@ public sealed class PatientsController : ControllerBase
                       AND  ({geoWhere})
                       AND  (p.PtName LIKE @Q OR p.{patientNoCol} LIKE @Q
                             OR p.{phoneCol} LIKE @Q OR hf.HealthFacility LIKE @Q)
-                    ORDER BY p.PtName ASC
+                    ORDER BY {enrolledDateExpr} DESC
                     """;
 
                 await using var cmd = conn.CreateCommand();
@@ -1297,14 +1298,15 @@ public sealed class PatientsController : ControllerBase
                         phone          = rdr.GetString(6),
                         healthFacility = rdr.GetString(7),
                         nearestHFID    = rdr.GetInt32(8),
+                        enrolledDate   = rdr.IsDBNull(9)  ? (string?)null : rdr.GetDateTime(9).ToString("yyyy-MM-dd"),
                     });
                 }
                 return rows;
             }
 
             var results = new List<object>();
-            if (searchArt) results.AddRange(await QueryTable("PtDetailsARTT", "ARTNo",    "Phone1"));
-            if (searchTb)  results.AddRange(await QueryTable("PtDetailsT",    "UnitTBNo", "PtPhone"));
+            if (searchArt) results.AddRange(await QueryTable("PtDetailsARTT", "ARTNo",    "Phone1",  "COALESCE(p.DateEnrolledInCare, p.ARTStartDate)"));
+            if (searchTb)  results.AddRange(await QueryTable("PtDetailsT",    "UnitTBNo", "PtPhone", "COALESCE(p.RegDate, p.DateRxStarted)"));
 
             return Ok(results);
         }

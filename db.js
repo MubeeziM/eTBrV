@@ -2840,7 +2840,8 @@ function searchAllPatients(term = '', register = null) {
                COALESCE(s.Sex,'') AS Sex,
                COALESCE(p.Phone1,'') AS Phone,
                COALESCE(hf.HealthFacility,'') AS HealthFacility,
-               p.NearestHFID
+               p.NearestHFID,
+               COALESCE(p.DateEnrolledInCare, p.ARTStartDate) AS EnrolledDate
         FROM   PtDetailsARTT p
         LEFT JOIN SexT            s  ON p.SexID        = s.SexID
         LEFT JOIN HealthFacilityT hf ON p.NearestHFID  = hf.HealthFacilityID
@@ -2848,7 +2849,7 @@ function searchAllPatients(term = '', register = null) {
           AND (p.PtName LIKE ? OR p.ARTNo LIKE ?
                OR COALESCE(p.Phone1,'') LIKE ? OR COALESCE(p.Phone2,'') LIKE ?
                OR COALESCE(hf.HealthFacility,'') LIKE ?)
-        ORDER BY p.PtName ASC`,
+        ORDER BY COALESCE(p.DateEnrolledInCare, p.ARTStartDate) DESC`,
         [like, like, like, like, like]);
       if (r.length) {
         const { columns, values } = r[0];
@@ -2868,7 +2869,8 @@ function searchAllPatients(term = '', register = null) {
                COALESCE(s.Sex,'') AS Sex,
                COALESCE(p.PtPhone,'') AS Phone,
                COALESCE(hf.HealthFacility,'') AS HealthFacility,
-               p.NearestHFID
+               p.NearestHFID,
+               COALESCE(p.RegDate, p.DateRxStarted) AS EnrolledDate
         FROM   PtDetailsT p
         LEFT JOIN SexT            s  ON p.SexID        = s.SexID
         LEFT JOIN HealthFacilityT hf ON p.NearestHFID  = hf.HealthFacilityID
@@ -2876,7 +2878,7 @@ function searchAllPatients(term = '', register = null) {
           AND (p.PtName LIKE ? OR p.UnitTBNo LIKE ?
                OR COALESCE(p.PtPhone,'') LIKE ?
                OR COALESCE(hf.HealthFacility,'') LIKE ?)
-        ORDER BY p.PtName ASC`,
+        ORDER BY COALESCE(p.RegDate, p.DateRxStarted) DESC`,
         [like, like, like, like]);
       if (r.length) {
         const { columns, values } = r[0];
@@ -2885,8 +2887,13 @@ function searchAllPatients(term = '', register = null) {
     } catch (e) { console.error('[DB] searchAllPatients TB:', e.message); }
   }
 
-  // Sort interleaved results by name
-  rows.sort((a, b) => (a.PtName || '').localeCompare(b.PtName || ''));
+  // Sort interleaved results by EnrolledDate DESC (nulls last)
+  rows.sort((a, b) => {
+    if (!a.EnrolledDate && !b.EnrolledDate) return 0;
+    if (!a.EnrolledDate) return 1;
+    if (!b.EnrolledDate) return -1;
+    return b.EnrolledDate.localeCompare(a.EnrolledDate);
+  });
   return rows;
 }
 
@@ -3104,9 +3111,11 @@ async function markTBRecordsSynced(ptDetailsTIDs) {
 /** Returns every PresumptiveCaseT row that has local unsaved changes (HasChanged=1). */
 function getAllPresumptiveCasesForSyncAll() {
   const r = _db.exec('SELECT * FROM PresumptiveCaseT WHERE HasChanged = 1 ORDER BY YearID, MonthID');
-  if (!r.length) return [];
+  if (!r.length) { console.log('[PC] getAllPresumptiveCasesForSyncAll: 0 pending records (HasChanged=1 not found)'); return []; }
   const { columns, values } = r[0];
-  return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+  const rows = values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+  console.log(`[PC] getAllPresumptiveCasesForSyncAll: ${rows.length} pending record(s)`, rows.map(r => ({ TID: r.PresumptiveCaseTID, HF: r.NearestHFID, Month: r.MonthID, Year: r.YearID, Count: r.PresumptiveCase, HasChanged: r.HasChanged })));
+  return rows;
 }
 
 /** Marks a set of PresumptiveCaseTIDs as synced (HasChanged = 0). */

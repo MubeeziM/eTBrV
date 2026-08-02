@@ -11693,6 +11693,7 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
     Phone:          r.phone,
     HealthFacility: r.healthFacility,
     NearestHFID:    r.nearestHFID,
+    EnrolledDate:   r.enrolledDate ?? null,
   });
 
   // Calls GET /api/patients/search and returns normalised results, or null on failure.
@@ -11776,8 +11777,9 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
                   data-fromsrv="${fromServer}"
                   role="button" tabindex="0" style="cursor:pointer">
         <td>${regBadge}</td>
-        <td>${escHtml(_xlTitleCase(p.PtName) || '—')}</td>
+        <td>${p.EnrolledDate ? fmtDate(p.EnrolledDate.slice(0, 10)) : '—'}</td>
         <td>${escHtml(p.PatientNo || '—')}</td>
+        <td>${escHtml(_xlTitleCase(p.PtName) || '—')}</td>
         <td>${p.Age != null ? p.Age : '—'}</td>
         <td>${sex}</td>
         <td>${escHtml(p.Phone || '—')}</td>
@@ -12098,6 +12100,7 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
         Phone:         p.Phone1,
         HealthFacility: p.HealthFacility,
         NearestHFID:   p.NearestHFID,
+        EnrolledDate:  p.DateEnrolledInCare || p.ARTStartDate || null,
       })),
       ...tbRows.map(p => ({
         Register:      'TB',
@@ -12109,6 +12112,7 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
         Phone:         p.PtPhone,
         HealthFacility: p.HealthFacility,
         NearestHFID:   p.NearestHFID,
+        EnrolledDate:  p.RegDate || p.DateRxStarted || null,
       })),
     ];
 
@@ -12143,8 +12147,9 @@ async function _fetchAndUpsertTBPatientIfNeeded(tid) {
                   data-canwrite="${canWrite}"
                   role="button" tabindex="0" style="cursor:pointer">
         <td>${regBadge}</td>
-        <td>${escHtml(_xlTitleCase(p.PtName) || '—')}</td>
+        <td>${p.EnrolledDate ? fmtDate(p.EnrolledDate.slice(0, 10)) : '—'}</td>
         <td>${escHtml(p.PatientNo || '—')}</td>
+        <td>${escHtml(_xlTitleCase(p.PtName) || '—')}</td>
         <td>${p.Age != null ? p.Age : '—'}</td>
         <td>${sex}</td>
         <td>${escHtml(p.Phone || '—')}</td>
