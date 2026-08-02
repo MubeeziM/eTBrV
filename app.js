@@ -1632,6 +1632,9 @@ function startViewTBPatient(ptDetailsTID) {
   if (editBanner) editBanner.hidden = true;
   const noAccessBanner = document.getElementById('tb-no-access-banner');
   if (noAccessBanner) noAccessBanner.hidden = false;
+  // Re-anchor scroll to top — DOM changes above (disabling fields, swapping
+  // banners) can trigger focus/layout shifts that move the viewport.
+  window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 /** Soft-delete a TB patient record. */
@@ -1937,9 +1940,19 @@ async function triggerTBSync(silent = false, background = false, caller = 'unkno
           } else {
             const pcErrBody = await pcRes.text().catch(() => '(unreadable)');
             logSync('WARN', `[PC] Presumptive sync returned ${pcRes.status} — will retry on next sync.`, { body: pcErrBody });
+            if (!background) showToast(
+              silent ? `Presumptive TB cases could not be synced (${pcRes.status}). Tap "Sync Data" to retry.`
+                     : `Presumptive TB cases sync failed (${pcRes.status}). Please try again.`,
+              'error'
+            );
           }
         } catch (pcErr) {
           logSync('WARN', `[PC] Presumptive upload exception: ${pcErr.message}`);
+          if (!background) showToast(
+            silent ? 'Presumptive TB cases could not be synced. Tap "Sync Data" to retry.'
+                   : 'Could not sync presumptive TB cases. Please check your connection and try again.',
+            'error'
+          );
         }
       }
 
@@ -13721,7 +13734,8 @@ function resolveGeoScope(user, geo) {
               (rows.length > 250 ? `<tr><td colspan="7" class="text-center text-muted fst-italic py-1">… and ${rows.length - 250} more</td></tr>` : '');
 
             // Row click — open the patient's record; back button restores this modal
-            if (typeof startEditTBPatient === 'function' && typeof userCanWrite === 'function' && userCanWrite()) {
+            if (typeof startEditTBPatient === 'function') {
+              const _canWrite = typeof userCanWrite === 'function' && userCanWrite();
               detailTbody.querySelectorAll('tr[data-tid]').forEach(tr => {
                 tr.addEventListener('click', () => {
                   const tid    = tr.dataset.tid;
@@ -13736,6 +13750,7 @@ function resolveGeoScope(user, geo) {
                   // read by the back-button handler to restore this modal.
                   _hideModal();
                   _preReportDQReshowFn = () => {
+                    if (dashboardScreen) dashboardScreen.hidden = false;
                     _showModal();
                     if (savedCat) setTimeout(() => _showDetail(savedCat), 80);
                   };
@@ -13751,6 +13766,7 @@ function resolveGeoScope(user, geo) {
                       countyId: facInfo ? (facInfo.CountyID || 0)  : 0,
                       stateId:  facInfo ? (facInfo.StateID  || 0)  : 0
                     });
+                    if (dashboardScreen) dashboardScreen.hidden = true;
                     if (artRegisterScreen) artRegisterScreen.hidden = false;
                     _selectedRegister = 'tb';
                     updateFacilityBanner();
@@ -13766,9 +13782,10 @@ function resolveGeoScope(user, geo) {
                       bottomBackBtn.innerHTML =
                         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Back to DQ Check`;
                     }
-                    _pendingDQCategory = savedCat;
+                    if (_canWrite) _pendingDQCategory = savedCat;
                     await _fetchAndUpsertTBPatientIfNeeded(tid);
-                    startEditTBPatient(tid);
+                    if (_canWrite) startEditTBPatient(tid);
+                    else startViewTBPatient(tid);
                   };
 
                   // If the report modal is still open, dismiss it first
@@ -17554,6 +17571,7 @@ function _pcAttachListeners() {
 
     if (saveBtn) saveBtn.disabled = true;
     spinner?.classList.remove('d-none');
+    console.log('[PC] Saving presumptive case — facId:', facId, 'monthId:', monthId, 'yearId:', yearId, 'count:', count);
     try {
       await upsertPresumptiveCase({
         PresumptiveCase: count,
@@ -17566,6 +17584,7 @@ function _pcAttachListeners() {
         SubRecID:        user?.subRecID     || 0,
         EnteredByID:     user?.userTID      || '',
       });
+      console.log('[PC] upsertPresumptiveCase completed — triggering TB sync. Online:', navigator.onLine);
 
       const monthName = monSel?.selectedOptions?.[0]?.textContent || `Month ${monthId}`;
       const facName   = _selectedFacility?.name || `Facility #${facId}`;
@@ -17577,6 +17596,7 @@ function _pcAttachListeners() {
       if (inp) inp.value = '';
       _pcRefreshSummary(facId);
       if (navigator.onLine) triggerTBSync(true, false, 'pc-save');
+      else console.warn('[PC] Skipping auto-sync — device is offline');
 
       await insertAuditLog({
         action:   'UPSERT_PRESUMPTIVE',
