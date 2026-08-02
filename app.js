@@ -330,7 +330,7 @@ let _reallyOnline = navigator.onLine;
 async function _pingConnectivity() {
   try {
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 3000);
+    const tid  = setTimeout(() => ctrl.abort(), 5000);
     // Any HTTP response means the network is reachable.
     // Only a TypeError (network error) means we're truly offline.
     await fetch(`${API_BASE}/auth/health`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
@@ -354,12 +354,17 @@ function updateConnectionStatus() {
 
 // Native events work in Chrome/Opera — use them for instant feedback there.
 window.addEventListener('online',  () => {
-  _reallyOnline = true;
-  updateConnectionStatus();
-  // Rebuild facility trees if either screen is open (they may have shown the
-  // "Offline — Retry" placeholder while connectivity was down).
-  if (typeof tbMonitoringScreen !== 'undefined' && tbMonitoringScreen && !tbMonitoringScreen.hidden) _monBuildTree();
-  if (typeof tbQualityScreen    !== 'undefined' && tbQualityScreen    && !tbQualityScreen.hidden)    _dqBuildTree();
+  // The browser 'online' event is unreliable — it only reflects the OS network
+  // adapter state, not actual internet reachability.  Verify with a real probe
+  // before trusting it.  The async ping updates _reallyOnline and the nav-bar
+  // badge automatically when it resolves.
+  _pingConnectivity().then(() => {
+    // Rebuild facility trees if either screen is open and we're now confirmed online.
+    if (_reallyOnline) {
+      if (typeof tbMonitoringScreen !== 'undefined' && tbMonitoringScreen && !tbMonitoringScreen.hidden) _monBuildTree();
+      if (typeof tbQualityScreen    !== 'undefined' && tbQualityScreen    && !tbQualityScreen.hidden)    _dqBuildTree();
+    }
+  });
 });
 window.addEventListener('offline', () => {
   _reallyOnline = false;
@@ -368,7 +373,7 @@ window.addEventListener('offline', () => {
   if (!authScreen.hidden) showAuthScreen();
 });
 _pingConnectivity();   // set initial state with a real check
-setInterval(_pingConnectivity, 15_000);  // poll every 15 s (catches Firefox WiFi drops)
+setInterval(_pingConnectivity, 5_000);   // poll every 5 s — keeps badge fresh; a stale 15 s flag was the root cause of false "Offline" on Generate
 
 // Stamp the version badge
 const versionEl = document.getElementById('app-version');
@@ -4473,8 +4478,13 @@ function applyReadOnlyMode() {
   if (tbSyncBtnEl) tbSyncBtnEl.disabled = true;
 
   // ── Presumptive TB Cases ──────────────────────────────────────────────────
-  // Disable all entry controls
-  ['pc-year-sel', 'pc-month-sel', 'pc-count', 'pc-save-btn', 'pc-clear-btn'].forEach(id => {
+  // Show the view-only banner
+  const pcBanner = document.getElementById('pc-no-access-banner');
+  if (pcBanner) pcBanner.hidden = false;
+
+  // Year and Month selects stay ENABLED so the user can navigate to any period
+  // and read historical data.  Only the count input and action buttons are locked.
+  ['pc-count', 'pc-save-btn', 'pc-clear-btn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
   });
@@ -8679,6 +8689,12 @@ async function selectFacility(fac) {
       _setSidebarCollapsed(true);
       _sidebarAutoCollapsed = true;
     }
+
+    // If the Presumptive TB Cases register is currently shown, refresh its
+    // summary table and count prefill for the newly selected facility.
+    if (_selectedRegister === 'presumptive') {
+      initPresumptiveForm(fac.id);
+    }
   }
 
   if (_editingTID) {
@@ -12364,6 +12380,7 @@ function resolveGeoScope(user, geo) {
     if (cb && !cb.disabled) { cb.checked = false; refreshAncestors(); updateSummary(); }
   });
   const statusEl      = document.getElementById('rpt-status');
+  let _statusClearTimer = null;  // must be declared before setStatus is first called
   const generateBtn      = document.getElementById('rpt-generate-btn');
   const dhis2PrepareBtn  = document.getElementById('rpt-dhis2-prepare-btn');
   const progressWrap     = document.getElementById('rpt-progress-wrap');
@@ -12959,13 +12976,21 @@ function resolveGeoScope(user, geo) {
 
   // ── Status helper ────────────────────────────────────────────────────
   function setStatus(msg, type) {
-    if (!msg) { statusEl.style.display = 'none'; statusEl.classList.remove('rpt-status-anim'); return; }
+    if (_statusClearTimer) { clearTimeout(_statusClearTimer); _statusClearTimer = null; }
+    if (!msg) {
+      statusEl.style.display = 'none';
+      statusEl.classList.remove('rpt-status-anim');
+      return;
+    }
     if (type === 'success') {
       statusEl.className          = 'alert';   // reset (no rpt-status-anim yet)
       statusEl.style.background   = '#1b5e42';
       statusEl.style.color        = '#fff';
       statusEl.style.fontWeight   = 'normal';
       statusEl.style.border       = 'none';
+      // Auto-clear the success banner after 5 s so it never lingers into the
+      // next report run.
+      _statusClearTimer = setTimeout(() => setStatus(''), 5000);
     } else {
       statusEl.className          = `alert alert-${type || 'info'}`;
       statusEl.style.background   = '';
@@ -12978,6 +13003,15 @@ function resolveGeoScope(user, geo) {
     void statusEl.offsetWidth;             // force reflow so animation restarts
     statusEl.classList.add('rpt-status-anim');
   }
+
+  // Clear any status message (success, error or warning) whenever the user
+  // changes a report parameter — the previous message no longer applies once
+  // the inputs have changed.
+  function _clearStatusOnChange() { if (statusEl.style.display !== 'none') setStatus(''); }
+  [dataSourceSel, programmeSel, subTypeSel, periodTypeSel, periodSel, yearSel, cfQuarterSel, cfYearSel]
+    .forEach(el => { if (el) el.addEventListener('change', _clearStatusOnChange); });
+  // Facility tree uses dynamically-created checkboxes — delegate on the wrapper.
+  if (treeEl) treeEl.addEventListener('change', _clearStatusOnChange);
 
   // ── Progress bar helpers ─────────────────────────────────────────────
   function setProgress(step, total, label) {
@@ -13038,6 +13072,16 @@ function resolveGeoScope(user, geo) {
   generateBtn.addEventListener('click', async () => {
     const src = dataSourceSel ? dataSourceSel.value : 'etbr-server';
 
+    // ── Fresh connectivity check for any server-sourced report ───────────────
+    // The background poll runs every 15 s, so _reallyOnline can be up to 15 s
+    // stale by the time the user clicks Generate.  Always do a real network
+    // probe here so the decision is based on the connection state RIGHT NOW,
+    // not on what it was during the last background tick.
+    if (src !== 'this-computer') {
+      setStatus('Checking server connection…', 'info');
+      await _pingConnectivity();
+    }
+
     // ── 'This Computer': always use local SQLite, regardless of connectivity ──
     if (src === 'this-computer') {
       if (subTypeSel.value === 'tb-quarterly') {
@@ -13076,34 +13120,16 @@ function resolveGeoScope(user, geo) {
       return;
     }
 
-    // ── 'eTBr Server' (default): existing online / offline-fallback logic ────
+    // ── 'eTBr Server' (default): requires a live server connection ────────────
+    // The user explicitly chose "eTBr Server" as the data source.  That choice
+    // must be respected.  If the server is not reachable we must NOT silently
+    // fall back to locally-synced data — the user must decide for themselves
+    // (e.g. by switching the data source to "This Computer").
     if (!_reallyOnline) {
-      // DHIS2 submissions always require a live server connection — hard block.
-      if (subTypeSel.value === 'tb-dhis2') {
-        const msg = 'Sending data to DHIS2 requires an active internet connection. Please reconnect and try again.';
-        setStatus(msg, 'danger');
-        showToast(msg, 'error');
-        return;
-      }
-
-      // All other report types can be generated offline from the local SQLite
-      // database, but warn the user about potential data discrepancies first.
-      const confirmed = await showOfflineWarningModal();
-      if (!confirmed) return;
-
-      if (subTypeSel.value === 'tb-quarterly') {
-        await generateTbQuarterlyReportOffline();
-        return;
-      }
-      if (subTypeSel.value === 'art-monthly') {
-        await generateArtMonthlyReportOffline();
-        return;
-      }
-      if (subTypeSel.value === 'tb-lfa') {
-        await generateLfaOffline();
-        return;
-      }
-      setStatus('Offline report generation is not yet available for this report type. Please reconnect and try again.', 'warning');
+      const msg = '"eTBr Server" is selected as the data source but the server is not reachable. ' +
+        'Please check your internet connection and try again, or change the data source to "This Computer" to use locally synced data.';
+      setStatus(msg, 'danger');
+      showToast('Cannot reach eTBr server. Please reconnect and try again.', 'error');
       return;
     }
 
@@ -13389,6 +13415,11 @@ function resolveGeoScope(user, geo) {
       let _resolved = false;
       let _counts   = null;
       let _openCat  = null;
+      // Named so cleanup() can remove them from their persistent DOM nodes.
+      // Without this, every call to _runPreReportDQCheck stacks a new listener
+      // that carries the previous facility's closure, causing stale detail lists.
+      let _onChecklistClick = null;
+      let _onCloseDetail    = null;
 
       function cleanup(result) {
         if (_resolved) return;
@@ -13397,6 +13428,8 @@ function resolveGeoScope(user, geo) {
         cancelBtn.removeEventListener('click', onCancel);
         if (headerCloseBtn) headerCloseBtn.removeEventListener('click', onCancel);
         fixBtn.removeEventListener('click', onFix);
+        if (checklistEl  && _onChecklistClick) checklistEl.removeEventListener('click', _onChecklistClick);
+        if (closeDetailBtn && _onCloseDetail)  closeDetailBtn.removeEventListener('click', _onCloseDetail);
         _hideModal();
         resolve(result);
       }
@@ -13545,8 +13578,11 @@ function resolveGeoScope(user, geo) {
           _dqSource = 'local';
         }
 
-        // 2. Fall back to local SQLite whenever we don't have server counts
-        if (!_counts) {
+        // 2. Fall back to local SQLite ONLY when the user explicitly chose
+        //    "This Computer" (forceLocal=true).  When a remote source (eTBr
+        //    Server / DHIS2) was selected the user's choice must be respected
+        //    — we must NOT silently substitute locally-synced data.
+        if (!_counts && forceLocal) {
           try {
             _counts = (typeof getDQCountsForReport === 'function')
               ? getDQCountsForReport(facilityIds, cfRange.startDate, cfRange.endDate, toRange.startDate, toRange.endDate, cfYear, scRange.startDate, scRange.endDate)
@@ -13561,6 +13597,11 @@ function resolveGeoScope(user, geo) {
             if (_dqSource === 'server') {
               noteEl.innerHTML = '&#10003;&nbsp;Checked against live eTBr server data.';
               noteEl.style.color = '#059669';
+            } else if (!forceLocal) {
+              // Remote source was required but the server was not reachable.
+              // Do NOT show local data here — the user must be told clearly.
+              noteEl.innerHTML = '&#9888;&nbsp;Cannot reach the eTBr server &mdash; data quality check unavailable.';
+              noteEl.style.color = '#dc2626';
             } else if (_dqSource === 'fallback') {
               noteEl.innerHTML = '&#9888;&nbsp;Server check failed &mdash; based on locally synced data.';
               noteEl.style.color = '#d97706';
@@ -13572,6 +13613,24 @@ function resolveGeoScope(user, geo) {
         }
 
         if (!_counts) {
+          if (!forceLocal) {
+            // Remote source expected but server unreachable — show a clear error.
+            // The user may still proceed (DQ check is advisory) but must decide
+            // themselves; we do not silently continue on local data.
+            if (checklistEl) checklistEl.innerHTML =
+              '<div class="pre-dq-loading text-danger">&#9888;&nbsp;Could not reach the eTBr server. The data quality check could not be completed against live server data.</div>';
+            if (summaryEl) {
+              summaryEl.className = 'pre-dq-summary pre-dq-summary--fail';
+              summaryEl.innerHTML = '<strong>&#9888; Server unreachable.</strong> Data quality checks could not be run against the eTBr server. ' +
+                'Check your connection and retry, or change the data source to "This Computer" if you want to use locally synced data.';
+              summaryEl.style.display = '';
+            }
+            if (proceedLabel) proceedLabel.textContent = 'Proceed Without DQ Check';
+            proceedBtn.classList.add('btn-danger');
+            proceedBtn.classList.remove('btn-primary');
+            proceedBtn.disabled = false;
+            return;
+          }
           if (checklistEl) checklistEl.innerHTML =
             '<div class="pre-dq-loading text-warning">Data not available — checks skipped.</div>';
           proceedBtn.disabled = false;
@@ -13607,7 +13666,7 @@ function resolveGeoScope(user, geo) {
           }).join('');
 
           // Delegate: click on a failing row → toggle detail
-          checklistEl.addEventListener('click', e => {
+          _onChecklistClick = e => {
             const row = e.target.closest('[data-cat].pre-dq-row--fail');
             if (!row || !row.dataset.cat) return;
             const cat = row.dataset.cat;
@@ -13624,7 +13683,8 @@ function resolveGeoScope(user, geo) {
               _openCat = cat;
               _showDetail(cat);
             }
-          });
+          };
+          checklistEl.addEventListener('click', _onChecklistClick);
         }
 
         // Summary
@@ -13938,11 +13998,14 @@ function resolveGeoScope(user, geo) {
         resolve(false);
       };
 
-      if (closeDetailBtn) closeDetailBtn.addEventListener('click', () => {
-        if (detailEl) detailEl.style.display = 'none';
-        if (checklistEl) { const prev = checklistEl.querySelector('.pre-dq-row--open'); if (prev) prev.classList.remove('pre-dq-row--open'); }
-        _openCat = null;
-      });
+      if (closeDetailBtn) {
+        _onCloseDetail = () => {
+          if (detailEl) detailEl.style.display = 'none';
+          if (checklistEl) { const prev = checklistEl.querySelector('.pre-dq-row--open'); if (prev) prev.classList.remove('pre-dq-row--open'); }
+          _openCat = null;
+        };
+        closeDetailBtn.addEventListener('click', _onCloseDetail);
+      }
       proceedBtn.addEventListener('click', onProceed);
       cancelBtn.addEventListener('click',  onCancel);
       if (headerCloseBtn) headerCloseBtn.addEventListener('click', onCancel);
@@ -17380,13 +17443,17 @@ let _pcListenersAttached = false;
  */
 function initPresumptiveForm(facilityId) {
   _pcPopulateSelectors();
-  _pcRefreshSummary(facilityId);
+  _pcRefreshSummary(facilityId);   // show local data (may be empty) immediately
   _pcPrefillCount(facilityId);
 
   if (!_pcListenersAttached) {
     _pcAttachListeners();
     _pcListenersAttached = true;
   }
+
+  // Pull fresh data from the server so senior / read-only users see up-to-date
+  // records even though their local DB has no facility-specific sync data.
+  _pcFetchFromServer(facilityId);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -17413,6 +17480,7 @@ function _pcClearStatus() {
 }
 
 function _pcPopulateSelectors() {
+  const _db = window._patientDb;
   if (!_db) return;
 
   const yearSel  = document.getElementById('pc-year-sel');
@@ -17447,6 +17515,7 @@ function _pcPopulateSelectors() {
 }
 
 function _pcRefreshSummary(facilityId) {
+  const _db     = window._patientDb;
   const facId   = facilityId || (_selectedFacility?.id || 0);
   const yearSel = document.getElementById('pc-year-sel');
   const yearId  = parseInt(yearSel?.value, 10) || 0;
@@ -17492,6 +17561,7 @@ function _pcRefreshSummary(facilityId) {
 }
 
 function _pcPrefillCount(facilityId) {
+  const _db     = window._patientDb;
   const facId   = facilityId || (_selectedFacility?.id || 0);
   const yearId  = parseInt(document.getElementById('pc-year-sel')?.value,  10) || 0;
   const monthId = parseInt(document.getElementById('pc-month-sel')?.value, 10) || 0;
@@ -17507,12 +17577,57 @@ function _pcPrefillCount(facilityId) {
   } catch { inp.value = ''; }
 }
 
+// ── Server fetch — pull data for selected facility + year ────────────────
+/**
+ * Fetches PresumptiveCaseT rows from the server for the given facility + year,
+ * merges them into the local SQLite, then re-renders the summary table and
+ * count input.  Used so senior / read-only users (who have no local sync data)
+ * can see records from any facility they select in the tree.
+ */
+async function _pcFetchFromServer(facilityId) {
+  const token = getToken();
+  if (!token || !_reallyOnline) return;
+
+  const facId  = facilityId || (_selectedFacility?.id || 0);
+  const yearId = parseInt(document.getElementById('pc-year-sel')?.value, 10) || 0;
+  if (!facId) return;
+
+  const tbody = document.getElementById('pc-summary-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#6b7280;padding:.9rem">Loading…</td></tr>';
+
+  try {
+    const qs  = yearId > 0 ? `facilityId=${facId}&yearId=${yearId}` : `facilityId=${facId}`;
+    const url = `${API_BASE}/tb-patients/presumptive?${qs}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!resp.ok) {
+      console.warn('[PC] server fetch returned', resp.status);
+      _pcRefreshSummary(facId);   // fall back to whatever is in the local DB
+      _pcPrefillCount(facId);
+      return;
+    }
+    const cases = await resp.json();
+    if (Array.isArray(cases) && cases.length > 0) {
+      await importPresumptiveCasesFromServer(cases);
+    }
+  } catch (e) {
+    console.warn('[PC] server fetch failed:', e.message);
+  }
+
+  // Re-render from local DB (now updated with server data, or unchanged if fetch failed)
+  _pcRefreshSummary(facId);
+  _pcPrefillCount(facId);
+}
+
 // ── Event listeners (attached once) ──────────────────────────────────────
 
 function _pcAttachListeners() {
   document.getElementById('pc-year-sel')?.addEventListener('change', () => {
     _pcRefreshSummary();
     _pcPrefillCount();
+    _pcFetchFromServer();   // re-pull from server for the newly selected year
   });
 
   document.getElementById('pc-month-sel')?.addEventListener('change', () => {

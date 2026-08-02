@@ -656,6 +656,69 @@ public sealed class TBPatientsController : ControllerBase
     }
 
     // ───────────────────────────────────────────────────────────────────────
+    //  GET /api/tb-patients/presumptive?facilityId=X&yearId=Y
+    //  Returns PresumptiveCaseT rows for an explicit facility + year.
+    //  Any authenticated user can query any facility — used by senior/national
+    //  users who select a facility from the tree but have no local sync data.
+    //  yearId is optional; omit to return all years for the facility.
+    // ───────────────────────────────────────────────────────────────────────
+    [HttpGet("presumptive")]
+    public async Task<IActionResult> GetPresumptiveByFacility(
+        [FromQuery] int facilityId,
+        [FromQuery] int yearId = 0)
+    {
+        if (facilityId <= 0)
+            return BadRequest(new { error = "facilityId is required and must be > 0." });
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            var yearClause = yearId > 0 ? "AND YearID = @YearID" : "";
+            var sql = $"""
+                SELECT
+                    CAST(PresumptiveCaseTID AS nvarchar(36)) AS PresumptiveCaseTID,
+                    PresumptiveCase, MonthID, YearID,
+                    NearestHFID, DataSourceID, CountyID,
+                    CONVERT(nvarchar(30), LastModOn, 126) AS LastModOn,
+                    CAST(EnteredByID AS nvarchar(36))     AS EnteredByID
+                FROM PresumptiveCaseT
+                WHERE NearestHFID = @FacilityID
+                {yearClause}
+                ORDER BY YearID, MonthID
+                """;
+
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@FacilityID", facilityId);
+            if (yearId > 0) cmd.Parameters.AddWithValue("@YearID", yearId);
+
+            var cases = new List<Dictionary<string, object?>>();
+            await using (var rdr = await cmd.ExecuteReaderAsync())
+            {
+                while (await rdr.ReadAsync())
+                {
+                    var row = new Dictionary<string, object?>();
+                    for (int i = 0; i < rdr.FieldCount; i++)
+                        row[rdr.GetName(i)] = rdr.IsDBNull(i) ? null : rdr.GetValue(i);
+                    cases.Add(row);
+                }
+            }
+
+            _logger.LogInformation(
+                "TB GetPresumptive: {Count} case(s) for facility {FacId}, yearId={YearId}.",
+                cases.Count, facilityId, yearId);
+
+            return Ok(cases);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in GetPresumptive for facility {FacId}.", facilityId);
+            return StatusCode(500, new { error = "Could not retrieve presumptive case records." });
+        }
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
     //  POST /api/tb-patients/sync-presumptive
     //  Upserts monthly presumptive case tallies.
     // ───────────────────────────────────────────────────────────────────────
@@ -700,13 +763,14 @@ public sealed class TBPatientsController : ControllerBase
                           HasChanged, Uploaded, Imported, LastModOn, EnteredByID)
                   VALUES (@PresumptiveCaseTID, @PresumptiveCase, @MonthID, @YearID,
                           @NearestHFID, @DataSourceID,
-                          COALESCE(NULLIF((SELECT TOP 1 CountyID FROM HealthFacilityT WHERE HealthFacilityID = @NearestHFID), 0), NULL),
+                          COALESCE((SELECT TOP 1 CountyID FROM HealthFacilityT WHERE HealthFacilityID = @NearestHFID), 0),
                           0, 0, 0, GETDATE(), @EnteredByID);
                 """;
 
-            // Use NULL rather than 0 for unassigned facility so the now-nullable
-            // DataSourceID / CountyID columns accept the value without error 547.
-            object dataSourceParam = dataSourceID > 0 ? dataSourceID : DBNull.Value;
+            // Use 0 (seeded in CountyT/DataSourceT) rather than NULL so the INSERT
+            // works whether or not migrate_drop_presumptivecase_fk_constraints.sql
+            // has been applied on the production server (avoids error 515/547).
+            object dataSourceParam = dataSourceID > 0 ? (object)dataSourceID : 0;
 
             foreach (var c in payload.Cases)
             {
